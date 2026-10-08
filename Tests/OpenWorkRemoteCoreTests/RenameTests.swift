@@ -20,8 +20,9 @@ private actor RenameTransport: HTTPTransport {
   #expect(requests.count == 2)
   #expect(requests[0].url?.absoluteString == "https://paired.test:9443/v1/workspaces/ws_test/sessions/ses_test/rename")
   #expect(requests[0].httpMethod == "POST")
-  #expect(requests[0].httpBody == requests[1].httpBody)
   let body = try #require(JSONSerialization.jsonObject(with: requests[0].httpBody!) as? [String: String])
+  let replay = try #require(JSONSerialization.jsonObject(with: requests[1].httpBody!) as? [String: String])
+  #expect(body == replay)
   #expect(body == ["requestId": id.uuidString.lowercased(), "title": "A new title", "previousTitle": "Old title"])
 }
 @Test func renameRejectsEmptyAndOversizedTitlesBeforeNetworking() async throws {
