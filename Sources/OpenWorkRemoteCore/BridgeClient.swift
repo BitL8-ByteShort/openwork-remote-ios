@@ -158,6 +158,13 @@ public actor BridgeClient {
   public func session(_ wid: String, _ sid: String) async throws -> ChatSession {
     try await decode(Envelope<ChatSession>.self, path: try base(wid, sid)).data
   }
+  public func rename(_ wid: String, _ sid: String, title: String, previousTitle: String, requestId: UUID) async throws -> MutationReceipt {
+    let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty, title.unicodeScalars.count <= 200 else { throw RemoteError.invalidResponse }
+    return try await decode(Envelope<MutationReceipt>.self,
+      path: (try base(wid, sid)) + "/rename", method: "POST",
+      body: JSONEncoder().encode(["requestId": requestId.uuidString.lowercased(), "title": title, "previousTitle": previousTitle])).data
+  }
   public func messages(_ wid: String, _ sid: String, cursor value: String? = nil) async throws
     -> Envelope<[ChatMessage]>
   {

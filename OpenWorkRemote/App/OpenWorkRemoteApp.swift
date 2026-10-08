@@ -6,6 +6,12 @@ import SwiftUI
   @AppStorage("appearance") private var appearance = "system"
   #if DEBUG
     init() {
+      if ProcessInfo.processInfo.arguments.contains("-ui-testing-chats") {
+        _model = State(initialValue: chatUITestFixture(
+          slowMessages: ProcessInfo.processInfo.arguments.contains("-slow-messages"),
+          failRename: ProcessInfo.processInfo.arguments.contains("-fail-rename")))
+        return
+      }
       if ProcessInfo.processInfo.arguments.contains("-ui-testing-revoked") {
         let fixture = AppModel(pairingPersistence: PairingPersistence(
           load: { nil }, save: { _ in }, remove: {}))
