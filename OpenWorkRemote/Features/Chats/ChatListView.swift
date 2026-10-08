@@ -6,6 +6,7 @@ struct ChatListView: View {
   @Environment(\.dismiss) private var dismiss
   @State private var search = ""
   @State private var showingSettings = false
+  @State private var renaming: ChatSession?
   var body: some View {
     NavigationStack {
       List {
@@ -39,10 +40,8 @@ struct ChatListView: View {
           }
           ForEach(results) { s in
             Button {
-              Task {
-                await model.select(s)
-                dismiss()
-              }
+              dismiss()
+              Task { await model.select(s) }
             } label: {
               VStack(alignment: .leading, spacing: 6) {
                 Text(s.title).font(.body).foregroundStyle(Theme.ink).lineLimit(2)
@@ -50,6 +49,11 @@ struct ChatListView: View {
                   Text(label).font(.caption).foregroundStyle(Theme.muted)
                 }
               }.padding(.vertical, 5)
+            }.contextMenu {
+              Button("Rename", systemImage: "pencil") { renaming = s }
+                .disabled(model.connection != .ready || model.host?.capabilities.renameSession != true)
+            }.accessibilityAction(named: "Rename") {
+              if model.connection == .ready, model.host?.capabilities.renameSession == true { renaming = s }
             }
           }
           if model.sessionCursor != nil {
@@ -82,6 +86,7 @@ struct ChatListView: View {
           ).accessibilityLabel("New chat")
         }
       }.sheet(isPresented: $showingSettings) { ConnectionView() }
+        .sheet(item: $renaming) { RenameChatView(session: $0) }
     }
   }
   private var results: [OpenWorkRemoteCore.ChatSession] {

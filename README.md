@@ -4,7 +4,7 @@
 
 An independently maintained iOS companion for [OpenWork](https://github.com/different-ai/openwork). Pick up a chat from your iPhone while the work keeps running on your computer.
 
-This is an early source release. Desktop source builds have been tested on macOS and Ubuntu Linux. Physical iPhone and cellular qualification for the integrated host is still pending. It isn't an official OpenWork app. Version 0.1.0 (3) is available through invitation-only internal TestFlight testing. There is no public TestFlight link or App Store release.
+This is an early source release. Desktop source builds have been tested on macOS and Ubuntu Linux. Installation and re-pairing have been confirmed on a physical iPhone. Broader cellular and recovery qualification is still pending. It isn't an official OpenWork app. Beta builds are distributed through invitation-only internal TestFlight testing. There is no public TestFlight link or App Store release.
 
 ## What you can do
 
@@ -12,6 +12,7 @@ This is an early source release. Desktop source builds have been tested on macOS
 - Allow selected projects, or explicitly allow all current and future projects.
 - Read chats, send messages, stop work, and review supported approval requests.
 - Change a chat's model and supported reasoning settings.
+- Long-press a recent chat to rename it on the phone and computer (requires a host advertising rename support).
 - Review and revoke saved folder permissions where the host supports them.
 - Keep tool calls in a compact Activity row and expand them when needed.
 

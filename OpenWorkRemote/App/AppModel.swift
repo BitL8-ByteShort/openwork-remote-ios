@@ -327,6 +327,31 @@ import OpenWorkRemoteCore
     stopRequested = false
     do { try await reconcile() } catch { notice = "Workspace unavailable." }
   }
+  func rename(_ session: ChatSession, title: String, requestId: UUID) async throws {
+    guard connection == .ready, host?.capabilities.renameSession == true, let client else {
+      throw RemoteError.unavailable
+    }
+    let current = generation
+    let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    var failure: (any Error)?
+    do {
+      let receipt = try await client.rename(session.workspaceId, session.id, title: title,
+        previousTitle: session.title, requestId: requestId)
+      if !["accepted", "confirmed"].contains(receipt.state) { failure = RemoteError.outcomeUnknown }
+    } catch { failure = error }
+    guard current == generation else { throw RemoteError.cancelled }
+    // Read back even after a lost response. Never repeat the mutation to check its outcome.
+    let actual = try await client.session(session.workspaceId, session.id)
+    guard current == generation, actual.id == session.id, actual.workspaceId == session.workspaceId else {
+      throw RemoteError.cancelled
+    }
+    if selectedWorkspace == actual.workspaceId {
+      directory.latest([actual], cursor: directory.cursor)
+      sessions = directory.rows.sorted { ($0.updatedAt, $0.id) > ($1.updatedAt, $1.id) }
+      if selectedSession?.id == actual.id { selectedSession = actual }
+    }
+    guard actual.title == title else { throw failure ?? RemoteError.conflict }
+  }
   func olderSessions() async {
     guard let client, let wid = selectedWorkspace, let cursor = sessionCursor else { return }
     let current = generation
