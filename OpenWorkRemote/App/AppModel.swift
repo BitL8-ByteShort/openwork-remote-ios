@@ -5,7 +5,7 @@ import OpenWorkRemoteCore
 
 @MainActor @Observable final class AppModel {
   var connection: ConnectionState = .unpaired
-  var host: Host?
+  var host: OpenWorkRemoteCore.Host?
   var workspaces: [Workspace] = []
   var sessions: [ChatSession] = []
   var messages: [ChatMessage] = []
@@ -26,6 +26,8 @@ import OpenWorkRemoteCore
   var pairingError: String?
   var pendingPhone = false
   var onboardingStep = 0
+  private let pairingPersistence: PairingPersistence
+  private let transport: any HTTPTransport
   private var client: BridgeClient?
   private var storedPairing: StoredPairing?
   private var draftStore: DraftStore?
@@ -53,16 +55,22 @@ import OpenWorkRemoteCore
       && host?.capabilities.sendText == true && ["idle", "error"].contains(status?.phase ?? "")
       && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draft.utf8.count <= 32768
   }
+  init(pairingPersistence: PairingPersistence = .keychain,
+       transport: any HTTPTransport = SessionTransport(), draftStore: DraftStore? = nil) {
+    self.pairingPersistence = pairingPersistence
+    self.transport = transport
+    self.draftStore = draftStore
+  }
   func start() async {
     #if DEBUG
       if ProcessInfo.processInfo.arguments.contains("-ui-testing-onboarding") { return }
     #endif
     do {
-      draftStore = try DraftStore()
+      if draftStore == nil { draftStore = try DraftStore() }
       disk = try await draftStore!.load()
-      storedPairing = try DeviceCredentialStore.load()
+      storedPairing = try pairingPersistence.load()
       if let p = storedPairing {
-        client = try BridgeClient(origin: PairingValidation.origin(p.origin), token: p.token)
+        client = try BridgeClient(origin: PairingValidation.origin(p.origin), token: p.token, transport: transport)
         connect()
       }
     } catch {
@@ -81,6 +89,14 @@ import OpenWorkRemoteCore
     }
   }
   func connect() {
+    if connection == .revoked {
+      pairAgain()
+      return
+    }
+    guard let client else {
+      connection = .unpaired
+      return
+    }
     connectionTask?.cancel()
     refreshTask?.cancel()
     refreshTask = nil
@@ -88,7 +104,6 @@ import OpenWorkRemoteCore
     let generation = UUID()
     self.generation = generation
     connection = .connecting
-    guard let client else { return }
     connectionTask = Task {
       var attempt = 0
       while !Task.isCancelled && foreground {
@@ -125,12 +140,21 @@ import OpenWorkRemoteCore
             "Connection failed: \(diagnostic.domain,privacy:.public) code \(diagnostic.code,privacy:.public)")
           if case RemoteError.unauthorized = error {
             connection = .revoked
+            self.generation = UUID()
+            refreshTask?.cancel()
+            refreshTask = nil
+            refreshID = nil
+            directory = PagedSnapshot()
+            history = PagedSnapshot()
+            workspaces = []
             messages = []
             sessions = []
             approvals = []
             status = nil
             selectedSession = nil
+            selectedWorkspace = nil
             stopRequested = false
+            loading = false
             return
           }
           if case RemoteError.incompatible = error {
@@ -547,7 +571,7 @@ import OpenWorkRemoteCore
       connection = .pairing
       pairingTask = Task {
         do {
-          let pending = try BridgeClient(origin: PairingValidation.origin(payload.origin))
+          let pending = try BridgeClient(origin: PairingValidation.origin(payload.origin), transport: transport)
           let claim = try await pending.claim(
             payload, deviceId: UUID().uuidString, deviceName: "My iPhone")
           try Task.checkCancellation()
@@ -564,9 +588,9 @@ import OpenWorkRemoteCore
                 h.compatibility == "supported"
               else { throw RemoteError.incompatible }
               let paired = try BridgeClient(
-                origin: PairingValidation.origin(payload.origin), token: token)
+                origin: PairingValidation.origin(payload.origin), token: token, transport: transport)
               let connection = StoredPairing(origin: payload.origin, token: token, hostId: h.hostId)
-              try DeviceCredentialStore.save(connection)
+              try pairingPersistence.save(connection)
               savedPendingPairing = true
               try await paired.ack()
               try Task.checkCancellation()
@@ -596,7 +620,7 @@ import OpenWorkRemoteCore
         } catch {
           if Task.isCancelled || current != pairingGeneration { return }
           if savedPendingPairing && storedPairing == nil {
-            do { try DeviceCredentialStore.remove(); savedPendingPairing = false } catch {
+            do { try pairingPersistence.remove(); savedPendingPairing = false } catch {
               notice = "Pairing could not finish or be removed. Unlock this iPhone and try again."
             }
           }
@@ -621,7 +645,7 @@ import OpenWorkRemoteCore
     pairingTask?.cancel()
     pairingGeneration = UUID()
     if savedPendingPairing && storedPairing == nil {
-      do { try DeviceCredentialStore.remove(); savedPendingPairing = false } catch {
+      do { try pairingPersistence.remove(); savedPendingPairing = false } catch {
         notice = "The unfinished pairing could not be removed. Unlock this iPhone and try again."
       }
     }
@@ -631,11 +655,31 @@ import OpenWorkRemoteCore
   }
   func forget() async {
     saveDrafts()
-    do { try DeviceCredentialStore.remove() } catch {
+    do { try pairingPersistence.remove() } catch {
       notice = "Pairing could not be removed from Keychain. Unlock this iPhone and try again."
       return
     }
     let previousClient = client
+    clearLocalPairing()
+    let current = generation
+    onboardingStep = 0
+    if let previousClient {
+      do { try await previousClient.revoke() } catch {
+        guard current == generation else { return }
+        notice = "Local pairing removed. Revoke this phone on your computer when it is online."
+      }
+    }
+  }
+  private func pairAgain() {
+    guard connection == .revoked else { return }
+    do { try pairingPersistence.remove() } catch {
+      notice = "Pairing could not be removed from Keychain. Unlock this iPhone and try again."
+      return
+    }
+    clearLocalPairing()
+    onboardingStep = 2
+  }
+  private func clearLocalPairing() {
     connectionTask?.cancel()
     pairingTask?.cancel()
     refreshTask?.cancel()
@@ -643,7 +687,6 @@ import OpenWorkRemoteCore
     refreshID = nil
     generation = UUID()
     pairingGeneration = UUID()
-    let current = generation
     client = nil
     storedPairing = nil
     host = nil
@@ -655,21 +698,23 @@ import OpenWorkRemoteCore
     approvals = []
     selectedSession = nil
     selectedWorkspace = nil
+    status = nil
+    stopRequested = false
+    sending = false
+    updatingControls = false
+    loading = false
+    notice = nil
+    pairingError = nil
+    pendingPhone = false
+    savedPendingPairing = false
     disk.conversation.deselect()
     saveDrafts()
     connection = .unpaired
-    onboardingStep = 0
-    if let previousClient {
-      do { try await previousClient.revoke() } catch {
-        guard current == generation else { return }
-        notice = "Local pairing removed. Revoke this phone on your computer when it is online."
-      }
-    }
   }
   func sceneActive(_ active: Bool) {
     foreground = active
     if active {
-      if client != nil { connect() }
+      if client != nil && connection != .revoked { connect() }
     } else {
       saveDrafts()
       connectionTask?.cancel()
@@ -677,7 +722,7 @@ import OpenWorkRemoteCore
       refreshTask = nil
       refreshID = nil
       generation = UUID()
-      connection = client == nil ? .unpaired : .connecting
+      if connection != .revoked { connection = client == nil ? .unpaired : .connecting }
     }
   }
 }

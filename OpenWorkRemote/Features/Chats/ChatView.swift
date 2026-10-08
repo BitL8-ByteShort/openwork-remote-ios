@@ -23,7 +23,7 @@ struct ChatView: View {
           }
           Text(model.connection.label).font(.caption)
           Spacer()
-          Button("Reconnect") { model.connect() }.font(.caption.weight(.semibold)).frame(
+          Button(model.connection == .revoked ? "Pair again" : "Reconnect") { model.connect() }.font(.caption.weight(.semibold)).frame(
             minHeight: 44)
         }.padding(.horizontal, 24).background(Theme.surface)
       }

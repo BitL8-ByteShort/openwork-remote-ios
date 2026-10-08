@@ -25,7 +25,9 @@ struct ConnectionView: View {
             LabeledContent("OpenWork", value: h.upstreamVersion)
             LabeledContent("Computer", value: h.platform == "macos" ? "macOS" : "Linux")
           }
-          Button("Reconnect") { model.connect() }
+          Button(model.connection == .revoked ? "Pair again" : "Reconnect") {
+            model.connect()
+          }
         } header: {
           Text("Paired computer")
         }

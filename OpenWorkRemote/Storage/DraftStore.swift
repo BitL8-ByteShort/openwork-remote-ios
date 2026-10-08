@@ -8,8 +8,8 @@ struct DiskState: Codable, Sendable {
 }
 actor DraftStore {
   private let snapshots: RevisionedSnapshotStore<DiskState>
-  init() throws {
-    let root = try FileManager.default.url(
+  init(directory: URL? = nil) throws {
+    let root = try directory ?? FileManager.default.url(
       for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
     ).appending(path: "OpenWorkRemote", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(

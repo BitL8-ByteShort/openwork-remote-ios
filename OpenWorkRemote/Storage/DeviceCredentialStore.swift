@@ -51,3 +51,13 @@ enum DeviceCredentialStore {
     }
   }
 }
+
+/// Storage boundary shared by startup, pairing and access recovery.
+@MainActor struct PairingPersistence {
+  var load: () throws -> StoredPairing?
+  var save: (StoredPairing) throws -> Void
+  var remove: () throws -> Void
+  static let keychain = PairingPersistence(
+    load: DeviceCredentialStore.load, save: DeviceCredentialStore.save,
+    remove: DeviceCredentialStore.remove)
+}

@@ -4,7 +4,7 @@
 
 An independently maintained iOS companion for [OpenWork](https://github.com/different-ai/openwork). Pick up a chat from your iPhone while the work keeps running on your computer.
 
-This is an early source release. Desktop source builds have been tested on macOS and Ubuntu Linux. Physical iPhone and cellular qualification for the integrated host is still pending. It isn't an official OpenWork app, and this repository doesn't provide an App Store or TestFlight release.
+This is an early source release. Desktop source builds have been tested on macOS and Ubuntu Linux. Physical iPhone and cellular qualification for the integrated host is still pending. It isn't an official OpenWork app. TestFlight beta distribution is being prepared; there is no public TestFlight link or App Store release.
 
 ## What you can do
 
@@ -57,6 +57,8 @@ Once a compatible host is available:
 2. Choose **Pair a phone**. Scan its QR code in the iOS app, or paste the pairing code.
 3. Review the request on the computer. Choose projects, then approve it.
 4. Open a chat on the phone. You can change or revoke the phone's access from the computer.
+
+If you revoke a phone, it shows **Pair again**. Create a new code on the computer, scan or paste it, and approve the new request. Drafts stay on the phone, scoped to their original computer and chat.
 
 Approvals that the phone cannot safely handle ask you to continue on the computer. Losing a network connection doesn't automatically resubmit a message whose result is uncertain.
 
