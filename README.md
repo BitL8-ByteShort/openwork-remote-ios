@@ -4,7 +4,7 @@
 
 An independently maintained iOS companion for [OpenWork](https://github.com/different-ai/openwork). Pick up a chat from your iPhone while the work keeps running on your computer.
 
-This is an early source release. Desktop source builds have been tested on macOS and Ubuntu Linux. Physical iPhone and cellular qualification for the integrated host is still pending. It isn't an official OpenWork app. TestFlight beta distribution is being prepared; there is no public TestFlight link or App Store release.
+This is an early source release. Desktop source builds have been tested on macOS and Ubuntu Linux. Physical iPhone and cellular qualification for the integrated host is still pending. It isn't an official OpenWork app. Version 0.1.0 (3) is available through invitation-only internal TestFlight testing. There is no public TestFlight link or App Store release.
 
 ## What you can do
 
@@ -24,6 +24,12 @@ The iPhone talks to a small, scoped bridge managed by OpenWork. The bridge uses 
 Both devices need [Tailscale](https://tailscale.com/) on the same permitted private network. The bridge uses Tailscale Serve for HTTPS. Your computer must be awake with OpenWork running. There is no public tunnel, and the app keeps normal TLS certificate validation enabled.
 
 The desktop work lives on the [`jorvek/seamless-remote-access` branch of our OpenWork fork](https://github.com/BitL8-ByteShort/openwork/tree/jorvek/seamless-remote-access). See its [setup and protocol guide](https://github.com/BitL8-ByteShort/openwork/blob/jorvek/seamless-remote-access/packages/remote-access/README.md) and [qualification record](https://github.com/BitL8-ByteShort/openwork/blob/jorvek/seamless-remote-access/packages/remote-access/docs/qualification.md). Integrated Remote access requires OpenCode v2 enabled for chats; installing the current official OpenWork release alone won't enable it. The desktop feature is off by default and also requires the deployment's feature policy to allow it.
+
+## Install the beta
+
+Invited testers can open Apple’s TestFlight invitation on their iPhone and install **OpenWork Remote**. TestFlight is the beta update route; a USB cable is not required. Updates use the existing app identity and retain its local pairing and drafts. If the computer revoked the phone, choose **Pair again** and approve a new connection in OpenWork.
+
+TestFlight availability does not mean physical or cellular qualification is complete. The host still needs the integrated Remote access build described above.
 
 ## Build the app
 
