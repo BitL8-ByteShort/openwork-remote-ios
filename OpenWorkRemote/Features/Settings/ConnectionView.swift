@@ -55,7 +55,7 @@ struct ConnectionView: View {
         }
         Section {
           Text(
-            "OpenWork and the bridge must stay running on your computer. Both devices need Tailscale. Replies continue on the computer while this app is closed."
+            "Keep OpenWork running with Remote access enabled on your computer. Both devices need Tailscale. Replies continue on the computer while this app is closed."
           ).font(.callout).foregroundStyle(Theme.muted)
           Text("Verified folder-access requests can be answered here. Other approval types are handled in OpenWork on your computer.").font(.callout)
             .foregroundStyle(Theme.muted)
@@ -80,7 +80,7 @@ struct ConnectionView: View {
           }
         } message: {
           Text(
-            "This removes the phone’s saved credential. If your computer is offline, also revoke this phone in its local setup page when it is online."
+            "This removes the phone’s saved credential. If your computer is offline, also revoke this phone in OpenWork’s Remote access settings when it is online."
           )
         }
     }
