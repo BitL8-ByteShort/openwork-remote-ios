@@ -4,6 +4,16 @@ import SwiftUI
   @State private var model = AppModel()
   @Environment(\.scenePhase) private var phase
   @AppStorage("appearance") private var appearance = "system"
+  #if DEBUG
+    init() {
+      if ProcessInfo.processInfo.arguments.contains("-ui-testing-revoked") {
+        let fixture = AppModel(pairingPersistence: PairingPersistence(
+          load: { nil }, save: { _ in }, remove: {}))
+        fixture.connection = .revoked
+        _model = State(initialValue: fixture)
+      }
+    }
+  #endif
   var body: some Scene {
     WindowGroup {
       RootView().environment(model).preferredColorScheme(
@@ -19,7 +29,9 @@ private struct RootView: View {
   var body: some View {
     NavigationStack {
       Group {
-        if model.hasPairing || model.host != nil {
+        if model.connection == .revoked {
+          RevokedConnectionView()
+        } else if model.hasPairing || model.host != nil {
           if model.onboardingStep == 4 { WorkspacePicker() } else { ChatView() }
         } else {
           switch model.onboardingStep {
