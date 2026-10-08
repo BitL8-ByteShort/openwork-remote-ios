@@ -1,0 +1,57 @@
+import SwiftUI
+
+struct ComposerView: View {
+  @Environment(AppModel.self) private var model
+  @FocusState private var focused: Bool
+  var body: some View {
+    VStack(spacing: 8) {
+      if model.uncertain {
+        VStack(alignment: .leading, spacing: 8) {
+          Label("Delivery is uncertain", systemImage: "exclamationmark.circle").font(
+            .callout.weight(.semibold))
+          Text("Check the conversation before trying again. Your draft is saved.").font(.caption)
+          Button("Check conversation") { Task { await model.checkConversation() } }.font(
+            .callout.weight(.semibold)
+          ).frame(minHeight: 44)
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(16).background(
+          .orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 18))
+      }
+      HStack(alignment: .bottom, spacing: 8) {
+        TextField(
+          "Message OpenWork", text: Binding(get: { model.draft }, set: { model.draft = $0 }),
+          axis: .vertical
+        ).font(.body).lineLimit(1...6).focused($focused).padding(.vertical, 14)
+          .accessibilityIdentifier("composer")
+        if model.status?.phase == "running" || model.stopRequested {
+          Button {
+            Task { await model.stop() }
+          } label: {
+            if model.stopRequested {
+              ProgressView().tint(Theme.onAccent)
+            } else {
+              Image(systemName: "stop.fill").font(.body.weight(.semibold))
+            }
+          }.frame(width: 44, height: 44).background(Theme.accent, in: Circle()).foregroundStyle(
+            Theme.onAccent
+          ).disabled(model.stopRequested || model.connection != .ready).accessibilityLabel(
+            model.stopRequested ? "Stopping" : "Stop response")
+        } else {
+          Button {
+            focused = false
+            Task { await model.send() }
+          } label: {
+            Image(systemName: "arrow.up").font(.title3.weight(.semibold)).frame(
+              width: 44, height: 44)
+          }.background(model.canSend ? Theme.accent : Theme.line, in: Circle()).foregroundStyle(
+            model.canSend ? Theme.onAccent : Theme.muted
+          ).disabled(!model.canSend).accessibilityLabel("Send message").accessibilityIdentifier(
+            "send-message")
+        }
+      }.padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 8).background(
+        Theme.surface, in: RoundedRectangle(cornerRadius: 26))
+      Text(model.connection == .ready ? "Runs on your computer" : model.connection.label).font(
+        .caption2
+      ).foregroundStyle(Theme.muted).frame(maxWidth: .infinity)
+    }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8).background(Theme.background)
+  }
+}

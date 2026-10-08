@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-checks:
+    name: Source checks
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Verify generated project
+        run: |
+          python3 scripts/generate-ios-project.py
+          git diff --exit-code -- OpenWorkRemote.xcodeproj
+      - name: Test core
+        run: swift test
+  simulator-build:
+    name: Simulator build
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build without signing
+        run: >-
+          xcodebuild -project OpenWorkRemote.xcodeproj
+          -scheme OpenWorkRemote -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO build
