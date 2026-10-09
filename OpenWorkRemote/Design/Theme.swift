@@ -1,6 +1,9 @@
 import SwiftUI
 
 enum Theme {
+  // Reviewed Penpot spacing and card radius tokens.
+  static let rowGap: CGFloat = 16
+  static let radius: CGFloat = 20
   static let background = Color(
     uiColor: UIColor {
       $0.userInterfaceStyle == .dark ? UIColor(hex: 0x15181E) : UIColor(hex: 0xFAF9F6)
