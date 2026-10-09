@@ -19,10 +19,19 @@ struct PermissionsView: View {
           ForEach(model.workspaces) { Text($0.name).font(.callout) }
         }
         DisclosureGroup("Change project access") {
-          Text("On your computer, open http://127.0.0.1:9289. Under Paired phones, choose Project access. Select projects or enable Allow all future projects, then save.")
+          Text("On your computer, open OpenWork Remote Preview → Settings → Remote access. Choose this phone, select its projects or allow all current and future projects, then save.")
             .font(.callout).foregroundStyle(Theme.muted).padding(.vertical, 8).textSelection(.enabled)
         }
       } header: { Text("This phone") } footer: { Text("Project access is approved on the computer that owns the projects.") }
+      if let access {
+        Section {
+          grantRow("Files and attachments", allowed: access.features.fileTransfer, id: "fileTransfer")
+          grantRow("Workspace settings and skills", allowed: access.features.workspaceAdministration, id: "workspaceAdministration")
+          grantRow("Scheduled work", allowed: access.features.automationManagement, id: "automationManagement")
+        } header: { Text("Additional access") } footer: {
+          Text("Change access in OpenWork on your computer.")
+        }
+      }
       if let permissions {
         Section {
           Text(permissions.modeReason).font(.callout).foregroundStyle(Theme.muted)
@@ -45,6 +54,19 @@ struct PermissionsView: View {
         Button("Revoke permission", role: .destructive) { if let revoke { Task { await remove(revoke) } } }
         Button("Cancel", role: .cancel) { revoke = nil }
       } message: { Text(revoke.map { $0.action + "\n" + $0.resource + "\nApplies to this project's chats." } ?? "") }
+  }
+  private func grantRow(_ title: String, allowed: Bool, id: String) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 12) {
+      Text(title).fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 8)
+      HStack(spacing: 6) {
+        Image(systemName: allowed ? "checkmark" : "lock").accessibilityHidden(true)
+        Text(allowed ? "Allowed" : "Not allowed")
+      }.foregroundStyle(allowed ? Theme.ink : Theme.muted)
+        .fixedSize(horizontal: true, vertical: true)
+    }.fixedSize(horizontal: false, vertical: true).frame(minHeight: 44)
+      .accessibilityElement(children: .combine)
+      .accessibilityIdentifier("phone-" + id)
   }
   private func load() async {
     access = nil; permissions = nil; error = nil; loading = true
