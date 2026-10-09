@@ -20,6 +20,15 @@ actor ProtectedAttachmentFiles {
   private let directory: URL
   private let quotaBytes: Int
   private let availableCapacity: @Sendable (URL) throws -> Int64?
+  private static func protectedAttributes(permissions: Int) -> [FileAttributeKey: Any] {
+    var attributes: [FileAttributeKey: Any] = [.posixPermissions: permissions]
+    // iOS Data Protection is required on the phone. macOS SwiftPM test hosts
+    // use private POSIX permissions; macOS 15 can reject this iOS attribute.
+    #if os(iOS)
+    attributes[.protectionKey] = FileProtectionType.complete
+    #endif
+    return attributes
+  }
   init(directory: URL, quotaBytes: Int = AttachmentValidation.stagingBytes,
     availableCapacity: @escaping @Sendable (URL) throws -> Int64? = {
       try $0.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
@@ -31,7 +40,7 @@ actor ProtectedAttachmentFiles {
   }
   private func prepare() throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
-      attributes: [.posixPermissions:0o700, .protectionKey:FileProtectionType.complete])
+      attributes: Self.protectedAttributes(permissions: 0o700))
     let attrs = try FileManager.default.attributesOfItem(atPath: directory.path)
     guard attrs[.type] as? FileAttributeType == .typeDirectory,
       (attrs[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
@@ -88,7 +97,7 @@ actor ProtectedAttachmentFiles {
     let id = UUID(), destination = path(id)
     let output = try openRegular(destination, flags: O_RDWR | O_CREAT | O_EXCL, privateFile: true)
     do {
-      try FileManager.default.setAttributes([.protectionKey:FileProtectionType.complete, .posixPermissions:0o600], ofItemAtPath: destination.path)
+      try FileManager.default.setAttributes(Self.protectedAttributes(permissions: 0o600), ofItemAtPath: destination.path)
       var hash = SHA256(), copied = 0
       while let data = try source.read(upToCount: 65536), !data.isEmpty {
         try Task.checkCancellation()
@@ -162,7 +171,7 @@ actor ProtectedAttachmentFiles {
     let id = UUID(), destination = path(id)
     let file = try openRegular(destination, flags: O_WRONLY | O_CREAT | O_EXCL, privateFile: true)
     do {
-      try FileManager.default.setAttributes([.protectionKey:FileProtectionType.complete, .posixPermissions:0o600], ofItemAtPath: destination.path)
+      try FileManager.default.setAttributes(Self.protectedAttributes(permissions: 0o600), ofItemAtPath: destination.path)
       try file.write(contentsOf: png); try file.synchronize(); try file.close()
       let digest = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
       return LocalAttachmentFile(id: id, name: "Photo.png", mime: "image/png", bytes: png.count, sha256: digest)
