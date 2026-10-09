@@ -50,6 +50,7 @@ import Testing
     case "Attachment": _ = try decoder.decode(OpenWorkRemoteCore.Attachment.self, from: data)
     case "AttachmentLimits": _ = try decoder.decode(AttachmentLimits.self, from: data)
     case "AttachmentMutation": _ = try decoder.decode(AttachmentMutation.self, from: data)
+    case "ArtifactCatalog": _ = try decoder.decode(ArtifactCatalog.self, from: data)
     case "MutationReceipt": _ = try decoder.decode(MutationReceipt.self, from: data)
     case "PairClaim": _ = try decoder.decode(PairClaim.self, from: data)
     case "PairPoll": _ = try decoder.decode(PairPoll.self, from: data)

@@ -1,6 +1,6 @@
 # Selected attachments — source candidate
 
-This implementation is not in the recorded TestFlight build 0.1.0 (4).
+This implementation is included in internal TestFlight build 0.1.0 (5).
 Physical Photos/Files selection and cellular/recovery acceptance remain open.
 
 On a qualified host with computer-approved file access, the composer opens
@@ -69,5 +69,6 @@ old operation while retaining its scoped recovery record.
   inferred from those builds.
 
 Still required: physical selected photo/PDF on both hosts, foreground recovery,
-network interruption, device low-storage behavior and the same signed candidate
-in internal TestFlight. Other models and host profiles require qualification.
+network interruption, device low-storage behavior. The signed candidate is available
+in the existing internal TestFlight group as build 5; distribution does not
+qualify those physical behaviors. Other models and host profiles require qualification.

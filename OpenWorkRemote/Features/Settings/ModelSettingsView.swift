@@ -9,6 +9,7 @@ struct ModelSettingsView: View {
   @State private var variant = ""
   @State private var loading = false
   @State private var error: String?
+  @State private var files = false
   private var selected: ModelOption? { settings?.models.first { $0.id == selectedID } }
   private var selection: ModelSelection? {
     selected.map { ModelSelection(providerId: $0.providerId, modelId: $0.modelId, variant: variant.isEmpty ? nil : variant) }
@@ -16,6 +17,12 @@ struct ModelSettingsView: View {
   var body: some View {
     NavigationStack {
       Form {
+        if model.selectedSession != nil, model.host?.capabilities.artifacts == true {
+          Section("This chat") {
+            Button { files = true } label: { Label("Files from this chat",systemImage:"doc.on.doc") }
+              .accessibilityIdentifier("chat-files-settings")
+          }
+        }
         if loading { ProgressView("Loading models…") }
         if let error { Section { Text(error).foregroundStyle(.red); Button("Reload settings") { Task { await load() } } } }
         if let settings {
@@ -50,6 +57,7 @@ struct ModelSettingsView: View {
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
     }.task(id: model.controlsScope) { await load() }
       .onChange(of: selectedID) { old, new in if old != new, selected?.variants.contains(variant) != true { variant = "" } }
+      .sheet(isPresented:$files,onDismiss:{model.artifacts.closePreview()}) { ArtifactListView() }
   }
   private func load() async {
     settings = nil; error = nil
