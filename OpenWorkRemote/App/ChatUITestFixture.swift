@@ -129,6 +129,9 @@ private actor ChatUITestTransport: HTTPTransport {
   var actionDeleted=false
   var actionReceipts=[String:[String:Any]]()
   let groupsEnabled = ProcessInfo.processInfo.arguments.contains("-groups") && !ProcessInfo.processInfo.arguments.contains("-groups-unsupported")
+  let defaultsEnabled = ProcessInfo.processInfo.arguments.contains("-workspace-defaults")
+  var defaultModel:[String:Any] = ["providerId":"synthetic","modelId":"a","variant":NSNull()]
+  var defaultRevision=String(repeating:"a",count:64)
   let searchEnabled = ProcessInfo.processInfo.arguments.contains("-older-search")
   var groups = [["id":"first","label":"First group"],["id":"second","label":"Second group"]]
   var groupAssignments = [String:String]()
@@ -177,6 +180,17 @@ private actor ChatUITestTransport: HTTPTransport {
   }
   func data(for request: URLRequest) async throws -> (Data, Int) {
     let path = request.url!.path
+    if path.hasSuffix("/default-model") {
+      if ProcessInfo.processInfo.arguments.contains("-slow-defaults") {try await Task.sleep(for:.seconds(30))}
+      if request.httpMethod=="POST" {
+        let b=try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:Any]
+        if ProcessInfo.processInfo.arguments.contains("-stale-defaults") {return (Data(),409)}
+        defaultModel=b["selection"] as! [String:Any];defaultRevision=String(repeating:"b",count:64)
+        if ProcessInfo.processInfo.arguments.contains("-lost-defaults") {throw RemoteError.unavailable}
+        return try response(["requestId":b["requestId"]!,"resourceId":"ws_test","state":"accepted","observedAt":"2026-10-09T00:00:00Z"])
+      }
+      return try response(["current":defaultModel,"models":[["providerId":"synthetic","modelId":"a","name":"Model A","variants":[]],["providerId":"synthetic","modelId":"b","name":"Model B","variants":["high"]]],"revision":defaultRevision])
+    }
     if path.hasSuffix("/actions") {
       if ProcessInfo.processInfo.arguments.contains("-slow-chat-actions") {try await Task.sleep(for:.seconds(30))}
       let running=ProcessInfo.processInfo.arguments.contains("-chat-action-running"),linked=ProcessInfo.processInfo.arguments.contains("-chat-action-linked")
@@ -321,7 +335,7 @@ private actor ChatUITestTransport: HTTPTransport {
       return try response(["id":"ses_older","workspaceId":"ws_test","title":"Homepage ideas","updatedAt":"2026-09-18T00:00:00.000Z","modelLabel":NSNull(),"status":"idle"])
     }
     if path.hasSuffix("/host") {
-      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"artifacts":artifactsEnabled,"changes":changesEnabled,"searchSessions":searchEnabled,"sessionGroups":groupsEnabled,"forkSession":actionsEnabled,"deleteSession":actionsEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
+      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"artifacts":artifactsEnabled,"changes":changesEnabled,"workspaceDefaults":defaultsEnabled,"searchSessions":searchEnabled,"sessionGroups":groupsEnabled,"forkSession":actionsEnabled,"deleteSession":actionsEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
     }
     if path.hasSuffix("/workspaces") { return try response([["id": "ws_test", "name": "Test project"]]) }
     let session: [String: Any] = ["id": "ses_test", "workspaceId": "ws_test", "title": title, "updatedAt": "2026-10-08", "status": "idle"]
@@ -356,7 +370,7 @@ private actor ChatUITestTransport: HTTPTransport {
     if path.hasSuffix("/approvals") { return try response([]) }
     if path.hasSuffix("/access") {
       return try response(["allWorkspaces": false, "workspaceIds": ["ws_test"],
-        "features": ["fileTransfer": !fileAccessDenied, "workspaceAdministration": false, "automationManagement": false]])
+        "features": ["fileTransfer": !fileAccessDenied, "workspaceAdministration": defaultsEnabled && !ProcessInfo.processInfo.arguments.contains("-defaults-denied"), "automationManagement": false]])
     }
     if path.hasSuffix("/permissions") {
       return try response(["grants": [], "modeSupported": false,

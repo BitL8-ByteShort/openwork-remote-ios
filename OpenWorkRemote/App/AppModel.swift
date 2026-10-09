@@ -14,6 +14,7 @@ import OpenWorkRemoteCore
   let attachments: AttachmentStore
   let artifacts: ArtifactStore
   let changes = ChangeStore()
+  let workspaceDefaults:WorkspaceDefaultsStore
   let groups:GroupStore
   let chatSearch = ChatSearchStore()
   let chatActions:ChatActionStore
@@ -74,6 +75,7 @@ import OpenWorkRemoteCore
     self.questions = QuestionStore(directory: draftStore?.directory)
     self.attachments = AttachmentStore(directory: draftStore?.directory)
     self.artifacts = ArtifactStore(directory:draftStore?.directory)
+    self.workspaceDefaults = WorkspaceDefaultsStore(directory:draftStore?.directory)
     self.groups = GroupStore(directory:draftStore?.directory)
     self.chatActions = ChatActionStore(directory:draftStore?.directory)
   }
@@ -88,6 +90,8 @@ import OpenWorkRemoteCore
       catch { notice = "Your saved question drafts could not be opened. Question replies are paused; unlock the phone and restart the app." }
       do { try await chatActions.restore() }
       catch { notice = "Your saved chat actions could not be opened. Fork and delete are paused; unlock the phone and restart the app." }
+      do { try await workspaceDefaults.restore() }
+      catch { notice = "Your saved default-model changes could not be opened. Default edits are paused; unlock the phone and restart the app." }
       do { try await groups.restore() }
       catch { notice = "Your saved group changes could not be opened. Group edits are paused; unlock the phone and restart the app." }
       do { try await attachments.restore() }
@@ -135,6 +139,7 @@ import OpenWorkRemoteCore
     changes.activate(nil)
     chatSearch.activate(nil)
     groups.activate(nil)
+    workspaceDefaults.activate(nil)
     chatActions.activate(nil)
     loading = false
     connection = .connecting
@@ -180,6 +185,7 @@ import OpenWorkRemoteCore
             changes.activate(nil)
             chatSearch.activate(nil)
     groups.activate(nil)
+    workspaceDefaults.activate(nil)
             chatActions.activate(nil)
             self.generation = UUID()
             refreshTask?.cancel()
@@ -254,6 +260,7 @@ import OpenWorkRemoteCore
       changes.activate(nil)
       chatSearch.activate(nil)
     groups.activate(nil)
+    workspaceDefaults.activate(nil)
       chatActions.activate(nil)
       directory = PagedSnapshot()
       history = PagedSnapshot()
@@ -273,6 +280,7 @@ import OpenWorkRemoteCore
       changes.activate(nil)
       chatSearch.activate(nil)
     groups.activate(nil)
+    workspaceDefaults.activate(nil)
       chatActions.activate(nil)
       sessions = []
       messages = []
@@ -305,6 +313,7 @@ import OpenWorkRemoteCore
           changes.activate(nil)
           chatSearch.activate(nil)
     groups.activate(nil)
+    workspaceDefaults.activate(nil)
           chatActions.activate(nil)
           disk.conversation.deselect()
           history = PagedSnapshot()
@@ -328,6 +337,7 @@ import OpenWorkRemoteCore
       changes.activate(nil)
       chatSearch.activate(nil)
     groups.activate(nil)
+    workspaceDefaults.activate(nil)
       chatActions.activate(nil)
       messages = []
       status = nil
@@ -345,6 +355,7 @@ import OpenWorkRemoteCore
     changes.activate(nil)
     chatSearch.activate(nil)
     groups.activate(nil)
+    workspaceDefaults.activate(nil)
     chatActions.activate(nil)
     saveDrafts()
     selectedWorkspace = session.workspaceId
@@ -385,6 +396,7 @@ import OpenWorkRemoteCore
       changes.activate(nil)
       chatSearch.activate(nil)
     groups.activate(nil)
+    workspaceDefaults.activate(nil)
       chatActions.activate(nil)
       disk.conversation.deselect()
       history = PagedSnapshot()
@@ -419,6 +431,7 @@ import OpenWorkRemoteCore
     changes.activate(nil)
     chatSearch.activate(nil)
     groups.activate(nil)
+    workspaceDefaults.activate(nil)
     chatActions.activate(nil)
     loading = false
     saveDrafts()
@@ -833,6 +846,7 @@ import OpenWorkRemoteCore
     changes.activate(nil)
     chatSearch.activate(nil)
     groups.activate(nil)
+    workspaceDefaults.activate(nil)
     chatActions.activate(nil)
     connectionTask?.cancel()
     pairingTask?.cancel()
@@ -882,6 +896,7 @@ import OpenWorkRemoteCore
       changes.activate(nil)
       chatSearch.activate(nil)
     groups.activate(nil)
+    workspaceDefaults.activate(nil)
       chatActions.activate(nil)
       if connection != .revoked { connection = client == nil ? .unpaired : .connecting }
     }
@@ -1091,6 +1106,7 @@ extension AppModel {
       }
       chatSearch.activate(nil)
     groups.activate(nil)
+    workspaceDefaults.activate(nil)
       do{try await persist()}catch{notice="The chat was deleted on your computer, but its local draft could not be cleared. Unlock the phone and restart the app."}
     }
     return true
@@ -1122,5 +1138,23 @@ extension AppModel {
   func openSearchResult(_ session:ChatSession,context c:ChatSearchContext) async {
     guard searchContext==c,session.workspaceId==c.workspaceId else{return}
     await select(session)
+  }
+}
+
+
+extension AppModel {
+  var workspaceDefaultsContext:WorkspaceDefaultsContext? {
+    guard foreground,connection == .ready,let host,let wid=selectedWorkspace else{return nil}
+    return WorkspaceDefaultsContext(hostId:host.hostId,workspaceId:wid,generation:generation)
+  }
+  var defaultsRefreshID:String { (workspaceDefaultsContext.map{$0.hostId+"/"+$0.workspaceId+"/"+$0.generation.uuidString} ?? "offline")+"/"+String(host?.capabilities.workspaceDefaults == true) }
+  func refreshWorkspaceDefaults() async {
+    guard let c=workspaceDefaultsContext,let client else{workspaceDefaults.activate(nil);return}
+    workspaceDefaults.activate(c)
+    await workspaceDefaults.refresh(client:client,context:c,supported:host?.capabilities.workspaceDefaults == true)
+  }
+  func saveWorkspaceDefaults(_ selection:ModelSelection,revision:String,context c:WorkspaceDefaultsContext) async->Bool {
+    guard workspaceDefaultsContext==c,workspaceDefaults.context==c,let client,host?.capabilities.workspaceDefaults == true else{return false}
+    return await workspaceDefaults.save(selection,revision:revision,client:client,context:c)
   }
 }
