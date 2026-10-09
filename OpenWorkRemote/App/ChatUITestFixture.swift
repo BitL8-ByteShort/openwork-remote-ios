@@ -2,6 +2,49 @@
 import Foundation
 import OpenWorkRemoteCore
 
+#if targetEnvironment(simulator)
+// Opt-in live qualification uses ordinary HTTPS and an isolated temporary store.
+// Its ephemeral pairing is never loaded from or saved to the user's Keychain.
+@MainActor func liveQuestionUITestFixture() -> AppModel {
+  struct Configuration: Decodable {
+    let pairing: StoredPairing
+    let workspaceId: String
+    let sessionId: String
+  }
+  let folder = FileManager.default.temporaryDirectory.appending(path: "live-questions-" + UUID().uuidString)
+  let isolatedStore: DraftStore
+  do {
+    isolatedStore = try DraftStore(directory: folder)
+  } catch {
+    // A failed test store must never fall back to the installed app's storage.
+    preconditionFailure("The isolated question qualification store could not be created.")
+  }
+  do {
+    guard let path = ProcessInfo.processInfo.environment["OPENWORK_QUESTION_UI_CONFIG"] else {
+      throw RemoteError.unavailable
+    }
+    let data = try Data(contentsOf: URL(fileURLWithPath: path))
+    guard data.count <= 65536 else { throw RemoteError.invalidResponse }
+    let config = try JSONDecoder().decode(Configuration.self, from: data)
+    _ = try PairingValidation.origin(config.pairing.origin)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true,
+      attributes: [.protectionKey: FileProtectionType.complete, .posixPermissions: 0o700])
+    var disk = DiskState()
+    disk.conversation.select(DraftKey(hostId: config.pairing.hostId,
+      workspaceId: config.workspaceId, sessionId: config.sessionId))
+    try JSONEncoder().encode(disk).write(to: folder.appending(path: "drafts.json"),
+      options: [.atomic, .completeFileProtection])
+    return AppModel(pairingPersistence: PairingPersistence(load: { config.pairing },
+      save: { _ in }, remove: {}), draftStore: isolatedStore)
+  } catch {
+    let isolated = AppModel(pairingPersistence: PairingPersistence(load: { nil }, save: { _ in }, remove: {}),
+      draftStore: isolatedStore)
+    isolated.notice = "The isolated question qualification could not be opened."
+    return isolated
+  }
+}
+#endif
+
 // Isolated synthetic data only; native tests never load or change a real pairing.
 @MainActor func chatUITestFixture(slowMessages: Bool, failRename: Bool, largeConversation: Bool = false,
   burstEvents: Bool = false, offlineReconnect: Bool = false, pendingQuestion: Bool = false,

@@ -1,6 +1,16 @@
 import XCTest
 
 final class QuestionUITests: XCTestCase {
+  @MainActor func testInvalidLiveQualificationRemainsUnpaired() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-ui-testing-live-questions"]
+    app.launchEnvironment["OPENWORK_QUESTION_UI_CONFIG"] = "/nonexistent/isolated-question-config.json"
+    app.launch()
+    XCTAssertTrue(app.buttons["get-started"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["Open chat history"].exists)
+    XCTAssertFalse(app.buttons["question-banner"].exists)
+    app.terminate()
+  }
   @MainActor private func selectedChat(_ arguments: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchArguments = ["-ui-testing-chats", "-pending-question"] + arguments

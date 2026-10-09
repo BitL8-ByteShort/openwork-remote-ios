@@ -6,6 +6,12 @@ import SwiftUI
   @AppStorage("appearance") private var appearance = "system"
   #if DEBUG
     init() {
+      #if targetEnvironment(simulator)
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing-live-questions") {
+          _model = State(initialValue: liveQuestionUITestFixture())
+          return
+        }
+      #endif
       if ProcessInfo.processInfo.arguments.contains("-ui-testing-chats") {
         _model = State(initialValue: chatUITestFixture(
           slowMessages: ProcessInfo.processInfo.arguments.contains("-slow-messages"),
