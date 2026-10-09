@@ -124,6 +124,7 @@ private actor ChatUITestTransport: HTTPTransport {
   var questionPending: Bool
   var connections = 0
   var title = "Sample chat"
+  let changesEnabled = ProcessInfo.processInfo.arguments.contains("-changes")
   let artifactsEnabled = ProcessInfo.processInfo.arguments.contains("-artifacts")
   let artifactChanged = ProcessInfo.processInfo.arguments.contains("-artifact-changed")
   let artifactBytes = Data("Generated result fixture.".utf8)
@@ -162,6 +163,19 @@ private actor ChatUITestTransport: HTTPTransport {
   }
   func data(for request: URLRequest) async throws -> (Data, Int) {
     let path = request.url!.path
+    if path.hasSuffix("/changes") {
+      if ProcessInfo.processInfo.arguments.contains("-slow-changes") {try await Task.sleep(for:.seconds(5))}
+      let binary=ProcessInfo.processInfo.arguments.contains("-change-binary")
+      var file: [String:Any] = ["id":"chg_"+String(repeating:"a",count:32),"pathLabel":"src/home.tsx","status":"modified","binary":binary]
+      if !binary {file["added"]=1;file["removed"]=1}
+      return try response(["revision":String(repeating:"b",count:64),"sessionId":"ses_test","provenance":"workspace","files":[file],"moreOnComputer":false])
+    }
+    if path.contains("/changes/"),path.hasSuffix("/diff") {
+      if ProcessInfo.processInfo.arguments.contains("-change-stale") {return (Data(),409)}
+      let binary=ProcessInfo.processInfo.arguments.contains("-change-binary"),large=ProcessInfo.processInfo.arguments.contains("-change-large")
+      let text=binary ? "" : large ? (0..<9000).map {"+Synthetic line \($0)"}.joined(separator:"\n") : "--- a/src/home.tsx\n+++ b/src/home.tsx\n@@ -1 +1 @@\n-before\n+after\n"
+      return try response(["revision":String(repeating:"b",count:64),"changeId":"chg_"+String(repeating:"a",count:32),"binary":binary,"text":text,"omitted":large])
+    }
     if path.hasSuffix("/artifacts") {
       let hash = SHA256.hash(data:artifactBytes).map {String(format:"%02x",$0)}.joined()
       return try response(["items":[["id":"art_"+String(repeating:"a",count:32),"sessionId":"ses_test","name":"report.txt","mime":"text/plain","bytes":artifactBytes.count,"revision":String(repeating:"b",count:64),"sha256":hash,"previewKind":"text"]],"moreOnComputer":false])
@@ -234,7 +248,7 @@ private actor ChatUITestTransport: HTTPTransport {
       return try response(["requestId": body["requestId"]!, "resourceId": "ses_test", "state": "accepted", "observedAt": "now"])
     }
     if path.hasSuffix("/host") {
-      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"artifacts":artifactsEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
+      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"artifacts":artifactsEnabled,"changes":changesEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
     }
     if path.hasSuffix("/workspaces") { return try response([["id": "ws_test", "name": "Test project"]]) }
     let session: [String: Any] = ["id": "ses_test", "workspaceId": "ws_test", "title": title, "updatedAt": "2026-10-08", "status": "idle"]

@@ -29,6 +29,8 @@ enum Theme {
     uiColor: UIColor {
       $0.userInterfaceStyle == .dark ? UIColor(hex: 0x3B414D) : UIColor(hex: 0xDDDFE3)
     })
+  static let diffAdded = Color(uiColor:UIColor {$0.userInterfaceStyle == .dark ? UIColor(hex:0x183D2D) : UIColor(hex:0xECF8F1)})
+  static let diffRemoved = Color(uiColor:UIColor {$0.userInterfaceStyle == .dark ? UIColor(hex:0x48262B) : UIColor(hex:0xFEF0F0)})
   static let mark = Color(red: 0.21, green: 0.35, blue: 0.87)
 }
 extension UIColor {
