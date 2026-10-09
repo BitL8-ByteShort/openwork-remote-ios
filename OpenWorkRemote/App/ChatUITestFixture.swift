@@ -4,12 +4,14 @@ import OpenWorkRemoteCore
 
 // Isolated synthetic data only; native tests never load or change a real pairing.
 @MainActor func chatUITestFixture(slowMessages: Bool, failRename: Bool, largeConversation: Bool = false,
-  burstEvents: Bool = false, offlineReconnect: Bool = false) -> AppModel {
+  burstEvents: Bool = false, offlineReconnect: Bool = false, pendingQuestion: Bool = false,
+  staleQuestion: Bool = false, unsupportedQuestion: Bool = false, slowQuestions: Bool = false) -> AppModel {
   let folder = FileManager.default.temporaryDirectory.appending(path: "chat-ui-" + UUID().uuidString)
   return AppModel(pairingPersistence: PairingPersistence(load: {
     StoredPairing(origin: "https://fixture.example.test", token: "synthetic", hostId: "fixture-host")
   }, save: { _ in }, remove: {}), transport: ChatUITestTransport(slowMessages: slowMessages, failRename: failRename,
-    largeConversation: largeConversation, burstEvents: burstEvents, offlineReconnect: offlineReconnect),
+    largeConversation: largeConversation, burstEvents: burstEvents, offlineReconnect: offlineReconnect,
+    pendingQuestion: pendingQuestion, staleQuestion: staleQuestion, unsupportedQuestion: unsupportedQuestion, slowQuestions: slowQuestions),
     draftStore: try? DraftStore(directory: folder))
 }
 private actor ChatUITestTransport: HTTPTransport {
@@ -18,11 +20,20 @@ private actor ChatUITestTransport: HTTPTransport {
   let largeConversation: Bool
   let burstEvents: Bool
   let offlineReconnect: Bool
+  let questionsEnabled: Bool
+  let staleQuestion: Bool
+  let unsupportedQuestion: Bool
+  let slowQuestions: Bool
+  var questionPending: Bool
   var connections = 0
   var title = "Sample chat"
-  init(slowMessages: Bool, failRename: Bool, largeConversation: Bool, burstEvents: Bool, offlineReconnect: Bool) {
+  init(slowMessages: Bool, failRename: Bool, largeConversation: Bool, burstEvents: Bool, offlineReconnect: Bool,
+    pendingQuestion: Bool, staleQuestion: Bool, unsupportedQuestion: Bool, slowQuestions: Bool) {
     self.slowMessages = slowMessages; self.failRename = failRename
     self.largeConversation = largeConversation; self.burstEvents = burstEvents; self.offlineReconnect = offlineReconnect
+    self.questionsEnabled = pendingQuestion; self.questionPending = pendingQuestion
+    self.staleQuestion = staleQuestion; self.unsupportedQuestion = unsupportedQuestion
+    self.slowQuestions = slowQuestions
   }
   func events(for request: URLRequest) async throws -> AsyncThrowingStream<SSEFrame, any Error> {
     connections += 1
@@ -44,6 +55,28 @@ private actor ChatUITestTransport: HTTPTransport {
   }
   func data(for request: URLRequest) async throws -> (Data, Int) {
     let path = request.url!.path
+    if path.contains("/questions/frm_test/") {
+      if staleQuestion { return (Data("{}".utf8), 409) }
+      let body = try JSONDecoder().decode(QuestionSubmission.self, from: request.httpBody!)
+      if path.hasSuffix("/reply"), body.answers != ["layout": .string("detailed"), "name": .string("Fixture project")] {
+        return (Data("{}".utf8), 400)
+      }
+      questionPending = false
+      return try response(["requestId": body.requestId, "resourceId": "frm_test", "state": "accepted", "observedAt": "now"])
+    }
+    if path.hasSuffix("/questions") {
+      if slowQuestions { try await Task.sleep(for: .seconds(30)) }
+      let fields: [[String: Any]] = [
+        ["key": "layout", "kind": "singleChoice", "title": "Layout", "prompt": "Which approach would you prefer?", "custom": false,
+         "options": [["value": "simple", "label": "Same label", "description": "Simple and focused"],
+                     ["value": "detailed", "label": "Same label", "description": "More detail"]]],
+        ["key": "name", "kind": "text", "title": "Project name", "prompt": "What should it be called?", "custom": true, "options": []],
+      ]
+      let question: [String: Any] = ["id": "frm_test", "sessionId": "ses_test", "revision": String(repeating: "a", count: 64),
+        "supported": !unsupportedQuestion, "reason": unsupportedQuestion ? "Complete this request in OpenWork on your computer." : NSNull(),
+        "fields": unsupportedQuestion ? [] : fields]
+      return try response(questionPending ? [question] : [])
+    }
     if path.hasSuffix("/rename") {
       if failRename { return (Data("{}".utf8), 503) }
       let body = try JSONDecoder().decode([String: String].self, from: request.httpBody!)
@@ -51,13 +84,15 @@ private actor ChatUITestTransport: HTTPTransport {
       return try response(["requestId": body["requestId"]!, "resourceId": "ses_test", "state": "accepted", "observedAt": "now"])
     }
     if path.hasSuffix("/host") {
-      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": false, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "maxPromptBytes": 32768, "protocolVersion": 1]])
+      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": false, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "maxPromptBytes": 32768, "protocolVersion": 1]])
     }
     if path.hasSuffix("/workspaces") { return try response([["id": "ws_test", "name": "Test project"]]) }
     let session: [String: Any] = ["id": "ses_test", "workspaceId": "ws_test", "title": title, "updatedAt": "2026-10-08", "status": "idle"]
     if path.hasSuffix("/sessions") { return try response([session]) }
     if path.hasSuffix("/messages") {
       if slowMessages { try await Task.sleep(for: .seconds(30)) }
+      if slowQuestions { return try response([["id": "msg_ready", "sessionId": "ses_test", "role": "assistant",
+        "createdAt": "2026-10-08T12:00:00Z", "blocks": [["kind": "text", "text": "Chat is ready."]], "state": "complete"]]) }
       let messages: [[String: Any]] = largeConversation ? (0..<500).map { i in
         let blocks: [[String: Any]] = i % 10 == 0
           ? [["kind": "tool", "name": "synthetic_check", "status": "completed", "summary": "Synthetic activity"]]

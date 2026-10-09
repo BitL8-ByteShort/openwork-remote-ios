@@ -177,6 +177,36 @@ public actor BridgeClient {
   public func approvals(_ wid: String, _ sid: String) async throws -> [Approval] {
     try await decode(Envelope<[Approval]>.self, path: (try base(wid, sid)) + "/approvals").data
   }
+  public func questions(_ wid: String, _ sid: String) async throws -> [QuestionRequest] {
+    let questions = try await decode(Envelope<[QuestionRequest]>.self,
+      path: (try base(wid, sid)) + "/questions").data
+    guard questions.count <= 32, Set(questions.map(\.id)).count == questions.count else {
+      throw RemoteError.invalidResponse
+    }
+    for question in questions { try question.validateShape(sessionId: sid) }
+    return questions
+  }
+  public func replyQuestion(_ wid: String, _ sid: String, question: QuestionRequest,
+    answers: QuestionAnswers, requestId: UUID) async throws -> MutationReceipt {
+    try question.validateShape(sessionId: sid)
+    try question.validate(answers: answers)
+    return try await settleQuestion(wid, sid, question: question, answers: answers, requestId: requestId, action: "reply")
+  }
+  public func dismissQuestion(_ wid: String, _ sid: String, question: QuestionRequest,
+    requestId: UUID) async throws -> MutationReceipt {
+    try question.validateShape(sessionId: sid)
+    guard question.supported else { throw RemoteError.incompatible }
+    return try await settleQuestion(wid, sid, question: question, answers: nil, requestId: requestId, action: "dismiss")
+  }
+  private func settleQuestion(_ wid: String, _ sid: String, question: QuestionRequest,
+    answers: QuestionAnswers?, requestId: UUID, action: String) async throws -> MutationReceipt {
+    let receipt = try await decode(Envelope<MutationReceipt>.self,
+      path: (try base(wid, sid)) + "/questions/" + (try id(question.id)) + "/" + action,
+      method: "POST", body: JSONEncoder().encode(QuestionSubmission(requestId: requestId, revision: question.revision, answers: answers))).data
+    guard receipt.requestId == requestId.uuidString.lowercased(), receipt.resourceId == question.id,
+      ["accepted", "confirmed", "outcome_unknown"].contains(receipt.state) else { throw RemoteError.invalidResponse }
+    return receipt
+  }
   public func send(_ intent: SendIntent) async throws -> MutationReceipt {
     let body = try JSONEncoder().encode([
       "requestId": intent.requestId.uuidString.lowercased(), "text": intent.text,

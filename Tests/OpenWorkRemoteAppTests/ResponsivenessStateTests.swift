@@ -6,6 +6,20 @@ import OpenWorkRemoteCore
 private actor SelectionTransport: HTTPTransport {
   var pending: [String: CheckedContinuation<(Data, Int), any Error>] = [:]
   var pendingAccess: CheckedContinuation<(Data, Int), any Error>?
+  var pendingQuestions: CheckedContinuation<(Data, Int), any Error>?
+  var questionsEnabled = false
+  func enableQuestions() { questionsEnabled = true }
+  func waitForQuestions() async throws {
+    for _ in 0..<100 {
+      if pendingQuestions != nil { return }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    throw RemoteError.unavailable
+  }
+  func completeQuestions() {
+    pendingQuestions?.resume(returning: (Data("{\"data\":[],\"cursor\":null}".utf8), 200))
+    pendingQuestions = nil
+  }
   func waitForAccess() async throws {
     for _ in 0..<100 {
       if pendingAccess != nil { return }
@@ -32,6 +46,9 @@ private actor SelectionTransport: HTTPTransport {
   }
   func data(for request: URLRequest) async throws -> (Data, Int) {
     let path = request.url!.path
+    if path.hasSuffix("/questions") {
+      return try await withCheckedThrowingContinuation { pendingQuestions = $0 }
+    }
     if path.hasSuffix("/device/access") {
       return try await withCheckedThrowingContinuation { pendingAccess = $0 }
     }
@@ -40,7 +57,7 @@ private actor SelectionTransport: HTTPTransport {
       return try await withCheckedThrowingContinuation { pending[id] = $0 }
     }
     let object: Any
-    let host = ["hostId":"fixture", "displayName":"Synthetic", "platform":"linux", "architecture":"x64", "runtimeKind":"desktop", "protocolVersion":1, "upstreamVersion":"0.18.57", "compatibility":"supported", "capabilities":["readSessions":true,"readMessages":true,"readStatus":true,"events":true,"createSession":false,"sendText":false,"stop":false,"readApprovals":true,"replyApproval":false,"maxPromptBytes":32768,"protocolVersion":1]] as [String: Any]
+    let host = ["hostId":"fixture", "displayName":"Synthetic", "platform":"linux", "architecture":"x64", "runtimeKind":"desktop", "protocolVersion":1, "upstreamVersion":"0.18.57", "compatibility":"supported", "capabilities":["readSessions":true,"readMessages":true,"readStatus":true,"events":true,"createSession":false,"sendText":false,"stop":false,"readApprovals":true,"replyApproval":false,"questions":questionsEnabled,"maxPromptBytes":32768,"protocolVersion":1]] as [String: Any]
     if path.hasSuffix("/host") { object = host }
     else if path.hasSuffix("/pairings/claim") { object = ["claimId":"synthetic-claim","pollToken":"synthetic-poll","expiresAt":"later"] }
     else if path.hasSuffix("/pairings/poll") { object = ["state":"approved","credential":"new-synthetic-credential","host":host,"allowedWorkspaces":["workspace"]] as [String: Any] }
@@ -120,5 +137,20 @@ private actor SelectionTransport: HTTPTransport {
       Issue.record("A reply from the previous pairing must not become current grants")
     } catch { #expect(error as? RemoteError == .cancelled) }
     #expect(model.connection == .ready)
+  }
+  @Test func slowQuestionReadCannotHoldChatOpening() async throws {
+    let transport = SelectionTransport()
+    await transport.enableQuestions()
+    let model = try await connected(transport)
+    defer { model.sceneActive(false) }
+    let selection = Task { await model.select(try! session("question-chat")) }
+    try await transport.waitForPending("question-chat")
+    await transport.complete("question-chat", status: 200)
+    try await transport.waitForQuestions()
+    for _ in 0..<5 { await Task.yield() }
+    let chatStillLoading = model.loading
+    await transport.completeQuestions()
+    await selection.value
+    #expect(!chatStillLoading)
   }
 }
