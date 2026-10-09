@@ -3,20 +3,44 @@ import Foundation
 import OpenWorkRemoteCore
 
 // Isolated synthetic data only; native tests never load or change a real pairing.
-@MainActor func chatUITestFixture(slowMessages: Bool, failRename: Bool) -> AppModel {
+@MainActor func chatUITestFixture(slowMessages: Bool, failRename: Bool, largeConversation: Bool = false,
+  burstEvents: Bool = false, offlineReconnect: Bool = false) -> AppModel {
   let folder = FileManager.default.temporaryDirectory.appending(path: "chat-ui-" + UUID().uuidString)
   return AppModel(pairingPersistence: PairingPersistence(load: {
     StoredPairing(origin: "https://fixture.example.test", token: "synthetic", hostId: "fixture-host")
-  }, save: { _ in }, remove: {}), transport: ChatUITestTransport(slowMessages: slowMessages, failRename: failRename),
+  }, save: { _ in }, remove: {}), transport: ChatUITestTransport(slowMessages: slowMessages, failRename: failRename,
+    largeConversation: largeConversation, burstEvents: burstEvents, offlineReconnect: offlineReconnect),
     draftStore: try? DraftStore(directory: folder))
 }
 private actor ChatUITestTransport: HTTPTransport {
   let slowMessages: Bool
   let failRename: Bool
+  let largeConversation: Bool
+  let burstEvents: Bool
+  let offlineReconnect: Bool
+  var connections = 0
   var title = "Sample chat"
-  init(slowMessages: Bool, failRename: Bool) { self.slowMessages = slowMessages; self.failRename = failRename }
+  init(slowMessages: Bool, failRename: Bool, largeConversation: Bool, burstEvents: Bool, offlineReconnect: Bool) {
+    self.slowMessages = slowMessages; self.failRename = failRename
+    self.largeConversation = largeConversation; self.burstEvents = burstEvents; self.offlineReconnect = offlineReconnect
+  }
   func events(for request: URLRequest) async throws -> AsyncThrowingStream<SSEFrame, any Error> {
-    AsyncThrowingStream { _ in }
+    connections += 1
+    if offlineReconnect && connections <= 2 { throw RemoteError.unavailable }
+    let burst = burstEvents
+    return AsyncThrowingStream { continuation in
+      guard burst else { return }
+      let task = Task {
+        for i in 0..<6_000 {
+          do { try await Task.sleep(for: .milliseconds(50)); try Task.checkCancellation() }
+          catch { break }
+          continuation.yield(SSEFrame(event: "change", id: "synthetic-\(i)",
+            data: "{\"kind\":\"message\",\"workspaceId\":\"ws_test\",\"sessionId\":\"ses_test\"}"))
+        }
+        continuation.finish()
+      }
+      continuation.onTermination = { _ in task.cancel() }
+    }
   }
   func data(for request: URLRequest) async throws -> (Data, Int) {
     let path = request.url!.path
@@ -34,7 +58,15 @@ private actor ChatUITestTransport: HTTPTransport {
     if path.hasSuffix("/sessions") { return try response([session]) }
     if path.hasSuffix("/messages") {
       if slowMessages { try await Task.sleep(for: .seconds(30)) }
-      return try response([])
+      let messages: [[String: Any]] = largeConversation ? (0..<500).map { i in
+        let blocks: [[String: Any]] = i % 10 == 0
+          ? [["kind": "tool", "name": "synthetic_check", "status": "completed", "summary": "Synthetic activity"]]
+          : [["kind": "text", "text": "Large conversation fixture \(i)"],
+             ["kind": "text", "text": String(repeating: "A synthetic **Markdown** paragraph with a [sample link](https://example.test).\n\n", count: 12) + "```swift\nlet fixture = true\n```"]]
+        return ["id": String(format: "msg_%04d", i), "sessionId": "ses_test", "role": "assistant",
+          "createdAt": "2026-10-08T12:00:00Z", "blocks": blocks, "state": "complete"]
+      } : []
+      return try response(messages)
     }
     if path.hasSuffix("/status") { return try response(["phase": "idle", "observedAt": "now"]) }
     if path.hasSuffix("/approvals") { return try response([]) }

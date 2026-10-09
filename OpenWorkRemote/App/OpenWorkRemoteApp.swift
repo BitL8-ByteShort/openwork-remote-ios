@@ -9,7 +9,10 @@ import SwiftUI
       if ProcessInfo.processInfo.arguments.contains("-ui-testing-chats") {
         _model = State(initialValue: chatUITestFixture(
           slowMessages: ProcessInfo.processInfo.arguments.contains("-slow-messages"),
-          failRename: ProcessInfo.processInfo.arguments.contains("-fail-rename")))
+          failRename: ProcessInfo.processInfo.arguments.contains("-fail-rename"),
+          largeConversation: ProcessInfo.processInfo.arguments.contains("-large-conversation"),
+          burstEvents: ProcessInfo.processInfo.arguments.contains("-burst-events"),
+          offlineReconnect: ProcessInfo.processInfo.arguments.contains("-offline-reconnect")))
         return
       }
       if ProcessInfo.processInfo.arguments.contains("-ui-testing-revoked") {
@@ -24,7 +27,10 @@ import SwiftUI
     WindowGroup {
       RootView().environment(model).preferredColorScheme(
         appearance == "dark" ? .dark : appearance == "light" ? .light : nil
-      ).tint(Theme.accent).task { await model.start() }.onChange(of: phase) { _, p in
+      ).tint(Theme.accent).task {
+        InteractionMetrics.startSampling()
+        await model.start()
+      }.onChange(of: phase) { _, p in
         model.sceneActive(p == .active)
       }
     }

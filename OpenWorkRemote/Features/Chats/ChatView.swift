@@ -66,7 +66,7 @@ struct ChatView: View {
   private var header: some View {
     HStack {
       Button {
-        sheet = .chats
+        InteractionMetrics.measure("Open history handler") { sheet = .chats }
       } label: {
         Image(systemName: "line.3.horizontal").font(.title3).frame(width: 44, height: 44)
       }.accessibilityLabel("Open chat history")

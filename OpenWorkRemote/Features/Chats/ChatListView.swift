@@ -40,7 +40,7 @@ struct ChatListView: View {
           }
           ForEach(results) { s in
             Button {
-              dismiss()
+              InteractionMetrics.measure("Select chat handler") { dismiss() }
               Task { await model.select(s) }
             } label: {
               VStack(alignment: .leading, spacing: 6) {
@@ -67,11 +67,13 @@ struct ChatListView: View {
         text: $search, prompt: "Search chats"
       ).navigationTitle("Your chats").toolbar {
         ToolbarItem(placement: .bottomBar) {
-          Button { showingSettings = true } label: {
+          Button { InteractionMetrics.measure("Open settings handler") { showingSettings = true } } label: {
             Label("Settings", systemImage: "gearshape")
           }
         }
-        ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done") { InteractionMetrics.measure("Dismiss history handler") { dismiss() } }
+        }
         ToolbarItem(placement: .primaryAction) {
           Button {
             Task {
