@@ -10,6 +10,7 @@ struct ChatView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var sheet: ChatSheet?
   @State private var approval: Approval?
+  @State private var question: QuestionPresentation?
   @State private var nearBottom = true
   @State private var newReplies = false
   @AppStorage("compactToolActivity") private var compactToolActivity = true
@@ -43,6 +44,18 @@ struct ChatView: View {
         ApprovalBanner(approval: first) { approval = first }.padding(.horizontal, 24).padding(
           .top, 12)
       }
+      if let first = model.questions.pending.first, let context = model.questionContext {
+        QuestionBanner(question: first) { question = QuestionPresentation(question: first, context: context) }
+          .padding(.horizontal, 24).padding(.top, 12)
+      }
+      if model.questions.hasUncertainReply {
+        Label("A question answer is unconfirmed. Check this chat on your computer.", systemImage: "exclamationmark.circle")
+          .font(.callout).foregroundStyle(Theme.muted).padding(.horizontal, 24).padding(.vertical, 12)
+      }
+      if model.questions.readFailed {
+        Label("Questions could not be checked. Reconnect or continue on your computer.", systemImage: "questionmark.bubble")
+          .font(.callout).foregroundStyle(Theme.muted).padding(.horizontal, 24).padding(.vertical, 12)
+      }
       if model.status?.phase == "error" {
         Label("The model could not finish. Check its setup in OpenWork on your computer.", systemImage: "exclamationmark.circle")
           .font(.callout).foregroundStyle(Theme.muted).padding(.horizontal, 24).padding(.vertical, 12)
@@ -61,7 +74,8 @@ struct ChatView: View {
       case .settings: ConnectionView()
       case .model: ModelSettingsView()
       }
-    }.sheet(item: $approval) { ApprovalSheet(approval: $0) }.toolbar(.hidden, for: .navigationBar)
+    }.sheet(item: $approval) { ApprovalSheet(approval: $0) }
+      .sheet(item: $question) { QuestionSheet(presentation: $0) }.toolbar(.hidden, for: .navigationBar)
   }
   private var header: some View {
     HStack {

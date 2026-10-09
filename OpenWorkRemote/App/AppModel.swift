@@ -10,6 +10,7 @@ import OpenWorkRemoteCore
   var sessions: [ChatSession] = []
   var messages: [ChatMessage] = []
   var approvals: [Approval] = []
+  let questions: QuestionStore
   var status: SessionStatus?
   private var directory = PagedSnapshot<ChatSession>()
   private var history = PagedSnapshot<ChatMessage>()
@@ -61,6 +62,7 @@ import OpenWorkRemoteCore
     self.pairingPersistence = pairingPersistence
     self.transport = transport
     self.draftStore = draftStore
+    self.questions = QuestionStore(directory: draftStore?.directory)
   }
   func start() async {
     #if DEBUG
@@ -69,6 +71,8 @@ import OpenWorkRemoteCore
     do {
       if draftStore == nil { draftStore = try DraftStore() }
       disk = try await draftStore!.load()
+      do { try await questions.restore() }
+      catch { notice = "Your saved question drafts could not be opened. Question replies are paused; unlock the phone and restart the app." }
       storedPairing = try pairingPersistence.load()
       if let p = storedPairing {
         client = try BridgeClient(origin: PairingValidation.origin(p.origin), token: p.token, transport: transport)
@@ -104,6 +108,7 @@ import OpenWorkRemoteCore
     refreshID = nil
     let generation = UUID()
     self.generation = generation
+    questions.activate(nil)
     loading = false
     connection = .connecting
     connectionTask = Task {
@@ -142,6 +147,7 @@ import OpenWorkRemoteCore
             "Connection failed: \(diagnostic.domain,privacy:.public) code \(diagnostic.code,privacy:.public)")
           if case RemoteError.unauthorized = error {
             connection = .revoked
+            questions.activate(nil)
             self.generation = UUID()
             refreshTask?.cancel()
             refreshTask = nil
@@ -209,6 +215,7 @@ import OpenWorkRemoteCore
       selectedWorkspace = w.first?.id
     }
     if previousWorkspace != selectedWorkspace {
+      questions.activate(nil)
       directory = PagedSnapshot()
       history = PagedSnapshot()
       sessions = []
@@ -221,6 +228,7 @@ import OpenWorkRemoteCore
       }
     }
     guard let wid = selectedWorkspace else {
+      questions.activate(nil)
       sessions = []
       messages = []
       approvals = []
@@ -246,6 +254,7 @@ import OpenWorkRemoteCore
         do { session = try await client.session(wid, sid) } catch RemoteError.notFound {
           guard current == generation, selectedWorkspace == wid else { return }
           selectedSession = nil
+          questions.activate(nil)
           disk.conversation.deselect()
           history = PagedSnapshot()
           messages = []
@@ -262,6 +271,7 @@ import OpenWorkRemoteCore
       try await loadSelected()
     } else {
       selectedSession = nil
+      questions.activate(nil)
       messages = []
       status = nil
       approvals = []
@@ -272,6 +282,7 @@ import OpenWorkRemoteCore
     let current = generation
     let selection = UUID()
     selectionID = selection
+    questions.activate(nil)
     saveDrafts()
     selectedWorkspace = session.workspaceId
     selectedSession = session
@@ -305,6 +316,7 @@ import OpenWorkRemoteCore
       guard current == generation, selection == selectionID, self.selectedSession?.id == session.id,
         self.selectedWorkspace == session.workspaceId else { return }
       self.selectedSession = nil
+      questions.activate(nil)
       disk.conversation.deselect()
       history = PagedSnapshot()
       messages = []; approvals = []; status = nil
@@ -323,9 +335,13 @@ import OpenWorkRemoteCore
       approvals = pending
       if ["idle", "error"].contains(state.phase) { stopRequested = false }
     }
+    if let context = questionContext, host?.capabilities.questions == true {
+      questions.scheduleRead(client: client, context: context)
+    } else { questions.activate(nil) }
   }
   func changeWorkspace(_ workspace: Workspace) async {
     selectionID = UUID()
+    questions.activate(nil)
     loading = false
     saveDrafts()
     selectedWorkspace = workspace.id
@@ -717,6 +733,7 @@ import OpenWorkRemoteCore
     onboardingStep = 2
   }
   private func clearLocalPairing() {
+    questions.activate(nil)
     connectionTask?.cancel()
     pairingTask?.cancel()
     refreshTask?.cancel()
@@ -759,12 +776,33 @@ import OpenWorkRemoteCore
       refreshTask = nil
       refreshID = nil
       generation = UUID()
+      questions.activate(nil)
       if connection != .revoked { connection = client == nil ? .unpaired : .connecting }
     }
   }
 }
 
 extension AppModel {
+  var questionContext: QuestionContext? {
+    guard let host, let session = selectedSession else { return nil }
+    return QuestionContext(hostId: host.hostId, workspaceId: session.workspaceId,
+      sessionId: session.id, generation: generation, selection: selectionID)
+  }
+  func refreshQuestions() async {
+    guard let client, host?.capabilities.questions == true, let context = questionContext else {
+      questions.activate(nil)
+      return
+    }
+    questions.activate(context)
+    await questions.refresh(client: client, context: context)
+  }
+  func answerQuestion(_ question: QuestionRequest, context: QuestionContext, dismiss: Bool = false) async {
+    guard connection == .ready, host?.capabilities.questions == true,
+      context == questionContext, let client else { return }
+    await questions.submit(question, client: client, context: context, dismiss: dismiss)
+    guard context == questionContext else { return }
+    await refreshQuestions()
+  }
   var controlsScope: String {
     [host?.hostId ?? "", selectedWorkspace ?? "", selectedSession?.id ?? ""].joined(separator: "/")
   }

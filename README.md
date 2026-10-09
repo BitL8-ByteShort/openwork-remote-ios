@@ -69,6 +69,12 @@ If you revoke a phone, it shows **Pair again**. Create a new code on the compute
 
 Approvals that the phone cannot safely handle ask you to continue on the computer. Losing a network connection doesn't automatically resubmit a message whose result is uncertain.
 
+### Answer questions
+
+On a host advertising question support, a pending question appears above the conversation, outside compact Activity. Choose answers or enter text, then tap **Send answers**. **Cancel** closes the sheet and keeps your draft. **Dismiss question** explicitly cancels the request on the computer. Unknown form types require the computer.
+
+Question drafts and submission IDs are stored in a protected local file, scoped to the computer, project and chat. A changed request requires fresh review. An unconfirmed response is never sent again automatically; check the chat on the computer. Older hosts keep their existing chat functions without question replies.
+
 ## Privacy and security
 
 Connection credentials are stored in the iOS Keychain. The app doesn't include analytics or crash-reporting services. Prompts still go to whichever model provider your OpenWork host uses, under that provider's terms.

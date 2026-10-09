@@ -7,6 +7,7 @@ struct DiskState: Codable, Sendable {
   var mutations = MutationState()
 }
 actor DraftStore {
+  nonisolated let directory: URL
   private let snapshots: RevisionedSnapshotStore<DiskState>
   init(directory: URL? = nil) throws {
     let root = try directory ?? FileManager.default.url(
@@ -15,6 +16,7 @@ actor DraftStore {
     try FileManager.default.createDirectory(
       at: root, withIntermediateDirectories: true,
       attributes: [.protectionKey: FileProtectionType.complete, .posixPermissions: 0o700])
+    self.directory = root
     snapshots = RevisionedSnapshotStore(url: root.appending(path: "drafts.json"))
   }
   func load() async throws -> DiskState {
