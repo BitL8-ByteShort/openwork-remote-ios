@@ -7,6 +7,7 @@ struct ChatListView: View {
   @State private var search = ""
   @State private var showingSettings = false
   @State private var renaming: ChatSession?
+  @State private var chatAction: ChatActionRequest?
   @State private var naming: GroupNameRequest?
   @State private var moving: MoveChatRequest?
   @State private var managingGroups = false
@@ -113,6 +114,7 @@ struct ChatListView: View {
         }
       }.sheet(isPresented: $showingSettings) { ConnectionView() }
         .sheet(item: $renaming) { RenameChatView(session: $0) }
+        .sheet(item: $chatAction) { request in ChatActionView(request: request, onComplete: { if request.action != .delete { dismiss() } }) }
         .sheet(item: $naming) { GroupNameEditor(group: $0.group, expectedRevision: $0.revision, expectedContext: $0.context) }
         .sheet(item: $moving) { MoveChatView(session: $0.session, expectedRevision: $0.revision, expectedContext: $0.context) }
         .sheet(isPresented: $managingGroups) { GroupEditor() }
@@ -146,9 +148,17 @@ struct ChatListView: View {
       Button("Rename", systemImage: "pencil") { renaming = session }
         .disabled(model.connection != .ready || model.host?.capabilities.renameSession != true)
       Button("Move to group", systemImage: "folder") { moveChat(session) }.disabled(!model.groups.canEdit)
+      Button("Continue in a new chat", systemImage: "arrow.triangle.branch") { action(session, .fork(beforeMessageId:nil)) }.disabled(model.connection != .ready || model.host?.capabilities.forkSession != true)
+      Button("Delete chat", systemImage: "trash", role: .destructive) { action(session, .delete) }.disabled(model.connection != .ready || model.host?.capabilities.deleteSession != true)
     }.accessibilityAction(named: "Rename") {
       if model.connection == .ready, model.host?.capabilities.renameSession == true { renaming = session }
     }.accessibilityAction(named: "Move to group") { moveChat(session) }
+      .accessibilityAction(named: "Continue in a new chat") { action(session,.fork(beforeMessageId:nil)) }
+      .accessibilityAction(named: "Delete chat") { action(session,.delete) }
+  }
+  private func action(_ session:ChatSession,_ action:SessionAction) {
+    guard model.connection == .ready,model.host?.capabilities.forkSession == true,model.host?.capabilities.deleteSession == true,let context=model.actionContext(for:session) else{return}
+    chatAction=ChatActionRequest(session:session,action:action,context:context)
   }
   private func moveChat(_ session: ChatSession) {
     guard model.groups.canEdit else { return }

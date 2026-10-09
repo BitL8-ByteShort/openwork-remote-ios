@@ -58,6 +58,7 @@ public struct PagedSnapshot<Row: Identifiable & Sendable>: Sendable where Row.ID
       initialized = true
     }
   }
+  public mutating func remove(id: String) { rows.removeAll { $0.id == id } }
   public mutating func older(_ rows: [Row], cursor: String?) {
     let ids = Set(self.rows.map(\.id))
     self.rows += rows.filter { !ids.contains($0.id) }

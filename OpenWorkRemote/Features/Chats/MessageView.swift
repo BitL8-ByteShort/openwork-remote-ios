@@ -3,6 +3,8 @@ import SwiftUI
 
 struct MessageView: View {
   let message: ChatMessage
+  @Environment(AppModel.self) private var model
+  @State private var chatAction:ChatActionRequest?
   @State private var copied = false
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
@@ -56,6 +58,16 @@ struct MessageView: View {
         }
       }
     }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
+      .contextMenu {
+        Button("Fork before this message",systemImage:"arrow.triangle.branch") { forkBefore() }
+          .disabled(model.connection != .ready || model.host?.capabilities.forkSession != true || message.state == "streaming")
+      }.accessibilityAction(named:"Fork before this message") { forkBefore() }
+      .sheet(item:$chatAction) { ChatActionView(request:$0) }
+  }
+  private func forkBefore() {
+    guard model.connection == .ready,model.host?.capabilities.forkSession == true,let session=model.selectedSession,let context=model.actionContext(for:session),message.state != "streaming" else{return}
+    chatAction=ChatActionRequest(session:session,action:.fork(beforeMessageId:message.id),context:context)
+
   }
 }
 struct ToolActivityView: View {

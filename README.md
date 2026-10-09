@@ -95,3 +95,5 @@ The source and original artwork in this repository are [MIT licensed](LICENSE). 
 The source candidate adds [read-only Workspace changes](docs/CHANGES.md). It includes outside-chat edits, requires host file access and provides no file-changing actions. This feature is not in TestFlight build 5.
 
 The source candidate also adds [workspace chat groups](docs/GROUPS.md), including explicit Move chat and group removal that keeps chats. Groups are not in TestFlight build 5.
+
+Chat copy/delete behavior, recovery and limits: [Chat actions](docs/chat-actions.md).

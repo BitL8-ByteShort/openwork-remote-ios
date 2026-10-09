@@ -72,11 +72,13 @@ struct BrandMark: View {
   }
 }
 struct PrimaryButtonStyle: ButtonStyle {
+  var fill: Color = Theme.accent
+  var ink: Color = Theme.onAccent
   @Environment(\.isEnabled) private var isEnabled
   func makeBody(configuration: Configuration) -> some View {
     configuration.label.font(.headline).frame(maxWidth: .infinity).frame(minHeight: 54)
-      .foregroundStyle(Theme.onAccent).background(
-        Theme.accent, in: RoundedRectangle(cornerRadius: 18)
+      .foregroundStyle(ink).background(
+        fill, in: RoundedRectangle(cornerRadius: 18)
       ).opacity(!isEnabled ? 0.45 : configuration.isPressed ? 0.75 : 1)
   }
 }

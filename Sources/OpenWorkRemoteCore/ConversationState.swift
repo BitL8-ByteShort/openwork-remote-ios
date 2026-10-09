@@ -50,6 +50,12 @@ public struct ConversationState: Codable, Sendable {
   }
   public func pendingRequestId(for key: DraftKey) -> UUID? { pending[key] }
   public mutating func deselect() { selected = nil }
+  public mutating func removeConfirmedDeletedChat(_ key: DraftKey) {
+    drafts.removeValue(forKey: key)
+    pending.removeValue(forKey: key)
+    uncertain.remove(key)
+    if selected == key { selected = nil }
+  }
   public mutating func checkedConversation(_ key: DraftKey) {
     guard uncertain.contains(key) else { return }
     uncertain.remove(key)
