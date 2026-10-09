@@ -12,6 +12,7 @@ import OpenWorkRemoteCore
   var approvals: [Approval] = []
   let questions: QuestionStore
   let attachments: AttachmentStore
+  let artifacts: ArtifactStore
   var status: SessionStatus?
   private var directory = PagedSnapshot<ChatSession>()
   private var history = PagedSnapshot<ChatMessage>()
@@ -67,6 +68,7 @@ import OpenWorkRemoteCore
     self.draftStore = draftStore
     self.questions = QuestionStore(directory: draftStore?.directory)
     self.attachments = AttachmentStore(directory: draftStore?.directory)
+    self.artifacts = ArtifactStore(directory:draftStore?.directory)
   }
   func start() async {
     #if DEBUG
@@ -79,6 +81,8 @@ import OpenWorkRemoteCore
       catch { notice = "Your saved question drafts could not be opened. Question replies are paused; unlock the phone and restart the app." }
       do { try await attachments.restore() }
       catch { notice = "Your selected files could not be opened. Attachments are paused; unlock the phone and restart the app." }
+      do { try await artifacts.files.cleanup() }
+      catch { notice = "Temporary file previews could not be checked. Unlock the phone and reopen Files from this chat." }
       storedPairing = try pairingPersistence.load()
       if let p = storedPairing {
         client = try BridgeClient(origin: PairingValidation.origin(p.origin), token: p.token, transport: transport)
@@ -116,6 +120,7 @@ import OpenWorkRemoteCore
     self.generation = generation
     questions.activate(nil)
     attachments.activate(nil)
+    artifacts.activate(nil)
     loading = false
     connection = .connecting
     connectionTask = Task {
@@ -156,6 +161,7 @@ import OpenWorkRemoteCore
             connection = .revoked
             questions.activate(nil)
             attachments.activate(nil)
+            artifacts.activate(nil)
             self.generation = UUID()
             refreshTask?.cancel()
             refreshTask = nil
@@ -225,6 +231,7 @@ import OpenWorkRemoteCore
     if previousWorkspace != selectedWorkspace {
       questions.activate(nil)
       attachments.activate(nil)
+      artifacts.activate(nil)
       directory = PagedSnapshot()
       history = PagedSnapshot()
       sessions = []
@@ -239,6 +246,7 @@ import OpenWorkRemoteCore
     guard let wid = selectedWorkspace else {
       questions.activate(nil)
       attachments.activate(nil)
+      artifacts.activate(nil)
       sessions = []
       messages = []
       approvals = []
@@ -266,6 +274,7 @@ import OpenWorkRemoteCore
           selectedSession = nil
           questions.activate(nil)
           attachments.activate(nil)
+          artifacts.activate(nil)
           disk.conversation.deselect()
           history = PagedSnapshot()
           messages = []
@@ -284,6 +293,7 @@ import OpenWorkRemoteCore
       selectedSession = nil
       questions.activate(nil)
       attachments.activate(nil)
+      artifacts.activate(nil)
       messages = []
       status = nil
       approvals = []
@@ -296,6 +306,7 @@ import OpenWorkRemoteCore
     selectionID = selection
     questions.activate(nil)
     attachments.activate(nil)
+    artifacts.activate(nil)
     saveDrafts()
     selectedWorkspace = session.workspaceId
     selectedSession = session
@@ -331,6 +342,7 @@ import OpenWorkRemoteCore
       self.selectedSession = nil
       questions.activate(nil)
       attachments.activate(nil)
+      artifacts.activate(nil)
       disk.conversation.deselect()
       history = PagedSnapshot()
       messages = []; approvals = []; status = nil
@@ -350,6 +362,7 @@ import OpenWorkRemoteCore
       if ["idle", "error"].contains(state.phase) { stopRequested = false }
     }
     attachments.activate(attachmentContext)
+    artifacts.activate(artifactContext)
     if let context = questionContext, host?.capabilities.questions == true {
       questions.scheduleRead(client: client, context: context)
     } else { questions.activate(nil) }
@@ -358,6 +371,7 @@ import OpenWorkRemoteCore
     selectionID = UUID()
     questions.activate(nil)
     attachments.activate(nil)
+    artifacts.activate(nil)
     loading = false
     saveDrafts()
     selectedWorkspace = workspace.id
@@ -739,9 +753,15 @@ import OpenWorkRemoteCore
       return
     }
     let previousClient = client
+    let cleanup = artifacts.discardCopies()
     clearLocalPairing()
     let current = generation
     onboardingStep = 0
+    do { try await cleanup.value }
+    catch {
+      guard current == generation else { return }
+      notice = "The computer was forgotten, but temporary file copies could not be removed. Unlock the phone and try local data cleanup again."
+    }
     if let previousClient {
       do { try await previousClient.revoke() } catch {
         guard current == generation else { return }
@@ -761,6 +781,7 @@ import OpenWorkRemoteCore
   private func clearLocalPairing() {
     questions.activate(nil)
     attachments.activate(nil)
+    artifacts.activate(nil)
     connectionTask?.cancel()
     pairingTask?.cancel()
     refreshTask?.cancel()
@@ -805,6 +826,7 @@ import OpenWorkRemoteCore
       generation = UUID()
       questions.activate(nil)
       attachments.activate(nil)
+      artifacts.activate(nil)
       if connection != .revoked { connection = client == nil ? .unpaired : .connecting }
     }
   }
@@ -819,7 +841,6 @@ extension AppModel {
   func refreshQuestions() async {
     guard let client, host?.capabilities.questions == true, let context = questionContext else {
       questions.activate(nil)
-      attachments.activate(nil)
       return
     }
     questions.activate(context)
@@ -924,5 +945,27 @@ extension AppModel {
   func removeAttachment(_ id: UUID, context: AttachmentContext) async {
     guard context == attachmentContext else { return }
     await attachments.remove(id,client:connection == .ready ? client : nil,context:context)
+  }
+}
+
+
+extension AppModel {
+  var artifactContext: ArtifactContext? {
+    guard let host, let session = selectedSession else { return nil }
+    return ArtifactContext(key:DraftKey(hostId:host.hostId,workspaceId:session.workspaceId,sessionId:session.id),generation:generation,selection:selectionID)
+  }
+  var artifactRefreshID: String { attachmentRefreshID + "/" + String(host?.capabilities.artifacts == true) }
+  func refreshArtifacts() async {
+    guard let client, connection == .ready, let context = artifactContext else { artifacts.activate(nil); return }
+    artifacts.activate(context)
+    await artifacts.refresh(client:client,context:context,supported:host?.capabilities.artifacts == true)
+  }
+  func downloadArtifact(_ ref: ArtifactRef, context: ArtifactContext) async {
+    guard let client, connection == .ready, artifactContext == context else { return }
+    await artifacts.download(ref,client:client,context:context)
+  }
+  func shareArtifact(context: ArtifactContext) async -> URL? {
+    guard let client, connection == .ready, artifactContext == context else { return nil }
+    return await artifacts.prepareShare(client:client,context:context)
   }
 }

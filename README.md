@@ -18,8 +18,9 @@ This is an early source release. Desktop source builds have been tested on macOS
 
 The host decides which actions are available. OpenWork v2 doesn't expose a general approval-mode switch through this integration. Unsupported permissions stay on the computer.
 
-The current source candidate also adds questions and selected photo/PDF
-attachments. These are not in the recorded TestFlight build 0.1.0 (4).
+Internal TestFlight build **0.1.0 (5)** includes questions and selected photo/PDF
+attachments. Physical picker, cellular and recovery acceptance remain open.
+The current source candidate adds [generated-file previews and explicit sharing](docs/ARTIFACTS.md); those results features are not in build 5.
 See [attachment behavior, data handling and qualification limits](docs/ATTACHMENTS.md).
 
 ## How it connects

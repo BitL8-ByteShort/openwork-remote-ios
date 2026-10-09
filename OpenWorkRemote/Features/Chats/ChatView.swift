@@ -2,7 +2,7 @@ import OpenWorkRemoteCore
 import SwiftUI
 
 private enum ChatSheet: String, Identifiable {
-  case chats, settings, model
+  case chats, settings, model, files
   var id: String { rawValue }
 }
 struct ChatView: View {
@@ -68,11 +68,12 @@ struct ChatView: View {
         conversation
       }
       ComposerView()
-    }.background(Theme.background).foregroundStyle(Theme.ink).sheet(item: $sheet) {
+    }.background(Theme.background).foregroundStyle(Theme.ink).sheet(item: $sheet, onDismiss: { model.artifacts.closePreview() }) {
       switch $0 {
       case .chats: ChatListView()
       case .settings: ConnectionView()
       case .model: ModelSettingsView()
+      case .files: ArtifactListView()
       }
     }.sheet(item: $approval) { ApprovalSheet(approval: $0) }
       .sheet(item: $question) { QuestionSheet(presentation: $0) }.toolbar(.hidden, for: .navigationBar)
@@ -130,6 +131,7 @@ struct ChatView: View {
     ScrollViewReader { proxy in
       ZStack(alignment: .bottom) {
         ScrollView {
+          VStack(alignment:.leading,spacing:10) {
           LazyVStack(alignment: .leading, spacing: 10) {
             if model.messageCursor != nil {
               Button("Load earlier replies") { Task { await model.earlierMessages() } }.font(
@@ -143,6 +145,15 @@ struct ChatView: View {
                 MessageView(message: message).id(message.id)
               }
             }
+          }
+            // The result entry and scroll target stay realized independently
+            // of the message stack's estimated heights for long replies.
+            if model.host?.capabilities.artifacts == true {
+              Button { sheet = .files } label: {
+                Label("Files from this chat",systemImage:"doc.on.doc").font(.callout.weight(.medium))
+                  .frame(minHeight:44)
+              }.accessibilityLabel("Files from this chat")
+            }
             if model.status?.phase == "running"
               && !model.messages.contains(where: { $0.state == "streaming" })
             {
@@ -151,7 +162,8 @@ struct ChatView: View {
             }
             Color.clear.frame(height: 1).id("bottom")
           }.padding(.horizontal, 24).padding(.bottom, 16)
-        }.onScrollGeometryChange(for: Bool.self) { g in
+        }.defaultScrollAnchor(.bottom, for:.initialOffset)
+        .onScrollGeometryChange(for: Bool.self) { g in
           g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 100
         } action: { _, value in
           nearBottom = value
@@ -159,7 +171,6 @@ struct ChatView: View {
         }.onAppear {
           nearBottom = true
           newReplies = false
-          proxy.scrollTo("bottom", anchor: .bottom)
         }.onChange(of: model.messages) { _, _ in
           if nearBottom {
             if reduceMotion {
@@ -170,10 +181,6 @@ struct ChatView: View {
           } else {
             newReplies = true
           }
-        }.onChange(of: model.selectedSession?.id) { _, _ in
-          nearBottom = true
-          newReplies = false
-          proxy.scrollTo("bottom", anchor: .bottom)
         }
         if newReplies {
           Button {
@@ -187,6 +194,6 @@ struct ChatView: View {
           }.padding(.bottom, 12)
         }
       }
-    }
+    }.id(model.selectedSession?.id)
   }
 }

@@ -2,12 +2,25 @@ import Foundation
 
 public protocol HTTPTransport: Sendable {
   func data(for request: URLRequest) async throws -> (Data, Int)
+  func binary(for request: URLRequest, maximumBytes: Int) async throws -> BinaryHTTPResponse
   func events(for request: URLRequest) async throws -> AsyncThrowingStream<SSEFrame, any Error>
 }
 extension HTTPTransport {
+  public func binary(for request: URLRequest, maximumBytes: Int) async throws -> BinaryHTTPResponse { throw RemoteError.incompatible }
   public func events(for request: URLRequest) async throws -> AsyncThrowingStream<
     SSEFrame, any Error
   > { throw RemoteError.unavailable }
+}
+public struct BinaryHTTPResponse: Sendable {
+  public let data: Data
+  public let status: Int
+  public let mime: String?
+  public let contentRange: String?
+  public let entityTag: String?
+  public let length: Int?
+  public init(data: Data, status: Int, mime: String?, contentRange: String?, entityTag: String?, length: Int?) {
+    self.data = data; self.status = status; self.mime = mime; self.contentRange = contentRange; self.entityTag = entityTag; self.length = length
+  }
 }
 private final class RedirectBlocker: NSObject, URLSessionTaskDelegate, Sendable {
   func urlSession(
@@ -37,6 +50,27 @@ public actor SessionTransport: HTTPTransport {
       if data.count > 8_388_608 { throw RemoteError.oversized }
     }
     return (data, http.statusCode)
+  }
+  public func binary(for request: URLRequest, maximumBytes: Int) async throws -> BinaryHTTPResponse {
+    guard (1...1_048_576).contains(maximumBytes) else { throw RemoteError.oversized }
+    let (bytes, response) = try await session.bytes(for: request)
+    defer { bytes.task.cancel() }
+    guard let http = response as? HTTPURLResponse else { throw RemoteError.invalidResponse }
+    let length = http.value(forHTTPHeaderField: "Content-Length").flatMap(Int.init)
+    func result(_ data: Data) -> BinaryHTTPResponse {
+      BinaryHTTPResponse(data: data, status: http.statusCode, mime: http.mimeType,
+        contentRange: http.value(forHTTPHeaderField: "Content-Range"), entityTag: http.value(forHTTPHeaderField: "ETag"), length: length)
+    }
+    guard http.statusCode == 206 else { return result(Data()) }
+    guard length == maximumBytes, response.expectedContentLength == maximumBytes else { throw RemoteError.invalidResponse }
+    var data = Data(); data.reserveCapacity(maximumBytes)
+    for try await byte in bytes {
+      try Task.checkCancellation()
+      guard data.count < maximumBytes else { throw RemoteError.oversized }
+      data.append(byte)
+    }
+    guard data.count == maximumBytes else { throw RemoteError.invalidResponse }
+    return result(data)
   }
   public func events(for request: URLRequest) async throws -> AsyncThrowingStream<
     SSEFrame, any Error
@@ -116,6 +150,14 @@ public actor BridgeClient {
     case 422: throw RemoteError.incompatible
     default: throw RemoteError.unavailable
     }
+  }
+  func binary(_ path: String, range: String, mime: String, maximumBytes: Int) async throws -> BinaryHTTPResponse {
+    var req = try request(path)
+    req.setValue(range, forHTTPHeaderField: "Range"); req.setValue(mime, forHTTPHeaderField: "Accept")
+    req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+    let result = try await transport.binary(for: req, maximumBytes: maximumBytes)
+    try check(result.status)
+    return result
   }
   func decode<T: Decodable & Sendable>(
     _ type: T.Type, path: String, method: String = "GET", body: Data? = nil, contentType: String? = nil

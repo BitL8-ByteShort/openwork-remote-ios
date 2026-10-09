@@ -12,5 +12,5 @@ let package = Package(
       exclude: ["App/OpenWorkRemoteApp.swift", "App/ChatUITestFixture.swift", "Assets.xcassets", "Design", "Features",
                 "Info.plist", "PrivacyInfo.xcprivacy", "Rendering"],
       sources: ["App/AppModel.swift", "State", "Storage", "Diagnostics"]),
-    .testTarget(name: "OpenWorkRemoteAppTests", dependencies: ["OpenWorkRemoteAppState", "OpenWorkRemoteCore"]),
+    .testTarget(name: "OpenWorkRemoteAppTests", dependencies: ["OpenWorkRemoteAppState", "OpenWorkRemoteCore"],resources:[.copy("Fixtures")]),
   ], swiftLanguageModes: [.v6])

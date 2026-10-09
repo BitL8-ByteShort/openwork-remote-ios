@@ -2,10 +2,34 @@
 import Foundation
 import OpenWorkRemoteCore
 import CoreGraphics
+import CryptoKit
 import ImageIO
 import UniformTypeIdentifiers
 
 #if targetEnvironment(simulator)
+@MainActor func liveArtifactUITestFixture() -> AppModel {
+  struct Configuration: Decodable {
+    let pairing: StoredPairing
+    let workspaceId: String
+    let sessionId: String
+  }
+  let folder=FileManager.default.temporaryDirectory.appending(path:"live-artifacts-"+UUID().uuidString)
+  let isolatedStore: DraftStore
+  do { isolatedStore=try DraftStore(directory:folder) }
+  catch { preconditionFailure("The isolated result qualification store could not be created.") }
+  do {
+    guard let path=ProcessInfo.processInfo.environment["OPENWORK_ARTIFACT_UI_CONFIG"] else { throw RemoteError.unavailable }
+    let data=try Data(contentsOf:URL(fileURLWithPath:path));guard data.count <= 65536 else {throw RemoteError.oversized}
+    let config=try JSONDecoder().decode(Configuration.self,from:data)
+    _ = try PairingValidation.origin(config.pairing.origin)
+    var disk=DiskState();disk.conversation.select(DraftKey(hostId:config.pairing.hostId,workspaceId:config.workspaceId,sessionId:config.sessionId))
+    try JSONEncoder().encode(disk).write(to:folder.appending(path:"drafts.json"),options:[.atomic,.completeFileProtection])
+    return AppModel(pairingPersistence:PairingPersistence(load:{config.pairing},save:{_ in},remove:{}),draftStore:isolatedStore)
+  } catch {
+    let model=AppModel(pairingPersistence:PairingPersistence(load:{nil},save:{_ in},remove:{}),draftStore:isolatedStore)
+    model.notice="The isolated result qualification could not be opened.";return model
+  }
+}
 private struct LiveAttachmentConfiguration: Decodable {
   let pairing: StoredPairing
   let workspaceId: String
@@ -100,6 +124,9 @@ private actor ChatUITestTransport: HTTPTransport {
   var questionPending: Bool
   var connections = 0
   var title = "Sample chat"
+  let artifactsEnabled = ProcessInfo.processInfo.arguments.contains("-artifacts")
+  let artifactChanged = ProcessInfo.processInfo.arguments.contains("-artifact-changed")
+  let artifactBytes = Data("Generated result fixture.".utf8)
   let attachmentsEnabled = ProcessInfo.processInfo.arguments.contains("-attachments")
   let fileAccessDenied = ProcessInfo.processInfo.arguments.contains("-attachment-denied")
   let loseAttachmentCommit = ProcessInfo.processInfo.arguments.contains("-attachment-lost-commit")
@@ -135,6 +162,10 @@ private actor ChatUITestTransport: HTTPTransport {
   }
   func data(for request: URLRequest) async throws -> (Data, Int) {
     let path = request.url!.path
+    if path.hasSuffix("/artifacts") {
+      let hash = SHA256.hash(data:artifactBytes).map {String(format:"%02x",$0)}.joined()
+      return try response(["items":[["id":"art_"+String(repeating:"a",count:32),"sessionId":"ses_test","name":"report.txt","mime":"text/plain","bytes":artifactBytes.count,"revision":String(repeating:"b",count:64),"sha256":hash,"previewKind":"text"]],"moreOnComputer":false])
+    }
     if path.contains("/attachments") {
       if path.hasSuffix("/limits") { return try response(["maxFileBytes":20_971_520,"inputMIMEs":["image/png","application/pdf"]]) }
       let body = request.value(forHTTPHeaderField:"Content-Type") == "application/octet-stream" ? [:]
@@ -203,12 +234,18 @@ private actor ChatUITestTransport: HTTPTransport {
       return try response(["requestId": body["requestId"]!, "resourceId": "ses_test", "state": "accepted", "observedAt": "now"])
     }
     if path.hasSuffix("/host") {
-      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
+      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"artifacts":artifactsEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
     }
     if path.hasSuffix("/workspaces") { return try response([["id": "ws_test", "name": "Test project"]]) }
     let session: [String: Any] = ["id": "ses_test", "workspaceId": "ws_test", "title": title, "updatedAt": "2026-10-08", "status": "idle"]
     if path.hasSuffix("/sessions") { return try response([session]) }
     if path.hasSuffix("/messages") {
+      if ProcessInfo.processInfo.arguments.contains("-long-result-chat") {
+        return try response([
+          ["id":"long-input","sessionId":"ses_test","role":"user","createdAt":"2026-10-09T12:00:00Z","blocks":[["kind":"text","text":String(repeating:"Long synthetic input for result navigation. ",count:200)]],"state":"complete"],
+          ["id":"last-reply","sessionId":"ses_test","role":"assistant","createdAt":"2026-10-09T12:00:01Z","blocks":[["kind":"text","text":"The final result is ready."]],"state":"complete"]
+        ])
+      }
       if attachmentPromptAccepted { return try response([["id":"msg_attachment_fixture","sessionId":"ses_test","role":"assistant",
         "createdAt":"2026-10-09T12:00:00Z","blocks":[["kind":"text","text":"Fixture attachment prompt accepted once."]],"state":"complete"]]) }
       if slowMessages { try await Task.sleep(for: .seconds(30)) }
@@ -235,6 +272,10 @@ private actor ChatUITestTransport: HTTPTransport {
         "modeReason": "Approval mode changes are unavailable on this computer."])
     }
     return try response(session)
+  }
+  func binary(for request: URLRequest, maximumBytes: Int) async throws -> BinaryHTTPResponse {
+    if artifactChanged { return BinaryHTTPResponse(data:Data(),status:409,mime:nil,contentRange:nil,entityTag:nil,length:nil) }
+    return BinaryHTTPResponse(data:artifactBytes,status:206,mime:"text/plain",contentRange:"bytes 0-\(artifactBytes.count-1)/\(artifactBytes.count)",entityTag:"\"\(String(repeating: "b",count:64))\"",length:artifactBytes.count)
   }
   private func response(_ value: Any) throws -> (Data, Int) {
     (try JSONSerialization.data(withJSONObject: ["data": value, "cursor": NSNull()]), 200)

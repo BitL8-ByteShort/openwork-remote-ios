@@ -153,4 +153,17 @@ private actor SelectionTransport: HTTPTransport {
     await selection.value
     #expect(!chatStillLoading)
   }
+  @Test func unavailableQuestionsDoNotClearIndependentFileContexts() async throws {
+    let transport = SelectionTransport(), model = try await connected(transport)
+    defer { model.sceneActive(false) }
+    let selection = Task { await model.select(try! session("file-chat")) }
+    try await transport.waitForPending("file-chat")
+    await transport.complete("file-chat", status:200); await selection.value
+    let artifacts = try #require(model.artifactContext)
+    let attachments = try #require(model.attachmentContext)
+    model.artifacts.activate(artifacts); model.attachments.activate(attachments)
+    await model.refreshQuestions()
+    #expect(model.artifacts.context == artifacts)
+    #expect(model.attachments.context == attachments)
+  }
 }
