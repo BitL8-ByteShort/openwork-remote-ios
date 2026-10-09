@@ -13,6 +13,7 @@ import OpenWorkRemoteCore
   let questions: QuestionStore
   let attachments: AttachmentStore
   let artifacts: ArtifactStore
+  let changes = ChangeStore()
   var status: SessionStatus?
   private var directory = PagedSnapshot<ChatSession>()
   private var history = PagedSnapshot<ChatMessage>()
@@ -121,6 +122,7 @@ import OpenWorkRemoteCore
     questions.activate(nil)
     attachments.activate(nil)
     artifacts.activate(nil)
+    changes.activate(nil)
     loading = false
     connection = .connecting
     connectionTask = Task {
@@ -162,6 +164,7 @@ import OpenWorkRemoteCore
             questions.activate(nil)
             attachments.activate(nil)
             artifacts.activate(nil)
+            changes.activate(nil)
             self.generation = UUID()
             refreshTask?.cancel()
             refreshTask = nil
@@ -232,6 +235,7 @@ import OpenWorkRemoteCore
       questions.activate(nil)
       attachments.activate(nil)
       artifacts.activate(nil)
+      changes.activate(nil)
       directory = PagedSnapshot()
       history = PagedSnapshot()
       sessions = []
@@ -247,6 +251,7 @@ import OpenWorkRemoteCore
       questions.activate(nil)
       attachments.activate(nil)
       artifacts.activate(nil)
+      changes.activate(nil)
       sessions = []
       messages = []
       approvals = []
@@ -275,6 +280,7 @@ import OpenWorkRemoteCore
           questions.activate(nil)
           attachments.activate(nil)
           artifacts.activate(nil)
+          changes.activate(nil)
           disk.conversation.deselect()
           history = PagedSnapshot()
           messages = []
@@ -294,6 +300,7 @@ import OpenWorkRemoteCore
       questions.activate(nil)
       attachments.activate(nil)
       artifacts.activate(nil)
+      changes.activate(nil)
       messages = []
       status = nil
       approvals = []
@@ -307,6 +314,7 @@ import OpenWorkRemoteCore
     questions.activate(nil)
     attachments.activate(nil)
     artifacts.activate(nil)
+    changes.activate(nil)
     saveDrafts()
     selectedWorkspace = session.workspaceId
     selectedSession = session
@@ -343,6 +351,7 @@ import OpenWorkRemoteCore
       questions.activate(nil)
       attachments.activate(nil)
       artifacts.activate(nil)
+      changes.activate(nil)
       disk.conversation.deselect()
       history = PagedSnapshot()
       messages = []; approvals = []; status = nil
@@ -363,6 +372,7 @@ import OpenWorkRemoteCore
     }
     attachments.activate(attachmentContext)
     artifacts.activate(artifactContext)
+    changes.activate(changeContext)
     if let context = questionContext, host?.capabilities.questions == true {
       questions.scheduleRead(client: client, context: context)
     } else { questions.activate(nil) }
@@ -372,6 +382,7 @@ import OpenWorkRemoteCore
     questions.activate(nil)
     attachments.activate(nil)
     artifacts.activate(nil)
+    changes.activate(nil)
     loading = false
     saveDrafts()
     selectedWorkspace = workspace.id
@@ -782,6 +793,7 @@ import OpenWorkRemoteCore
     questions.activate(nil)
     attachments.activate(nil)
     artifacts.activate(nil)
+    changes.activate(nil)
     connectionTask?.cancel()
     pairingTask?.cancel()
     refreshTask?.cancel()
@@ -827,6 +839,7 @@ import OpenWorkRemoteCore
       questions.activate(nil)
       attachments.activate(nil)
       artifacts.activate(nil)
+      changes.activate(nil)
       if connection != .revoked { connection = client == nil ? .unpaired : .connecting }
     }
   }
@@ -967,5 +980,22 @@ extension AppModel {
   func shareArtifact(context: ArtifactContext) async -> URL? {
     guard let client, connection == .ready, artifactContext == context else { return nil }
     return await artifacts.prepareShare(client:client,context:context)
+  }
+}
+
+extension AppModel {
+  var changeContext: ChangeContext? {
+    guard let host,let session=selectedSession else {return nil}
+    return ChangeContext(key:DraftKey(hostId:host.hostId,workspaceId:session.workspaceId,sessionId:session.id),generation:generation,selection:selectionID)
+  }
+  var changeRefreshID: String {attachmentRefreshID+"/"+String(host?.capabilities.changes == true)}
+  func refreshChanges() async {
+    guard let client,connection == .ready,let context=changeContext else {changes.activate(nil);return}
+    changes.activate(context)
+    await changes.refresh(client:client,context:context,supported:host?.capabilities.changes == true)
+  }
+  func openDiff(_ ref: ChangeRef,context: ChangeContext) async {
+    guard let client,connection == .ready,changeContext == context,host?.capabilities.changes == true else {return}
+    await changes.open(ref,client:client,context:context)
   }
 }

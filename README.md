@@ -91,3 +91,5 @@ See [SECURITY.md](SECURITY.md) for the security boundary and private vulnerabili
 Issues and pull requests are welcome. Write access is controlled by the repository owner; a public repository doesn't give visitors permission to push changes. See [CONTRIBUTING.md](CONTRIBUTING.md) for checks and review expectations.
 
 The source and original artwork in this repository are [MIT licensed](LICENSE). See [NOTICE.md](NOTICE.md) for attribution and platform terms. OpenWork's maintainers aren't responsible for this iOS app.
+
+The source candidate adds [read-only Workspace changes](docs/CHANGES.md). It includes outside-chat edits, requires host file access and provides no file-changing actions. This feature is not in TestFlight build 5.

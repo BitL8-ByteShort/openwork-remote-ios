@@ -10,6 +10,7 @@ struct ModelSettingsView: View {
   @State private var loading = false
   @State private var error: String?
   @State private var files = false
+  @State private var changes = false
   private var selected: ModelOption? { settings?.models.first { $0.id == selectedID } }
   private var selection: ModelSelection? {
     selected.map { ModelSelection(providerId: $0.providerId, modelId: $0.modelId, variant: variant.isEmpty ? nil : variant) }
@@ -17,10 +18,15 @@ struct ModelSettingsView: View {
   var body: some View {
     NavigationStack {
       Form {
-        if model.selectedSession != nil, model.host?.capabilities.artifacts == true {
+        if model.selectedSession != nil {
           Section("This chat") {
-            Button { files = true } label: { Label("Files from this chat",systemImage:"doc.on.doc") }
-              .accessibilityIdentifier("chat-files-settings")
+            if model.host?.capabilities.artifacts == true {
+              Button {files=true} label: {Label("Files from this chat",systemImage:"doc.on.doc")}
+                .accessibilityIdentifier("chat-files-settings")
+            }
+            Button {changes=true} label: {
+              Label("Workspace changes",systemImage:model.host?.capabilities.changes == true ? "doc.text.magnifyingglass" : "lock")
+            }.accessibilityIdentifier("workspace-changes-settings")
           }
         }
         if loading { ProgressView("Loading models…") }
@@ -58,6 +64,7 @@ struct ModelSettingsView: View {
     }.task(id: model.controlsScope) { await load() }
       .onChange(of: selectedID) { old, new in if old != new, selected?.variants.contains(variant) != true { variant = "" } }
       .sheet(isPresented:$files,onDismiss:{model.artifacts.closePreview()}) { ArtifactListView() }
+      .sheet(isPresented:$changes,onDismiss:{model.changes.close()}) { ChangesView() }
   }
   private func load() async {
     settings = nil; error = nil
