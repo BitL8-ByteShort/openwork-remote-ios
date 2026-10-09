@@ -14,6 +14,7 @@ import OpenWorkRemoteCore
   let attachments: AttachmentStore
   let artifacts: ArtifactStore
   let changes = ChangeStore()
+  let groups:GroupStore
   var status: SessionStatus?
   private var directory = PagedSnapshot<ChatSession>()
   private var history = PagedSnapshot<ChatMessage>()
@@ -70,6 +71,7 @@ import OpenWorkRemoteCore
     self.questions = QuestionStore(directory: draftStore?.directory)
     self.attachments = AttachmentStore(directory: draftStore?.directory)
     self.artifacts = ArtifactStore(directory:draftStore?.directory)
+    self.groups = GroupStore(directory:draftStore?.directory)
   }
   func start() async {
     #if DEBUG
@@ -80,6 +82,8 @@ import OpenWorkRemoteCore
       disk = try await draftStore!.load()
       do { try await questions.restore() }
       catch { notice = "Your saved question drafts could not be opened. Question replies are paused; unlock the phone and restart the app." }
+      do { try await groups.restore() }
+      catch { notice = "Your saved group changes could not be opened. Group edits are paused; unlock the phone and restart the app." }
       do { try await attachments.restore() }
       catch { notice = "Your selected files could not be opened. Attachments are paused; unlock the phone and restart the app." }
       do { try await artifacts.files.cleanup() }
@@ -123,6 +127,7 @@ import OpenWorkRemoteCore
     attachments.activate(nil)
     artifacts.activate(nil)
     changes.activate(nil)
+    groups.activate(nil)
     loading = false
     connection = .connecting
     connectionTask = Task {
@@ -165,6 +170,7 @@ import OpenWorkRemoteCore
             attachments.activate(nil)
             artifacts.activate(nil)
             changes.activate(nil)
+            groups.activate(nil)
             self.generation = UUID()
             refreshTask?.cancel()
             refreshTask = nil
@@ -236,6 +242,7 @@ import OpenWorkRemoteCore
       attachments.activate(nil)
       artifacts.activate(nil)
       changes.activate(nil)
+      groups.activate(nil)
       directory = PagedSnapshot()
       history = PagedSnapshot()
       sessions = []
@@ -252,6 +259,7 @@ import OpenWorkRemoteCore
       attachments.activate(nil)
       artifacts.activate(nil)
       changes.activate(nil)
+      groups.activate(nil)
       sessions = []
       messages = []
       approvals = []
@@ -281,6 +289,7 @@ import OpenWorkRemoteCore
           attachments.activate(nil)
           artifacts.activate(nil)
           changes.activate(nil)
+          groups.activate(nil)
           disk.conversation.deselect()
           history = PagedSnapshot()
           messages = []
@@ -301,6 +310,7 @@ import OpenWorkRemoteCore
       attachments.activate(nil)
       artifacts.activate(nil)
       changes.activate(nil)
+      groups.activate(nil)
       messages = []
       status = nil
       approvals = []
@@ -315,6 +325,7 @@ import OpenWorkRemoteCore
     attachments.activate(nil)
     artifacts.activate(nil)
     changes.activate(nil)
+    groups.activate(nil)
     saveDrafts()
     selectedWorkspace = session.workspaceId
     selectedSession = session
@@ -352,6 +363,7 @@ import OpenWorkRemoteCore
       attachments.activate(nil)
       artifacts.activate(nil)
       changes.activate(nil)
+      groups.activate(nil)
       disk.conversation.deselect()
       history = PagedSnapshot()
       messages = []; approvals = []; status = nil
@@ -383,6 +395,7 @@ import OpenWorkRemoteCore
     attachments.activate(nil)
     artifacts.activate(nil)
     changes.activate(nil)
+    groups.activate(nil)
     loading = false
     saveDrafts()
     selectedWorkspace = workspace.id
@@ -794,6 +807,7 @@ import OpenWorkRemoteCore
     attachments.activate(nil)
     artifacts.activate(nil)
     changes.activate(nil)
+    groups.activate(nil)
     connectionTask?.cancel()
     pairingTask?.cancel()
     refreshTask?.cancel()
@@ -840,6 +854,7 @@ import OpenWorkRemoteCore
       attachments.activate(nil)
       artifacts.activate(nil)
       changes.activate(nil)
+      groups.activate(nil)
       if connection != .revoked { connection = client == nil ? .unpaired : .connecting }
     }
   }
@@ -997,5 +1012,24 @@ extension AppModel {
   func openDiff(_ ref: ChangeRef,context: ChangeContext) async {
     guard let client,connection == .ready,changeContext == context,host?.capabilities.changes == true else {return}
     await changes.open(ref,client:client,context:context)
+  }
+}
+
+
+extension AppModel {
+  var groupContext:GroupContext? {
+    guard foreground,let host,let wid=selectedWorkspace else{return nil}
+    return GroupContext(hostId:host.hostId,workspaceId:wid,generation:generation)
+  }
+  var groupRefreshID:String {(groupContext.map{$0.hostId+"/"+$0.workspaceId+"/"+$0.generation.uuidString} ?? "offline")+"/"+String(host?.capabilities.sessionGroups == true)+"/"+String(connection == .ready)}
+  func refreshGroups() async {
+    guard let c=groupContext else{groups.activate(nil);return}
+    groups.activate(c)
+    guard connection == .ready,let client else{return}
+    await groups.refresh(client:client,context:c,supported:host?.capabilities.sessionGroups == true)
+  }
+  func changeGroup(_ action:GroupAction,expectedRevision:String?=nil,expectedContext:GroupContext?=nil) async -> Bool {
+    guard let c=groupContext,c==groups.context,(expectedContext == nil || expectedContext == c),connection == .ready,host?.capabilities.sessionGroups == true,let client else{return false}
+    return await groups.mutate(action,client:client,context:c,expectedRevision:expectedRevision)
   }
 }

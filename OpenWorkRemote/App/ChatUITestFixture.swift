@@ -124,6 +124,15 @@ private actor ChatUITestTransport: HTTPTransport {
   var questionPending: Bool
   var connections = 0
   var title = "Sample chat"
+  let groupsEnabled = ProcessInfo.processInfo.arguments.contains("-groups") && !ProcessInfo.processInfo.arguments.contains("-groups-unsupported")
+  var groups = [["id":"first","label":"First group"],["id":"second","label":"Second group"]]
+  var groupAssignments = [String:String]()
+  var groupReceipts = [String:[String:Any]]()
+  private func groupSnapshot() throws -> [String:Any] {
+    let data=try JSONSerialization.data(withJSONObject:["groups":groups,"assignments":groupAssignments],options:.sortedKeys)
+    let revision=SHA256.hash(data:data).map{String(format:"%02x",$0)}.joined()
+    return ["revision":revision,"groups":groups,"assignments":groupAssignments]
+  }
   let changesEnabled = ProcessInfo.processInfo.arguments.contains("-changes")
   let artifactsEnabled = ProcessInfo.processInfo.arguments.contains("-artifacts")
   let artifactChanged = ProcessInfo.processInfo.arguments.contains("-artifact-changed")
@@ -163,6 +172,34 @@ private actor ChatUITestTransport: HTTPTransport {
   }
   func data(for request: URLRequest) async throws -> (Data, Int) {
     let path = request.url!.path
+    if path.contains("/session-groups") {
+      if request.httpMethod != "POST" {
+        if ProcessInfo.processInfo.arguments.contains("-slow-groups") {try await Task.sleep(for:.seconds(5))}
+        return try response(groupSnapshot())
+      }
+      let body=try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:Any]
+      let uuid=body["requestId"] as! String
+      if let receipt=groupReceipts[uuid] {return try response(receipt)}
+      guard body["revision"] as? String == (try groupSnapshot()["revision"] as? String) else {return (Data(),409)}
+      let base="/v1/workspaces/ws_test/session-groups"
+      var resource:String?
+      if path==base {
+        resource="grp_remote_"+uuid.replacingOccurrences(of:"-",with:"")
+        groups.append(["id":resource!,"label":body["label"] as! String])
+      }else if path.hasSuffix("/reorder") {
+        let ids=body["groupIds"] as! [String]
+        groups=ids.compactMap{id in groups.first{$0["id"]==id}}
+      }else if path.contains("/assignments/") {
+        resource="ses_test";groupAssignments[resource!]=body["groupId"] as? String
+      }else {
+        let id=String(path.dropFirst(base.count+1).split(separator:"/")[0]);resource=id
+        if path.hasSuffix("/rename") {groups=groups.map{$0["id"]==id ? ["id":id,"label":body["label"] as! String]:$0}}
+        if path.hasSuffix("/remove") {groups.removeAll{$0["id"]==id};groupAssignments=groupAssignments.filter{$0.value != id}}
+      }
+      var receipt:[String:Any]=["requestId":uuid,"state":"accepted","observedAt":"2026-10-09T00:00:00Z"]
+      if let resource {receipt["resourceId"]=resource}
+      groupReceipts[uuid]=receipt;return try response(receipt)
+    }
     if path.hasSuffix("/changes") {
       if ProcessInfo.processInfo.arguments.contains("-slow-changes") {try await Task.sleep(for:.seconds(5))}
       let binary=ProcessInfo.processInfo.arguments.contains("-change-binary")
@@ -248,7 +285,7 @@ private actor ChatUITestTransport: HTTPTransport {
       return try response(["requestId": body["requestId"]!, "resourceId": "ses_test", "state": "accepted", "observedAt": "now"])
     }
     if path.hasSuffix("/host") {
-      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"artifacts":artifactsEnabled,"changes":changesEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
+      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"artifacts":artifactsEnabled,"changes":changesEnabled,"sessionGroups":groupsEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
     }
     if path.hasSuffix("/workspaces") { return try response([["id": "ws_test", "name": "Test project"]]) }
     let session: [String: Any] = ["id": "ses_test", "workspaceId": "ws_test", "title": title, "updatedAt": "2026-10-08", "status": "idle"]

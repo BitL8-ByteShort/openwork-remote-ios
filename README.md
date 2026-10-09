@@ -93,3 +93,5 @@ Issues and pull requests are welcome. Write access is controlled by the reposito
 The source and original artwork in this repository are [MIT licensed](LICENSE). See [NOTICE.md](NOTICE.md) for attribution and platform terms. OpenWork's maintainers aren't responsible for this iOS app.
 
 The source candidate adds [read-only Workspace changes](docs/CHANGES.md). It includes outside-chat edits, requires host file access and provides no file-changing actions. This feature is not in TestFlight build 5.
+
+The source candidate also adds [workspace chat groups](docs/GROUPS.md), including explicit Move chat and group removal that keeps chats. Groups are not in TestFlight build 5.
