@@ -70,6 +70,14 @@ private actor ChatUITestTransport: HTTPTransport {
     }
     if path.hasSuffix("/status") { return try response(["phase": "idle", "observedAt": "now"]) }
     if path.hasSuffix("/approvals") { return try response([]) }
+    if path.hasSuffix("/access") {
+      return try response(["allWorkspaces": false, "workspaceIds": ["ws_test"],
+        "features": ["fileTransfer": true, "workspaceAdministration": false, "automationManagement": false]])
+    }
+    if path.hasSuffix("/permissions") {
+      return try response(["grants": [], "modeSupported": false,
+        "modeReason": "Approval mode changes are unavailable on this computer."])
+    }
     return try response(session)
   }
   private func response(_ value: Any) throws -> (Data, Int) {
