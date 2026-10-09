@@ -38,6 +38,7 @@ import OpenWorkRemoteCore
   private var pairingGeneration = UUID()
   private var savedPendingPairing = false
   private var generation = UUID()
+  private var selectionID = UUID()
   private var foreground = true
   private var saveRevision: UInt64 = 0
   var draft: String {
@@ -103,6 +104,7 @@ import OpenWorkRemoteCore
     refreshID = nil
     let generation = UUID()
     self.generation = generation
+    loading = false
     connection = .connecting
     connectionTask = Task {
       var attempt = 0
@@ -267,6 +269,9 @@ import OpenWorkRemoteCore
   }
   func select(_ session: ChatSession) async {
     guard let host else { return }
+    let current = generation
+    let selection = UUID()
+    selectionID = selection
     saveDrafts()
     selectedWorkspace = session.workspaceId
     selectedSession = session
@@ -279,22 +284,25 @@ import OpenWorkRemoteCore
     stopRequested = false
     notice = nil
     loading = true
-    defer { loading = false }
+    defer { if current == generation, selection == selectionID { loading = false } }
     do { try await loadSelected() } catch {
+      guard current == generation, selection == selectionID else { return }
       notice = "This chat could not be loaded. Reconnect and try again."
     }
+    guard current == generation, selection == selectionID else { return }
     saveDrafts()
   }
   func loadSelected() async throws {
     guard let client, let selectedSession else { return }
     let session = selectedSession
     let current = generation
+    let selection = selectionID
     async let m = client.messages(session.workspaceId, session.id)
     async let s = client.status(session.workspaceId, session.id)
     async let a = client.approvals(session.workspaceId, session.id)
     let snapshot: (Envelope<[ChatMessage]>, SessionStatus, [Approval])
     do { snapshot = try await (m, s, a) } catch RemoteError.notFound {
-      guard current == generation, self.selectedSession?.id == session.id,
+      guard current == generation, selection == selectionID, self.selectedSession?.id == session.id,
         self.selectedWorkspace == session.workspaceId else { return }
       self.selectedSession = nil
       disk.conversation.deselect()
@@ -305,16 +313,20 @@ import OpenWorkRemoteCore
       return
     }
     let (page, state, pending) = snapshot
-    guard current == generation, self.selectedSession?.id == session.id,
+    guard current == generation, selection == selectionID, self.selectedSession?.id == session.id,
       self.selectedSession?.workspaceId == session.workspaceId
     else { return }
-    history.latest(page.data, cursor: page.cursor)
-    messages = history.rows.sorted { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
-    status = state
-    approvals = pending
-    if ["idle", "error"].contains(state.phase) { stopRequested = false }
+    InteractionMetrics.measure("Apply chat snapshot") {
+      history.latest(page.data, cursor: page.cursor)
+      messages = history.rows.sorted { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
+      status = state
+      approvals = pending
+      if ["idle", "error"].contains(state.phase) { stopRequested = false }
+    }
   }
   func changeWorkspace(_ workspace: Workspace) async {
+    selectionID = UUID()
+    loading = false
     saveDrafts()
     selectedWorkspace = workspace.id
     selectedSession = nil

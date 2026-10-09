@@ -70,7 +70,9 @@ struct ConnectionView: View {
       }.scrollContentBackground(.hidden).background(Theme.background).navigationTitle("Settings")
         .sheet(isPresented: $showingModelSettings) { ModelSettingsView() }
         .navigationBarTitleDisplayMode(.inline).toolbar {
-          ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+          ToolbarItem(placement: .confirmationAction) {
+            Button("Done") { InteractionMetrics.measure("Dismiss settings handler") { dismiss() } }
+          }
         }.confirmationDialog(
           "Forget this computer?", isPresented: $confirmingForget, titleVisibility: .visible
         ) {

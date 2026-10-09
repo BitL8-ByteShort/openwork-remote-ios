@@ -24,6 +24,8 @@ actor DraftStore {
     return state
   }
   func save(_ state: DiskState, revision: UInt64) async throws {
+    let span = InteractionMetrics.begin("Persist draft snapshot")
+    defer { InteractionMetrics.end("Persist draft snapshot", span) }
     try await snapshots.save(state, revision: revision)
   }
 }
