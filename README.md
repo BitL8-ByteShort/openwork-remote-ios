@@ -97,3 +97,5 @@ The source candidate adds [read-only Workspace changes](docs/CHANGES.md). It inc
 The source candidate also adds [workspace chat groups](docs/GROUPS.md), including explicit Move chat and group removal that keeps chats. Groups are not in TestFlight build 5.
 
 Chat copy/delete behavior, recovery and limits: [Chat actions](docs/chat-actions.md).
+
+Older title search, coverage and data flow: [Title search](docs/title-search.md).

@@ -129,6 +129,7 @@ private actor ChatUITestTransport: HTTPTransport {
   var actionDeleted=false
   var actionReceipts=[String:[String:Any]]()
   let groupsEnabled = ProcessInfo.processInfo.arguments.contains("-groups") && !ProcessInfo.processInfo.arguments.contains("-groups-unsupported")
+  let searchEnabled = ProcessInfo.processInfo.arguments.contains("-older-search")
   var groups = [["id":"first","label":"First group"],["id":"second","label":"Second group"]]
   var groupAssignments = [String:String]()
   var groupReceipts = [String:[String:Any]]()
@@ -309,8 +310,18 @@ private actor ChatUITestTransport: HTTPTransport {
       title = body["title"]!
       return try response(["requestId": body["requestId"]!, "resourceId": "ses_test", "state": "accepted", "observedAt": "now"])
     }
+    if path.hasSuffix("/sessions/search") {
+      if ProcessInfo.processInfo.arguments.contains("-slow-title-search") {try await Task.sleep(for:.seconds(30))}
+      let items=URLComponents(url:request.url!,resolvingAgainstBaseURL:false)?.queryItems ?? []
+      let more=items.contains{$0.name=="cursor"},q=items.first{$0.name=="q"}?.value ?? ""
+      let rows:[[String:Any]]=q=="none" ? []:[["id":"ses_older","workspaceId":"ws_test","title":"Homepage ideas","updatedAt":"2026-09-18T00:00:00.000Z","modelLabel":NSNull(),"status":"idle"]]
+      return try response(["data":rows,"cursor":more ? NSNull():"00000000-0000-4000-8000-000000000001" as Any,"scanned":more ? 20:500,"complete":more])
+    }
+    if path.hasSuffix("/sessions/ses_older") {
+      return try response(["id":"ses_older","workspaceId":"ws_test","title":"Homepage ideas","updatedAt":"2026-09-18T00:00:00.000Z","modelLabel":NSNull(),"status":"idle"])
+    }
     if path.hasSuffix("/host") {
-      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"artifacts":artifactsEnabled,"changes":changesEnabled,"sessionGroups":groupsEnabled,"forkSession":actionsEnabled,"deleteSession":actionsEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
+      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"artifacts":artifactsEnabled,"changes":changesEnabled,"searchSessions":searchEnabled,"sessionGroups":groupsEnabled,"forkSession":actionsEnabled,"deleteSession":actionsEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
     }
     if path.hasSuffix("/workspaces") { return try response([["id": "ws_test", "name": "Test project"]]) }
     let session: [String: Any] = ["id": "ses_test", "workspaceId": "ws_test", "title": title, "updatedAt": "2026-10-08", "status": "idle"]

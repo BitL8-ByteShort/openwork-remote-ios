@@ -15,6 +15,7 @@ import OpenWorkRemoteCore
   let artifacts: ArtifactStore
   let changes = ChangeStore()
   let groups:GroupStore
+  let chatSearch = ChatSearchStore()
   let chatActions:ChatActionStore
   var status: SessionStatus?
   private var directory = PagedSnapshot<ChatSession>()
@@ -132,6 +133,7 @@ import OpenWorkRemoteCore
     attachments.activate(nil)
     artifacts.activate(nil)
     changes.activate(nil)
+    chatSearch.activate(nil)
     groups.activate(nil)
     chatActions.activate(nil)
     loading = false
@@ -176,7 +178,8 @@ import OpenWorkRemoteCore
             attachments.activate(nil)
             artifacts.activate(nil)
             changes.activate(nil)
-            groups.activate(nil)
+            chatSearch.activate(nil)
+    groups.activate(nil)
             chatActions.activate(nil)
             self.generation = UUID()
             refreshTask?.cancel()
@@ -249,7 +252,8 @@ import OpenWorkRemoteCore
       attachments.activate(nil)
       artifacts.activate(nil)
       changes.activate(nil)
-      groups.activate(nil)
+      chatSearch.activate(nil)
+    groups.activate(nil)
       chatActions.activate(nil)
       directory = PagedSnapshot()
       history = PagedSnapshot()
@@ -267,7 +271,8 @@ import OpenWorkRemoteCore
       attachments.activate(nil)
       artifacts.activate(nil)
       changes.activate(nil)
-      groups.activate(nil)
+      chatSearch.activate(nil)
+    groups.activate(nil)
       chatActions.activate(nil)
       sessions = []
       messages = []
@@ -298,7 +303,8 @@ import OpenWorkRemoteCore
           attachments.activate(nil)
           artifacts.activate(nil)
           changes.activate(nil)
-          groups.activate(nil)
+          chatSearch.activate(nil)
+    groups.activate(nil)
           chatActions.activate(nil)
           disk.conversation.deselect()
           history = PagedSnapshot()
@@ -320,7 +326,8 @@ import OpenWorkRemoteCore
       attachments.activate(nil)
       artifacts.activate(nil)
       changes.activate(nil)
-      groups.activate(nil)
+      chatSearch.activate(nil)
+    groups.activate(nil)
       chatActions.activate(nil)
       messages = []
       status = nil
@@ -336,6 +343,7 @@ import OpenWorkRemoteCore
     attachments.activate(nil)
     artifacts.activate(nil)
     changes.activate(nil)
+    chatSearch.activate(nil)
     groups.activate(nil)
     chatActions.activate(nil)
     saveDrafts()
@@ -375,7 +383,8 @@ import OpenWorkRemoteCore
       attachments.activate(nil)
       artifacts.activate(nil)
       changes.activate(nil)
-      groups.activate(nil)
+      chatSearch.activate(nil)
+    groups.activate(nil)
       chatActions.activate(nil)
       disk.conversation.deselect()
       history = PagedSnapshot()
@@ -408,6 +417,7 @@ import OpenWorkRemoteCore
     attachments.activate(nil)
     artifacts.activate(nil)
     changes.activate(nil)
+    chatSearch.activate(nil)
     groups.activate(nil)
     chatActions.activate(nil)
     loading = false
@@ -821,6 +831,7 @@ import OpenWorkRemoteCore
     attachments.activate(nil)
     artifacts.activate(nil)
     changes.activate(nil)
+    chatSearch.activate(nil)
     groups.activate(nil)
     chatActions.activate(nil)
     connectionTask?.cancel()
@@ -869,7 +880,8 @@ import OpenWorkRemoteCore
       attachments.activate(nil)
       artifacts.activate(nil)
       changes.activate(nil)
-      groups.activate(nil)
+      chatSearch.activate(nil)
+    groups.activate(nil)
       chatActions.activate(nil)
       if connection != .revoked { connection = client == nil ? .unpaired : .connecting }
     }
@@ -1077,7 +1089,8 @@ extension AppModel {
         selectionID=UUID();selectedSession=nil;history=PagedSnapshot();messages=[];status=nil;approvals=[];stopRequested=false
         questions.activate(nil);attachments.activate(nil);artifacts.activate(nil);changes.activate(nil)
       }
-      groups.activate(nil)
+      chatSearch.activate(nil)
+    groups.activate(nil)
       do{try await persist()}catch{notice="The chat was deleted on your computer, but its local draft could not be cleared. Unlock the phone and restart the app."}
     }
     return true
@@ -1089,4 +1102,25 @@ extension AppModel {
     do{let page=try await client.sessions(c.workspaceId);guard actionContext(for:session)==c else{return};directory.latest(page.data,cursor:page.cursor);sessions=directory.rows.sorted{($0.updatedAt,$0.id)>($1.updatedAt,$1.id)}}catch{notice="Recent chats could not be refreshed."}
   }
 
+}
+
+
+extension AppModel {
+  var searchContext:ChatSearchContext? {
+    guard foreground,connection == .ready,let host,let wid=selectedWorkspace else{return nil}
+    return ChatSearchContext(hostId:host.hostId,workspaceId:wid,generation:generation)
+  }
+  func searchOlderTitles(_ query:String) {
+    guard let c=searchContext,let client else{chatSearch.activate(nil);return}
+    chatSearch.activate(c)
+    chatSearch.schedule(query,client:client,context:c,supported:host?.capabilities.searchSessions == true)
+  }
+  func moreTitleMatches() async {
+    guard let c=searchContext,c==chatSearch.context,let client else{return}
+    await chatSearch.more(client:client,context:c)
+  }
+  func openSearchResult(_ session:ChatSession,context c:ChatSearchContext) async {
+    guard searchContext==c,session.workspaceId==c.workspaceId else{return}
+    await select(session)
+  }
 }
