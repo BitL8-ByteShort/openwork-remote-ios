@@ -12,6 +12,7 @@ struct ChatListView: View {
   @State private var moving: MoveChatRequest?
   @State private var managingGroups = false
   @State private var groupFilter: String?
+  @State private var searchingOlder = false
   var body: some View {
     NavigationStack {
       List {
@@ -55,6 +56,11 @@ struct ChatListView: View {
             Text("New chat creation is uncertain. Check recent chats before trying again.").font(.callout)
             Button("Check recent chats") { Task { await model.reviewRecentChats() } }
           }
+        }
+        Section {
+          Button { searchingOlder=true } label: {
+            Label("Search older chats",systemImage:model.host?.capabilities.searchSessions == true ? "magnifyingglass":"lock")
+          }.accessibilityIdentifier("older-search-open")
         }
         if let snapshot = model.groups.snapshot {
           ForEach(snapshot.groups.filter { groupFilter == nil || groupFilter == $0.id }) { group in
@@ -118,6 +124,7 @@ struct ChatListView: View {
         .sheet(item: $naming) { GroupNameEditor(group: $0.group, expectedRevision: $0.revision, expectedContext: $0.context) }
         .sheet(item: $moving) { MoveChatView(session: $0.session, expectedRevision: $0.revision, expectedContext: $0.context) }
         .sheet(isPresented: $managingGroups) { GroupEditor() }
+        .navigationDestination(isPresented:$searchingOlder) { ChatSearchView(initialQuery:search,onOpen:{dismiss()}) }
         .task(id: model.groupRefreshID) {
           while !Task.isCancelled {
             await model.refreshGroups()
