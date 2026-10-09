@@ -41,6 +41,14 @@ public struct SavedPermissions: Codable, Sendable {
 public struct DeviceAccess: Codable, Sendable {
   public let allWorkspaces: Bool
   public let workspaceIds: [String]
+  public let features: DeviceFeatureGrants
+  enum CodingKeys: String, CodingKey { case allWorkspaces, workspaceIds, features }
+  public init(from decoder: any Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    allWorkspaces = try c.decode(Bool.self, forKey: .allWorkspaces)
+    workspaceIds = try c.decode([String].self, forKey: .workspaceIds)
+    features = try c.decodeIfPresent(DeviceFeatureGrants.self, forKey: .features) ?? .none
+  }
 }
 public struct ConversationItem: Identifiable, Sendable {
   public let messages: [ChatMessage]

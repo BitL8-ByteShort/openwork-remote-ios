@@ -8,6 +8,19 @@ public struct Capabilities: Codable, Sendable {
   public let renameSession: Bool?
   public let modelSettings: Bool?
   public let savedPermissions: Bool?
+  public let questions: Bool?
+  public let attachments: Bool?
+  public let artifacts: Bool?
+  public let changes: Bool?
+  public let sessionGroups: Bool?
+  public let forkSession: Bool?
+  public let deleteSession: Bool?
+  public let searchSessions: Bool?
+  public let workspaceDefaults: Bool?
+  public let skillsRead: Bool?
+  public let skillsWrite: Bool?
+  public let automationsRead: Bool?
+  public let automationsWrite: Bool?
   public let readSessions: Bool
   public let readMessages: Bool
   public let readStatus: Bool
