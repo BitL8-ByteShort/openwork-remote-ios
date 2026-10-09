@@ -84,7 +84,7 @@ struct ModelSettingsView: View {
     catch { self.error = "The change could not be confirmed. Reload settings before trying again. Another client may have changed this chat." }
   }
 }
-private struct ModelPickerView: View {
+struct ModelPickerView: View {
   let models: [ModelOption]
   @Binding var selection: String
   @Environment(\.dismiss) private var dismiss
@@ -100,7 +100,7 @@ private struct ModelPickerView: View {
           Spacer()
           if selection == option.id { Image(systemName: "checkmark").foregroundStyle(Theme.accent) }
         }.padding(.vertical, 4)
-      }
+      }.accessibilityIdentifier("model-option-"+option.id)
     }.searchable(text: $search, prompt: "Find a model").navigationTitle("Model")
       .scrollContentBackground(.hidden).background(Theme.background)
   }

@@ -36,6 +36,11 @@ struct ConnectionView: View {
         } header: {
           Text("Allowed workspaces")
         }
+        if let wid=model.selectedWorkspace {
+          Section { NavigationLink { WorkspaceSettingsView() } label: {Label("Workspace settings",systemImage:"folder.badge.gearshape")}
+            .accessibilityIdentifier("workspace-settings-open")
+          } header: {Text(model.workspaces.first{$0.id==wid}?.name ?? "Workspace")}
+        }
         Section {
           NavigationLink("Permissions") { PermissionsView() }
           Button("Model & settings") { showingModelSettings = true }
