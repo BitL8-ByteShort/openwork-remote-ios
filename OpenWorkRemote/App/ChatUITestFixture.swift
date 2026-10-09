@@ -1,8 +1,35 @@
 #if DEBUG
 import Foundation
 import OpenWorkRemoteCore
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 
 #if targetEnvironment(simulator)
+private struct LiveAttachmentConfiguration: Decodable {
+  let pairing: StoredPairing
+  let workspaceId: String
+  let sessionId: String
+  let fixtureDirectory: String
+}
+@MainActor func liveAttachmentUITestFixture() -> AppModel {
+  let folder = FileManager.default.temporaryDirectory.appending(path:"live-attachments-" + UUID().uuidString)
+  let isolatedStore: DraftStore
+  do { isolatedStore = try DraftStore(directory:folder) }
+  catch { preconditionFailure("The isolated attachment qualification store could not be created.") }
+  do {
+    guard let path = ProcessInfo.processInfo.environment["OPENWORK_ATTACHMENT_UI_CONFIG"] else { throw RemoteError.unavailable }
+    let data = try Data(contentsOf:URL(fileURLWithPath:path)); guard data.count <= 65536 else { throw RemoteError.oversized }
+    let config = try JSONDecoder().decode(LiveAttachmentConfiguration.self,from:data)
+    _ = try PairingValidation.origin(config.pairing.origin)
+    var disk = DiskState(); disk.conversation.select(DraftKey(hostId:config.pairing.hostId,workspaceId:config.workspaceId,sessionId:config.sessionId))
+    try JSONEncoder().encode(disk).write(to:folder.appending(path:"drafts.json"),options:[.atomic,.completeFileProtection])
+    return AppModel(pairingPersistence:PairingPersistence(load:{config.pairing},save:{ _ in },remove:{}),draftStore:isolatedStore)
+  } catch {
+    let model = AppModel(pairingPersistence:PairingPersistence(load:{nil},save:{ _ in },remove:{}),draftStore:isolatedStore)
+    model.notice = "The isolated attachment qualification could not be opened."; return model
+  }
+}
 // Opt-in live qualification uses ordinary HTTPS and an isolated temporary store.
 // Its ephemeral pairing is never loaded from or saved to the user's Keychain.
 @MainActor func liveQuestionUITestFixture() -> AppModel {
@@ -50,12 +77,15 @@ import OpenWorkRemoteCore
   burstEvents: Bool = false, offlineReconnect: Bool = false, pendingQuestion: Bool = false,
   staleQuestion: Bool = false, unsupportedQuestion: Bool = false, slowQuestions: Bool = false) -> AppModel {
   let folder = FileManager.default.temporaryDirectory.appending(path: "chat-ui-" + UUID().uuidString)
+  let isolatedStore: DraftStore
+  do { isolatedStore = try DraftStore(directory:folder) }
+  catch { preconditionFailure("The isolated chat qualification store could not be created.") }
   return AppModel(pairingPersistence: PairingPersistence(load: {
     StoredPairing(origin: "https://fixture.example.test", token: "synthetic", hostId: "fixture-host")
   }, save: { _ in }, remove: {}), transport: ChatUITestTransport(slowMessages: slowMessages, failRename: failRename,
     largeConversation: largeConversation, burstEvents: burstEvents, offlineReconnect: offlineReconnect,
     pendingQuestion: pendingQuestion, staleQuestion: staleQuestion, unsupportedQuestion: unsupportedQuestion, slowQuestions: slowQuestions),
-    draftStore: try? DraftStore(directory: folder))
+    draftStore: isolatedStore)
 }
 private actor ChatUITestTransport: HTTPTransport {
   let slowMessages: Bool
@@ -70,6 +100,13 @@ private actor ChatUITestTransport: HTTPTransport {
   var questionPending: Bool
   var connections = 0
   var title = "Sample chat"
+  let attachmentsEnabled = ProcessInfo.processInfo.arguments.contains("-attachments")
+  let fileAccessDenied = ProcessInfo.processInfo.arguments.contains("-attachment-denied")
+  let loseAttachmentCommit = ProcessInfo.processInfo.arguments.contains("-attachment-lost-commit")
+  var attachmentFiles: [String: [String: Any]] = [:]
+  var allocations: [String: String] = [:]
+  var attachmentPromptAccepted = false
+  var attachmentPromptCount = 0
   init(slowMessages: Bool, failRename: Bool, largeConversation: Bool, burstEvents: Bool, offlineReconnect: Bool,
     pendingQuestion: Bool, staleQuestion: Bool, unsupportedQuestion: Bool, slowQuestions: Bool) {
     self.slowMessages = slowMessages; self.failRename = failRename
@@ -98,6 +135,45 @@ private actor ChatUITestTransport: HTTPTransport {
   }
   func data(for request: URLRequest) async throws -> (Data, Int) {
     let path = request.url!.path
+    if path.contains("/attachments") {
+      if path.hasSuffix("/limits") { return try response(["maxFileBytes":20_971_520,"inputMIMEs":["image/png","application/pdf"]]) }
+      let body = request.value(forHTTPHeaderField:"Content-Type") == "application/octet-stream" ? [:]
+        : try request.httpBody.map { try JSONSerialization.jsonObject(with:$0) as! [String:Any] } ?? [:]
+      let uuid = body["requestId"] as? String ?? ""
+      var id: String
+      if path.hasSuffix("/attachments") {
+        id = allocations[uuid] ?? "att_" + String(format:"%032x",attachmentFiles.count + 1)
+        if allocations[uuid] == nil {
+          allocations[uuid] = id
+          attachmentFiles[id] = ["id":id,"name":body["name"]!,"mime":body["mime"]!,"bytes":body["bytes"]!,
+            "sha256":body["sha256"]!,"receivedBytes":0,"state":"uploading"]
+        }
+      } else {
+        id = path.components(separatedBy:"/attachments/").last!.components(separatedBy:"/").first!
+      }
+      guard var file = attachmentFiles[id] else { return (Data("{}".utf8),404) }
+      if path.hasSuffix("/chunks") {
+        let offset = Int(URLComponents(url:request.url!,resolvingAgainstBaseURL:false)!.queryItems!.first!.value!)!
+        file["receivedBytes"] = offset + request.httpBody!.count
+      }
+      if path.hasSuffix("/commit") { file["state"] = "ready" }
+      if path.hasSuffix("/cancel") { file["state"] = "cancelled" }
+      attachmentFiles[id] = file
+      if path.hasSuffix("/commit"), loseAttachmentCommit { throw RemoteError.outcomeUnknown }
+      if request.httpMethod == "POST" {
+        return try response(["receipt":["requestId":uuid,"resourceId":id,"state":"accepted","observedAt":"now"],"attachment":file])
+      }
+      return try response(file)
+    }
+    if path.hasSuffix("/messages"), request.httpMethod == "POST" {
+      let body = try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:Any]
+      let ids = body["attachmentIds"] as? [String] ?? []
+      guard ids.count == 2, Set(ids).count == 2,
+        ids.allSatisfy({ attachmentFiles[$0]?["state"] as? String == "ready" }), attachmentPromptCount == 0 else { return (Data("{}".utf8),409) }
+      attachmentPromptCount += 1; attachmentPromptAccepted = true
+      for id in ids { attachmentFiles[id]?["state"] = "attached" }
+      return try response(["requestId":body["requestId"]!,"resourceId":"ses_test","state":"accepted","observedAt":"now"])
+    }
     if path.contains("/questions/frm_test/") {
       if staleQuestion { return (Data("{}".utf8), 409) }
       let body = try JSONDecoder().decode(QuestionSubmission.self, from: request.httpBody!)
@@ -127,12 +203,14 @@ private actor ChatUITestTransport: HTTPTransport {
       return try response(["requestId": body["requestId"]!, "resourceId": "ses_test", "state": "accepted", "observedAt": "now"])
     }
     if path.hasSuffix("/host") {
-      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": false, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "maxPromptBytes": 32768, "protocolVersion": 1]])
+      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
     }
     if path.hasSuffix("/workspaces") { return try response([["id": "ws_test", "name": "Test project"]]) }
     let session: [String: Any] = ["id": "ses_test", "workspaceId": "ws_test", "title": title, "updatedAt": "2026-10-08", "status": "idle"]
     if path.hasSuffix("/sessions") { return try response([session]) }
     if path.hasSuffix("/messages") {
+      if attachmentPromptAccepted { return try response([["id":"msg_attachment_fixture","sessionId":"ses_test","role":"assistant",
+        "createdAt":"2026-10-09T12:00:00Z","blocks":[["kind":"text","text":"Fixture attachment prompt accepted once."]],"state":"complete"]]) }
       if slowMessages { try await Task.sleep(for: .seconds(30)) }
       if slowQuestions { return try response([["id": "msg_ready", "sessionId": "ses_test", "role": "assistant",
         "createdAt": "2026-10-08T12:00:00Z", "blocks": [["kind": "text", "text": "Chat is ready."]], "state": "complete"]]) }
@@ -150,7 +228,7 @@ private actor ChatUITestTransport: HTTPTransport {
     if path.hasSuffix("/approvals") { return try response([]) }
     if path.hasSuffix("/access") {
       return try response(["allWorkspaces": false, "workspaceIds": ["ws_test"],
-        "features": ["fileTransfer": true, "workspaceAdministration": false, "automationManagement": false]])
+        "features": ["fileTransfer": !fileAccessDenied, "workspaceAdministration": false, "automationManagement": false]])
     }
     if path.hasSuffix("/permissions") {
       return try response(["grants": [], "modeSupported": false,
@@ -161,5 +239,43 @@ private actor ChatUITestTransport: HTTPTransport {
   private func response(_ value: Any) throws -> (Data, Int) {
     (try JSONSerialization.data(withJSONObject: ["data": value, "cursor": NSNull()]), 200)
   }
+}
+
+private actor AttachmentUITestSamples {
+  static let shared = AttachmentUITestSamples()
+  func selected(photo: Bool) throws -> URL {
+    let root = FileManager.default.temporaryDirectory.appending(path:"attachment-ui-selected-" + UUID().uuidString)
+    try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true,
+      attributes:[.posixPermissions:0o700,.protectionKey:FileProtectionType.complete])
+    let url = root.appending(path:photo ? "fixture.png" : "fixture.pdf")
+    if photo {
+      let context = CGContext(data:nil,width:4,height:4,bitsPerComponent:8,bytesPerRow:16,
+        space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue)!
+      context.setFillColor(CGColor(red:0,green:1,blue:0,alpha:1)); context.fill(CGRect(x:0,y:0,width:4,height:4))
+      let destination = CGImageDestinationCreateWithURL(url as CFURL,UTType.png.identifier as CFString,1,nil)!
+      CGImageDestinationAddImage(destination,context.makeImage()!,nil)
+      guard CGImageDestinationFinalize(destination) else { throw RemoteError.invalidResponse }
+    } else { try Data("%PDF-1.7\nSynthetic selected document\n%%EOF\n".utf8).write(to:url,options:.completeFileProtection) }
+    return url
+  }
+}
+@MainActor func addAttachmentUITestSample(model: AppModel, context: AttachmentContext, photo: Bool) async {
+  do {
+    #if targetEnvironment(simulator)
+    if ProcessInfo.processInfo.arguments.contains("-ui-testing-live-attachments") {
+      guard let path = ProcessInfo.processInfo.environment["OPENWORK_ATTACHMENT_UI_CONFIG"] else { throw RemoteError.unavailable }
+      let config = try JSONDecoder().decode(LiveAttachmentConfiguration.self,from:Data(contentsOf:URL(fileURLWithPath:path)))
+      guard context.key.hostId == config.pairing.hostId, context.key.workspaceId == config.workspaceId,
+        context.key.sessionId == config.sessionId else { throw RemoteError.unavailable }
+      let selected = URL(fileURLWithPath:config.fixtureDirectory,isDirectory:true).appending(path:photo ? "photo.png" : "document.pdf")
+      let file = try await photo ? model.attachments.files.importPhoto(selected) : model.attachments.files.importPDF(selected)
+      await model.addAttachment(file,context:context); return
+    }
+    #endif
+    let selected = try await AttachmentUITestSamples.shared.selected(photo:photo)
+    defer { try? FileManager.default.removeItem(at:selected.deletingLastPathComponent()) }
+    let file = try await photo ? model.attachments.files.importPhoto(selected) : model.attachments.files.importPDF(selected)
+    await model.addAttachment(file,context:context)
+  } catch { model.notice = "The isolated attachment fixture could not be opened." }
 }
 #endif

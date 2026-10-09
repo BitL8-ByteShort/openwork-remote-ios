@@ -86,7 +86,7 @@ public actor BridgeClient {
     self.token = token
     self.transport = transport
   }
-  private func request(_ path: String, method: String = "GET", body: Data? = nil) throws
+  private func request(_ path: String, method: String = "GET", body: Data? = nil, contentType: String? = nil) throws
     -> URLRequest
   {
     guard path.hasPrefix("/v1/"), !path.contains(".."),
@@ -102,7 +102,7 @@ public actor BridgeClient {
     r.httpBody = body
     r.setValue("application/json", forHTTPHeaderField: "Accept")
     if let token { r.setValue("Bearer " + token, forHTTPHeaderField: "Authorization") }
-    if body != nil { r.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+    if body != nil { r.setValue(contentType ?? "application/json", forHTTPHeaderField: "Content-Type") }
     return r
   }
   private func check(_ status: Int) throws {
@@ -117,10 +117,10 @@ public actor BridgeClient {
     default: throw RemoteError.unavailable
     }
   }
-  private func decode<T: Decodable & Sendable>(
-    _ type: T.Type, path: String, method: String = "GET", body: Data? = nil
+  func decode<T: Decodable & Sendable>(
+    _ type: T.Type, path: String, method: String = "GET", body: Data? = nil, contentType: String? = nil
   ) async throws -> T {
-    let (data, status) = try await transport.data(for: request(path, method: method, body: body))
+    let (data, status) = try await transport.data(for: request(path, method: method, body: body, contentType: contentType))
     try check(status)
     do { return try JSONDecoder().decode(T.self, from: data) } catch {
       throw RemoteError.invalidResponse
@@ -132,7 +132,7 @@ public actor BridgeClient {
     }
     return value
   }
-  private func base(_ wid: String, _ sid: String) throws -> String {
+  func base(_ wid: String, _ sid: String) throws -> String {
     "/v1/workspaces/" + (try id(wid)) + "/sessions/" + (try id(sid))
   }
   private func cursor(_ value: String?) throws -> String {
@@ -208,6 +208,10 @@ public actor BridgeClient {
     return receipt
   }
   public func send(_ intent: SendIntent) async throws -> MutationReceipt {
+    if let ids = intent.attachmentIds {
+      return try await sendAttachments(intent.key.workspaceId,intent.key.sessionId,text:intent.text,
+        attachmentIds:ids,requestId:intent.requestId)
+    }
     let body = try JSONEncoder().encode([
       "requestId": intent.requestId.uuidString.lowercased(), "text": intent.text,
     ])

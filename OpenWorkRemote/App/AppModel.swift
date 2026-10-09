@@ -11,6 +11,7 @@ import OpenWorkRemoteCore
   var messages: [ChatMessage] = []
   var approvals: [Approval] = []
   let questions: QuestionStore
+  let attachments: AttachmentStore
   var status: SessionStatus?
   private var directory = PagedSnapshot<ChatSession>()
   private var history = PagedSnapshot<ChatMessage>()
@@ -55,7 +56,9 @@ import OpenWorkRemoteCore
   var canSend: Bool {
     connection == .ready && !sending && !updatingControls && !uncertain && selectedSession != nil
       && host?.capabilities.sendText == true && ["idle", "error"].contains(status?.phase ?? "")
-      && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draft.utf8.count <= 32768
+      && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.rows.isEmpty)
+      && (attachments.rows.isEmpty || (attachments.context == attachmentContext && attachments.canSend))
+      && draft.utf8.count <= 32768
   }
   init(pairingPersistence: PairingPersistence = .keychain,
        transport: any HTTPTransport = SessionTransport(), draftStore: DraftStore? = nil) {
@@ -63,6 +66,7 @@ import OpenWorkRemoteCore
     self.transport = transport
     self.draftStore = draftStore
     self.questions = QuestionStore(directory: draftStore?.directory)
+    self.attachments = AttachmentStore(directory: draftStore?.directory)
   }
   func start() async {
     #if DEBUG
@@ -73,6 +77,8 @@ import OpenWorkRemoteCore
       disk = try await draftStore!.load()
       do { try await questions.restore() }
       catch { notice = "Your saved question drafts could not be opened. Question replies are paused; unlock the phone and restart the app." }
+      do { try await attachments.restore() }
+      catch { notice = "Your selected files could not be opened. Attachments are paused; unlock the phone and restart the app." }
       storedPairing = try pairingPersistence.load()
       if let p = storedPairing {
         client = try BridgeClient(origin: PairingValidation.origin(p.origin), token: p.token, transport: transport)
@@ -109,6 +115,7 @@ import OpenWorkRemoteCore
     let generation = UUID()
     self.generation = generation
     questions.activate(nil)
+    attachments.activate(nil)
     loading = false
     connection = .connecting
     connectionTask = Task {
@@ -148,6 +155,7 @@ import OpenWorkRemoteCore
           if case RemoteError.unauthorized = error {
             connection = .revoked
             questions.activate(nil)
+            attachments.activate(nil)
             self.generation = UUID()
             refreshTask?.cancel()
             refreshTask = nil
@@ -216,6 +224,7 @@ import OpenWorkRemoteCore
     }
     if previousWorkspace != selectedWorkspace {
       questions.activate(nil)
+      attachments.activate(nil)
       directory = PagedSnapshot()
       history = PagedSnapshot()
       sessions = []
@@ -229,6 +238,7 @@ import OpenWorkRemoteCore
     }
     guard let wid = selectedWorkspace else {
       questions.activate(nil)
+      attachments.activate(nil)
       sessions = []
       messages = []
       approvals = []
@@ -255,6 +265,7 @@ import OpenWorkRemoteCore
           guard current == generation, selectedWorkspace == wid else { return }
           selectedSession = nil
           questions.activate(nil)
+          attachments.activate(nil)
           disk.conversation.deselect()
           history = PagedSnapshot()
           messages = []
@@ -272,6 +283,7 @@ import OpenWorkRemoteCore
     } else {
       selectedSession = nil
       questions.activate(nil)
+      attachments.activate(nil)
       messages = []
       status = nil
       approvals = []
@@ -283,6 +295,7 @@ import OpenWorkRemoteCore
     let selection = UUID()
     selectionID = selection
     questions.activate(nil)
+    attachments.activate(nil)
     saveDrafts()
     selectedWorkspace = session.workspaceId
     selectedSession = session
@@ -317,6 +330,7 @@ import OpenWorkRemoteCore
         self.selectedWorkspace == session.workspaceId else { return }
       self.selectedSession = nil
       questions.activate(nil)
+      attachments.activate(nil)
       disk.conversation.deselect()
       history = PagedSnapshot()
       messages = []; approvals = []; status = nil
@@ -335,6 +349,7 @@ import OpenWorkRemoteCore
       approvals = pending
       if ["idle", "error"].contains(state.phase) { stopRequested = false }
     }
+    attachments.activate(attachmentContext)
     if let context = questionContext, host?.capabilities.questions == true {
       questions.scheduleRead(client: client, context: context)
     } else { questions.activate(nil) }
@@ -342,6 +357,7 @@ import OpenWorkRemoteCore
   func changeWorkspace(_ workspace: Workspace) async {
     selectionID = UUID()
     questions.activate(nil)
+    attachments.activate(nil)
     loading = false
     saveDrafts()
     selectedWorkspace = workspace.id
@@ -415,19 +431,25 @@ import OpenWorkRemoteCore
     guard canSend, let client else { return }
     let current = generation
     do {
-      let intent = try disk.conversation.beginSend(ready: canSend)
+      let ids = attachments.rows.isEmpty ? [] : attachments.attachmentIDs
+      let intent = try disk.conversation.beginSend(ready: canSend, attachmentIds:ids)
       sending = true
       defer {
         sending = false
         saveDrafts()
       }
       // Persist admission intent before the network request can leave the phone.
-      do { try await persist() } catch {
+      do {
+        if !ids.isEmpty { try await attachments.reserveSend(intent) }
+        try await persist()
+      } catch {
+        if !ids.isEmpty { await attachments.releaseUnsent(intent) }
         disk.conversation.applyReceipt(intent, accepted: false)
         notice = "Your request could not be saved. No message was sent."
         return
       }
       guard current == generation else {
+        if !ids.isEmpty { await attachments.releaseUnsent(intent) }
         disk.conversation.applyReceipt(intent, accepted: false)
         return
       }
@@ -438,12 +460,16 @@ import OpenWorkRemoteCore
           && r.requestId == intent.requestId.uuidString.lowercased()
           && r.resourceId == intent.key.sessionId
         disk.conversation.applyReceipt(intent, accepted: accepted)
-        if !accepted {
+        if !ids.isEmpty { await attachments.finishSend(intent,accepted:accepted) }
+        if !accepted, current == generation, disk.conversation.selected == intent.key {
           notice = "Delivery is uncertain. Check the conversation before trying again."
         }
       } catch {
         disk.conversation.applyReceipt(intent, accepted: false)
-        notice = "Delivery is uncertain. Check the conversation before trying again."
+        if !ids.isEmpty { await attachments.finishSend(intent,accepted:false) }
+        if current == generation, disk.conversation.selected == intent.key {
+          notice = "Delivery is uncertain. Check the conversation before trying again."
+        }
       }
       saveDrafts()
       guard current == generation else { return }
@@ -734,6 +760,7 @@ import OpenWorkRemoteCore
   }
   private func clearLocalPairing() {
     questions.activate(nil)
+    attachments.activate(nil)
     connectionTask?.cancel()
     pairingTask?.cancel()
     refreshTask?.cancel()
@@ -777,6 +804,7 @@ import OpenWorkRemoteCore
       refreshID = nil
       generation = UUID()
       questions.activate(nil)
+      attachments.activate(nil)
       if connection != .revoked { connection = client == nil ? .unpaired : .connecting }
     }
   }
@@ -791,6 +819,7 @@ extension AppModel {
   func refreshQuestions() async {
     guard let client, host?.capabilities.questions == true, let context = questionContext else {
       questions.activate(nil)
+      attachments.activate(nil)
       return
     }
     questions.activate(context)
@@ -858,5 +887,42 @@ extension AppModel {
     let current = try await client.savedPermissions(wid, sid)
     try checkControlsScope(scope, epoch)
     guard !current.grants.contains(where: { $0.id == permission.id }) else { throw RemoteError.conflict }
+  }
+}
+
+
+extension AppModel {
+  var attachmentRefreshID: String {
+    [host?.hostId ?? "",selectedWorkspace ?? "",selectedSession?.id ?? "",selectedSession?.modelLabel ?? "",
+      generation.uuidString,selectionID.uuidString,connection.label].joined(separator:"/")
+  }
+  var attachmentContext: AttachmentContext? {
+    guard let host, let session = selectedSession else { return nil }
+    return AttachmentContext(key:DraftKey(hostId:host.hostId,workspaceId:session.workspaceId,sessionId:session.id),
+      generation:generation,selection:selectionID)
+  }
+  func refreshAttachments() async {
+    guard let client, connection == .ready, let context = attachmentContext else { attachments.activate(nil); return }
+    attachments.activate(context)
+    await attachments.refreshAccess(client:client,context:context,supported:host?.capabilities.attachments == true)
+  }
+  func addAttachment(_ file: LocalAttachmentFile, context: AttachmentContext) async {
+    do {
+      try await attachments.add(file,context:context)
+      guard context == attachmentContext, let client, connection == .ready else { return }
+      await attachments.upload(file.id,client:client,context:context)
+    } catch {
+      try? await attachments.files.remove(file)
+      if context == attachmentContext { notice = "The file could not be added. Choose a supported photo/PDF, at most four files and 40 MiB in total." }
+    }
+  }
+  func retryAttachment(_ id: UUID, context: AttachmentContext, check: Bool = false) async {
+    guard context == attachmentContext, connection == .ready, let client else { return }
+    if check { await attachments.check(id,client:client,context:context) }
+    else { await attachments.upload(id,client:client,context:context) }
+  }
+  func removeAttachment(_ id: UUID, context: AttachmentContext) async {
+    guard context == attachmentContext else { return }
+    await attachments.remove(id,client:connection == .ready ? client : nil,context:context)
   }
 }
