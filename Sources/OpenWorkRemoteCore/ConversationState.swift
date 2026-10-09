@@ -14,6 +14,7 @@ public struct SendIntent: Codable, Sendable {
   public let key: DraftKey
   public let text: String
   public let requestId: UUID
+  public let attachmentIds: [String]?
 }
 public struct ConversationState: Codable, Sendable {
   public private(set) var selected: DraftKey?
@@ -25,14 +26,15 @@ public struct ConversationState: Codable, Sendable {
   public mutating func select(_ key: DraftKey) { selected = key }
   public mutating func setDraft(_ text: String) { if let selected { drafts[selected] = text } }
   public func draft(for key: DraftKey) -> String { drafts[key] ?? "" }
-  public mutating func beginSend(ready: Bool) throws -> SendIntent {
+  public mutating func beginSend(ready: Bool, attachmentIds: [String] = []) throws -> SendIntent {
     guard ready, let selected, pending[selected] == nil, !uncertain.contains(selected),
-      !currentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      !currentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachmentIds.isEmpty
     else { throw RemoteError.unavailable }
     guard currentDraft.utf8.count <= 32768 else { throw RemoteError.oversized }
+    if !attachmentIds.isEmpty { try AttachmentValidation.prompt(text:currentDraft,ids:attachmentIds) }
     let id = UUID()
     pending[selected] = id
-    return SendIntent(key: selected, text: currentDraft, requestId: id)
+    return SendIntent(key: selected, text: currentDraft, requestId: id, attachmentIds:attachmentIds.isEmpty ? nil : attachmentIds)
   }
   public mutating func applyReceipt(_ intent: SendIntent, accepted: Bool) {
     if accepted { pending.removeValue(forKey: intent.key) }

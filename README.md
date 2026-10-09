@@ -18,6 +18,10 @@ This is an early source release. Desktop source builds have been tested on macOS
 
 The host decides which actions are available. OpenWork v2 doesn't expose a general approval-mode switch through this integration. Unsupported permissions stay on the computer.
 
+The current source candidate also adds questions and selected photo/PDF
+attachments. These are not in the recorded TestFlight build 0.1.0 (4).
+See [attachment behavior, data handling and qualification limits](docs/ATTACHMENTS.md).
+
 ## How it connects
 
 The iPhone talks to a small, scoped bridge managed by OpenWork. The bridge uses the local OpenWork runtime. It doesn't give the phone a shell, a generic proxy, or the runtime's credentials.

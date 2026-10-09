@@ -1,6 +1,8 @@
 import Foundation
 import CryptoKit
 import Darwin
+import ImageIO
+import UniformTypeIdentifiers
 import OpenWorkRemoteCore
 
 struct LocalAttachmentFile: Codable, Sendable, Equatable, Identifiable {
@@ -13,12 +15,19 @@ struct LocalAttachmentFile: Codable, Sendable, Equatable, Identifiable {
 
 /// Selected bytes live here; draft JSON contains only the opaque file ID and metadata.
 actor ProtectedAttachmentFiles {
+  static let shared = ProtectedAttachmentFiles(directory:FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0]
+    .appending(path:"OpenWorkRemote/AttachmentBytes",directoryHint:.isDirectory))
   private let directory: URL
   private let quotaBytes: Int
-  init(directory: URL, quotaBytes: Int = AttachmentValidation.stagingBytes) {
+  private let availableCapacity: @Sendable (URL) throws -> Int64?
+  init(directory: URL, quotaBytes: Int = AttachmentValidation.stagingBytes,
+    availableCapacity: @escaping @Sendable (URL) throws -> Int64? = {
+      try $0.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
+    }) {
     self.directory = directory.deletingLastPathComponent().resolvingSymlinksInPath()
       .appending(path: directory.lastPathComponent, directoryHint: .isDirectory)
     self.quotaBytes = min(max(quotaBytes, 1), AttachmentValidation.stagingBytes)
+    self.availableCapacity = availableCapacity
   }
   private func prepare() throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
@@ -55,7 +64,7 @@ actor ProtectedAttachmentFiles {
       guard used <= quotaBytes else { throw RemoteError.oversized }
     }
     guard bytes <= quotaBytes - used else { throw RemoteError.oversized }
-    let space = try directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
+    let space = try availableCapacity(directory)
     if let space, space >= 0, space < Int64(bytes) + 4_194_304 { throw RemoteError.unavailable }
   }
   private func validatePDF(_ file: FileHandle, bytes: Int) throws {
@@ -96,6 +105,69 @@ actor ProtectedAttachmentFiles {
     } catch {
       try? output.close(); try? FileManager.default.removeItem(at: destination)
       throw error
+    }
+  }
+  /// Fresh pixels only: selected JPEG/HEIC/PNG becomes an oriented, bounded PNG.
+  /// Source metadata is never passed to the destination encoder.
+  func importPhoto(_ selected: URL) throws -> LocalAttachmentFile {
+    try savePhotoPNG(normalizedPhoto(selected))
+  }
+  func normalizedPhoto(_ selected: URL) throws -> Data {
+    guard selected.isFileURL else { throw RemoteError.invalidResponse }
+    let scoped = selected.startAccessingSecurityScopedResource()
+    defer { if scoped { selected.stopAccessingSecurityScopedResource() } }
+    let sourceFile = try openRegular(selected, flags: O_RDONLY)
+    defer { try? sourceFile.close() }
+    let size = try sourceFile.seekToEnd()
+    guard size > 0, size <= AttachmentValidation.fileBytes else { throw RemoteError.oversized }
+    try sourceFile.seek(toOffset: 0)
+    var bytes = Data()
+    while let chunk = try sourceFile.read(upToCount: 65536), !chunk.isEmpty {
+      try Task.checkCancellation()
+      guard bytes.count + chunk.count <= Int(size) else { throw RemoteError.invalidResponse }
+      bytes.append(chunk)
+    }
+    guard bytes.count == Int(size),
+      let source = CGImageSourceCreateWithData(bytes as CFData, [kCGImageSourceShouldCache:false] as CFDictionary),
+      let type = CGImageSourceGetType(source) as String?,
+      [UTType.jpeg.identifier, UTType.heic.identifier, UTType.png.identifier].contains(type),
+      CGImageSourceGetCount(source) == 1,
+      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+      let width = properties[kCGImagePropertyPixelWidth] as? Int,
+      let height = properties[kCGImagePropertyPixelHeight] as? Int,
+      width > 0, height > 0, width <= 100_000, height <= 100_000,
+      width <= 100_000_000 / height else { throw RemoteError.invalidResponse }
+    let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways:true,
+      kCGImageSourceCreateThumbnailWithTransform:true, kCGImageSourceThumbnailMaxPixelSize:2048,
+      kCGImageSourceShouldCacheImmediately:true]
+    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+      image.width <= 2048, image.height <= 2048 else { throw RemoteError.invalidResponse }
+    try Task.checkCancellation()
+    let encoded = NSMutableData()
+    guard let output = CGImageDestinationCreateWithData(encoded, UTType.png.identifier as CFString, 1, nil) else {
+      throw RemoteError.invalidResponse
+    }
+    CGImageDestinationAddImage(output, image, [:] as CFDictionary)
+    guard CGImageDestinationFinalize(output) else { throw RemoteError.invalidResponse }
+    let png = encoded as Data
+    guard !png.isEmpty, png.count <= AttachmentValidation.fileBytes else { throw RemoteError.oversized }
+    return png
+  }
+  func savePhotoPNG(_ png: Data) throws -> LocalAttachmentFile {
+    guard !png.isEmpty, png.count <= AttachmentValidation.fileBytes,
+      let image = CGImageSourceCreateWithData(png as CFData,nil),
+      CGImageSourceGetType(image) as String? == UTType.png.identifier,
+      CGImageSourceGetCount(image) == 1 else { throw RemoteError.invalidResponse }
+    try prepare(); try capacity(for: png.count); try Task.checkCancellation()
+    let id = UUID(), destination = path(id)
+    let file = try openRegular(destination, flags: O_WRONLY | O_CREAT | O_EXCL, privateFile: true)
+    do {
+      try FileManager.default.setAttributes([.protectionKey:FileProtectionType.complete, .posixPermissions:0o600], ofItemAtPath: destination.path)
+      try file.write(contentsOf: png); try file.synchronize(); try file.close()
+      let digest = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
+      return LocalAttachmentFile(id: id, name: "Photo.png", mime: "image/png", bytes: png.count, sha256: digest)
+    } catch {
+      try? file.close(); try? FileManager.default.removeItem(at: destination); throw error
     }
   }
   func chunk(_ reference: LocalAttachmentFile, offset: Int) throws -> Data {

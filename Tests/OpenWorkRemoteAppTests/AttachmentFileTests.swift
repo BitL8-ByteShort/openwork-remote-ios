@@ -70,4 +70,15 @@ import OpenWorkRemoteCore
     try FileManager.default.setAttributes([.posixPermissions:0o600], ofItemAtPath: path.path)
     await #expect(throws: RemoteError.invalidResponse) { try await vault.verify(file) }
   }
+  @Test func insufficientFreeStorageRefusesCopyWithoutKeepingAPartialFile() async throws {
+    let folder = root(); defer { try? FileManager.default.removeItem(at:folder) }
+    try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+    let source = folder.appending(path:"selected.pdf"), data = pdf()
+    try data.write(to:source)
+    let vaultRoot = folder.appending(path:"vault")
+    let vault = ProtectedAttachmentFiles(directory:vaultRoot,availableCapacity:{ _ in 0 })
+    await #expect(throws:RemoteError.unavailable) { try await vault.importPDF(source) }
+    #expect(try FileManager.default.contentsOfDirectory(atPath:vaultRoot.path).isEmpty)
+    #expect(try Data(contentsOf:source) == data)
+  }
 }

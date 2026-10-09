@@ -28,3 +28,15 @@ import Testing
   #expect(state.uncertain.contains(key))
   #expect(throws: (any Error).self) { try state.beginSend(ready: true) }
 }
+@Test func attachmentOnlySendRetainsScopedIDsAndCannotBeRepeatedAfterRelaunch() throws {
+  var state = ConversationState()
+  state.select(DraftKey(hostId:"host",workspaceId:"ws",sessionId:"chat"))
+  let ids = ["att_" + String(repeating:"a",count:32)]
+  let intent = try state.beginSend(ready:true,attachmentIds:ids)
+  #expect(intent.text.isEmpty); #expect(intent.attachmentIds == ids)
+  let restoredIntent = try JSONDecoder().decode(SendIntent.self,from:JSONEncoder().encode(intent))
+  #expect(restoredIntent.attachmentIds == ids); #expect(restoredIntent.requestId == intent.requestId)
+  var reopened = try JSONDecoder().decode(ConversationState.self,from:JSONEncoder().encode(state))
+  reopened.recoverPending()
+  #expect(throws:RemoteError.unavailable) { try reopened.beginSend(ready:true,attachmentIds:ids) }
+}

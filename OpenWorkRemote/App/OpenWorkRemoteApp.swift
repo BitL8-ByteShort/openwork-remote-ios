@@ -7,6 +7,10 @@ import SwiftUI
   #if DEBUG
     init() {
       #if targetEnvironment(simulator)
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing-live-attachments") {
+          _model = State(initialValue:liveAttachmentUITestFixture())
+          return
+        }
         if ProcessInfo.processInfo.arguments.contains("-ui-testing-live-questions") {
           _model = State(initialValue: liveQuestionUITestFixture())
           return

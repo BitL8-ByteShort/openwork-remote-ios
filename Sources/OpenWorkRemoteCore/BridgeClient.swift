@@ -208,6 +208,10 @@ public actor BridgeClient {
     return receipt
   }
   public func send(_ intent: SendIntent) async throws -> MutationReceipt {
+    if let ids = intent.attachmentIds {
+      return try await sendAttachments(intent.key.workspaceId,intent.key.sessionId,text:intent.text,
+        attachmentIds:ids,requestId:intent.requestId)
+    }
     let body = try JSONEncoder().encode([
       "requestId": intent.requestId.uuidString.lowercased(), "text": intent.text,
     ])
