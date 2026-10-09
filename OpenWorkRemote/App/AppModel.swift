@@ -15,6 +15,7 @@ import OpenWorkRemoteCore
   let artifacts: ArtifactStore
   let changes = ChangeStore()
   let groups:GroupStore
+  let chatActions:ChatActionStore
   var status: SessionStatus?
   private var directory = PagedSnapshot<ChatSession>()
   private var history = PagedSnapshot<ChatMessage>()
@@ -58,6 +59,7 @@ import OpenWorkRemoteCore
   }
   var canSend: Bool {
     connection == .ready && !sending && !updatingControls && !uncertain && selectedSession != nil
+      && !chatActions.blocksSending(disk.conversation.selected)
       && host?.capabilities.sendText == true && ["idle", "error"].contains(status?.phase ?? "")
       && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.rows.isEmpty)
       && (attachments.rows.isEmpty || (attachments.context == attachmentContext && attachments.canSend))
@@ -72,6 +74,7 @@ import OpenWorkRemoteCore
     self.attachments = AttachmentStore(directory: draftStore?.directory)
     self.artifacts = ArtifactStore(directory:draftStore?.directory)
     self.groups = GroupStore(directory:draftStore?.directory)
+    self.chatActions = ChatActionStore(directory:draftStore?.directory)
   }
   func start() async {
     #if DEBUG
@@ -82,6 +85,8 @@ import OpenWorkRemoteCore
       disk = try await draftStore!.load()
       do { try await questions.restore() }
       catch { notice = "Your saved question drafts could not be opened. Question replies are paused; unlock the phone and restart the app." }
+      do { try await chatActions.restore() }
+      catch { notice = "Your saved chat actions could not be opened. Fork and delete are paused; unlock the phone and restart the app." }
       do { try await groups.restore() }
       catch { notice = "Your saved group changes could not be opened. Group edits are paused; unlock the phone and restart the app." }
       do { try await attachments.restore() }
@@ -128,6 +133,7 @@ import OpenWorkRemoteCore
     artifacts.activate(nil)
     changes.activate(nil)
     groups.activate(nil)
+    chatActions.activate(nil)
     loading = false
     connection = .connecting
     connectionTask = Task {
@@ -171,6 +177,7 @@ import OpenWorkRemoteCore
             artifacts.activate(nil)
             changes.activate(nil)
             groups.activate(nil)
+            chatActions.activate(nil)
             self.generation = UUID()
             refreshTask?.cancel()
             refreshTask = nil
@@ -243,6 +250,7 @@ import OpenWorkRemoteCore
       artifacts.activate(nil)
       changes.activate(nil)
       groups.activate(nil)
+      chatActions.activate(nil)
       directory = PagedSnapshot()
       history = PagedSnapshot()
       sessions = []
@@ -260,6 +268,7 @@ import OpenWorkRemoteCore
       artifacts.activate(nil)
       changes.activate(nil)
       groups.activate(nil)
+      chatActions.activate(nil)
       sessions = []
       messages = []
       approvals = []
@@ -290,6 +299,7 @@ import OpenWorkRemoteCore
           artifacts.activate(nil)
           changes.activate(nil)
           groups.activate(nil)
+          chatActions.activate(nil)
           disk.conversation.deselect()
           history = PagedSnapshot()
           messages = []
@@ -311,6 +321,7 @@ import OpenWorkRemoteCore
       artifacts.activate(nil)
       changes.activate(nil)
       groups.activate(nil)
+      chatActions.activate(nil)
       messages = []
       status = nil
       approvals = []
@@ -326,6 +337,7 @@ import OpenWorkRemoteCore
     artifacts.activate(nil)
     changes.activate(nil)
     groups.activate(nil)
+    chatActions.activate(nil)
     saveDrafts()
     selectedWorkspace = session.workspaceId
     selectedSession = session
@@ -364,6 +376,7 @@ import OpenWorkRemoteCore
       artifacts.activate(nil)
       changes.activate(nil)
       groups.activate(nil)
+      chatActions.activate(nil)
       disk.conversation.deselect()
       history = PagedSnapshot()
       messages = []; approvals = []; status = nil
@@ -396,6 +409,7 @@ import OpenWorkRemoteCore
     artifacts.activate(nil)
     changes.activate(nil)
     groups.activate(nil)
+    chatActions.activate(nil)
     loading = false
     saveDrafts()
     selectedWorkspace = workspace.id
@@ -808,6 +822,7 @@ import OpenWorkRemoteCore
     artifacts.activate(nil)
     changes.activate(nil)
     groups.activate(nil)
+    chatActions.activate(nil)
     connectionTask?.cancel()
     pairingTask?.cancel()
     refreshTask?.cancel()
@@ -855,6 +870,7 @@ import OpenWorkRemoteCore
       artifacts.activate(nil)
       changes.activate(nil)
       groups.activate(nil)
+      chatActions.activate(nil)
       if connection != .revoked { connection = client == nil ? .unpaired : .connecting }
     }
   }
@@ -1023,7 +1039,8 @@ extension AppModel {
   }
   var groupRefreshID:String {(groupContext.map{$0.hostId+"/"+$0.workspaceId+"/"+$0.generation.uuidString} ?? "offline")+"/"+String(host?.capabilities.sessionGroups == true)+"/"+String(connection == .ready)}
   func refreshGroups() async {
-    guard let c=groupContext else{groups.activate(nil);return}
+    guard let c=groupContext else{groups.activate(nil)
+    chatActions.activate(nil);return}
     groups.activate(c)
     guard connection == .ready,let client else{return}
     await groups.refresh(client:client,context:c,supported:host?.capabilities.sessionGroups == true)
@@ -1032,4 +1049,44 @@ extension AppModel {
     guard let c=groupContext,c==groups.context,(expectedContext == nil || expectedContext == c),connection == .ready,host?.capabilities.sessionGroups == true,let client else{return false}
     return await groups.mutate(action,client:client,context:c,expectedRevision:expectedRevision)
   }
+  func actionContext(for session:ChatSession)->ChatActionContext? {
+    guard foreground,let host,selectedWorkspace==session.workspaceId else{return nil}
+    return ChatActionContext(hostId:host.hostId,workspaceId:session.workspaceId,sessionId:session.id,generation:generation)
+  }
+  func refreshChatAction(session:ChatSession,context c:ChatActionContext) async {
+    guard actionContext(for:session)==c else{return}
+    chatActions.activate(c)
+    guard connection == .ready,let client else{return}
+    await chatActions.refresh(client:client,context:c,supported:host?.capabilities.forkSession == true && host?.capabilities.deleteSession == true)
+  }
+  func performChatAction(_ action:SessionAction,session:ChatSession,context c:ChatActionContext,revision:String) async -> Bool {
+    guard actionContext(for:session)==c,chatActions.context==c,connection == .ready,let client,
+      host?.capabilities.forkSession == true,host?.capabilities.deleteSession == true else{return false}
+    guard let resource=await chatActions.mutate(action,client:client,context:c,expectedRevision:revision) else{return false}
+    guard actionContext(for:session)==c else{return false}
+    switch action {
+    case .fork:
+      do{let created=try await client.session(c.workspaceId,resource);guard actionContext(for:session)==c else{return false}
+        directory.latest([created],cursor:directory.cursor);sessions=directory.rows.sorted{($0.updatedAt,$0.id)>($1.updatedAt,$1.id)}
+        await select(created)
+      }catch{notice="The new chat was created, but could not be opened. Check recent chats on your computer."}
+    case .delete:
+      disk.conversation.removeConfirmedDeletedChat(DraftKey(hostId:c.hostId,workspaceId:c.workspaceId,sessionId:c.sessionId))
+      directory.remove(id:c.sessionId);sessions=directory.rows.sorted{($0.updatedAt,$0.id)>($1.updatedAt,$1.id)}
+      if selectedSession?.id==c.sessionId,selectedSession?.workspaceId==c.workspaceId {
+        selectionID=UUID();selectedSession=nil;history=PagedSnapshot();messages=[];status=nil;approvals=[];stopRequested=false
+        questions.activate(nil);attachments.activate(nil);artifacts.activate(nil);changes.activate(nil)
+      }
+      groups.activate(nil)
+      do{try await persist()}catch{notice="The chat was deleted on your computer, but its local draft could not be cleared. Unlock the phone and restart the app."}
+    }
+    return true
+  }
+  func reviewChatAction(session:ChatSession,context c:ChatActionContext) async {
+    guard actionContext(for:session)==c,connection == .ready,let client else{return}
+    await chatActions.reviewChats(client:client,context:c)
+    guard actionContext(for:session)==c,chatActions.reviewed else{return}
+    do{let page=try await client.sessions(c.workspaceId);guard actionContext(for:session)==c else{return};directory.latest(page.data,cursor:page.cursor);sessions=directory.rows.sorted{($0.updatedAt,$0.id)>($1.updatedAt,$1.id)}}catch{notice="Recent chats could not be refreshed."}
+  }
+
 }

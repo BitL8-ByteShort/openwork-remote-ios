@@ -124,6 +124,10 @@ private actor ChatUITestTransport: HTTPTransport {
   var questionPending: Bool
   var connections = 0
   var title = "Sample chat"
+  let actionsEnabled=ProcessInfo.processInfo.arguments.contains("-chat-actions")
+  var actionSessions:[[String:Any]]=[]
+  var actionDeleted=false
+  var actionReceipts=[String:[String:Any]]()
   let groupsEnabled = ProcessInfo.processInfo.arguments.contains("-groups") && !ProcessInfo.processInfo.arguments.contains("-groups-unsupported")
   var groups = [["id":"first","label":"First group"],["id":"second","label":"Second group"]]
   var groupAssignments = [String:String]()
@@ -172,6 +176,27 @@ private actor ChatUITestTransport: HTTPTransport {
   }
   func data(for request: URLRequest) async throws -> (Data, Int) {
     let path = request.url!.path
+    if path.hasSuffix("/actions") {
+      if ProcessInfo.processInfo.arguments.contains("-slow-chat-actions") {try await Task.sleep(for:.seconds(30))}
+      let running=ProcessInfo.processInfo.arguments.contains("-chat-action-running"),linked=ProcessInfo.processInfo.arguments.contains("-chat-action-linked")
+      let reason:Any=running ? "running" as Any:linked ? "linkedChats" as Any:NSNull()
+      let targetID=path.components(separatedBy:"/sessions/").last!.components(separatedBy:"/").first!
+      let previewTitle=actionSessions.first(where:{$0["id"] as? String == targetID})?["title"] as? String ?? title
+      return try response(["revision":String(repeating:"a",count:64),"title":previewTitle,"running":running,"forkAvailable": !running,"deleteAvailable": !running && !linked,"deleteReason":reason])
+    }
+    if path.hasSuffix("/fork") || path.hasSuffix("/delete") {
+      let b=try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:Any],rid=b["requestId"] as! String
+      if let existing=actionReceipts[rid]{return try response(existing)}
+      let sid=path.components(separatedBy:"/sessions/").last!.components(separatedBy:"/").first!
+      let resource:String
+      if path.hasSuffix("/fork") {
+        resource="ses_fork_"+String(actionSessions.count+1)
+        actionSessions.append(["id":resource,"workspaceId":"ws_test","title":"Copy of Sample chat","updatedAt":"2026-10-09","status":"idle","modelLabel":"synthetic"])
+      }else{resource=sid;if sid=="ses_test"{actionDeleted=true}else{actionSessions.removeAll{$0["id"] as? String==sid}}}
+      let r:[String:Any]=["requestId":rid,"resourceId":resource,"state":"accepted","observedAt":"2026-10-09T00:00:00.000Z"];actionReceipts[rid]=r
+      if ProcessInfo.processInfo.arguments.contains("-chat-action-lost"){throw RemoteError.unavailable}
+      return try response(r)
+    }
     if path.contains("/session-groups") {
       if request.httpMethod != "POST" {
         if ProcessInfo.processInfo.arguments.contains("-slow-groups") {try await Task.sleep(for:.seconds(5))}
@@ -285,12 +310,16 @@ private actor ChatUITestTransport: HTTPTransport {
       return try response(["requestId": body["requestId"]!, "resourceId": "ses_test", "state": "accepted", "observedAt": "now"])
     }
     if path.hasSuffix("/host") {
-      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"artifacts":artifactsEnabled,"changes":changesEnabled,"sessionGroups":groupsEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
+      return try response(["hostId": "fixture-host", "displayName": "Test computer", "platform": "linux", "architecture": "x64", "runtimeKind": "desktop", "protocolVersion": 1, "upstreamVersion": "0.18.57", "compatibility": "supported", "capabilities": ["readSessions": true, "readMessages": true, "readStatus": true, "events": true, "createSession": false, "sendText": attachmentsEnabled, "stop": false, "readApprovals": true, "replyApproval": false, "renameSession": true, "questions": questionsEnabled, "attachments":attachmentsEnabled,"artifacts":artifactsEnabled,"changes":changesEnabled,"sessionGroups":groupsEnabled,"forkSession":actionsEnabled,"deleteSession":actionsEnabled,"maxPromptBytes": 32768, "protocolVersion": 1]])
     }
     if path.hasSuffix("/workspaces") { return try response([["id": "ws_test", "name": "Test project"]]) }
     let session: [String: Any] = ["id": "ses_test", "workspaceId": "ws_test", "title": title, "updatedAt": "2026-10-08", "status": "idle"]
-    if path.hasSuffix("/sessions") { return try response([session]) }
+    if path.hasSuffix("/sessions") { return try response((actionDeleted ? []:[session])+actionSessions) }
+    if path.contains("/sessions/ses_fork_"),!path.hasSuffix("/messages"),!path.hasSuffix("/status"),!path.hasSuffix("/approvals") {if let child=actionSessions.first(where:{path.hasSuffix("/"+($0["id"] as! String))}){return try response(child)}}
     if path.hasSuffix("/messages") {
+      if actionsEnabled {return try response([
+        ["id":"msg_first","sessionId":path.contains("/ses_fork_") ? "ses_fork_1":"ses_test","role":"user","createdAt":"2026-10-09T00:00:00Z","blocks":[["kind":"text","text":"First synthetic message"]],"state":"complete"],
+        ["id":"msg_last","sessionId":path.contains("/ses_fork_") ? "ses_fork_1":"ses_test","role":"assistant","createdAt":"2026-10-09T00:00:01Z","blocks":[["kind":"text","text":"Last synthetic response"]],"state":"complete"]])}
       if ProcessInfo.processInfo.arguments.contains("-long-result-chat") {
         return try response([
           ["id":"long-input","sessionId":"ses_test","role":"user","createdAt":"2026-10-09T12:00:00Z","blocks":[["kind":"text","text":String(repeating:"Long synthetic input for result navigation. ",count:200)]],"state":"complete"],
