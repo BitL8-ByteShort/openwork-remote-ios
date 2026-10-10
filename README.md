@@ -101,3 +101,5 @@ Chat copy/delete behavior, recovery and limits: [Chat actions](docs/chat-actions
 Older title search, coverage and data flow: [Title search](docs/title-search.md).
 
 Workspace-scoped new-chat default controls and their authorization/recovery boundaries are documented in [Workspace defaults](docs/workspace-defaults.md).
+
+The source candidate adds native-backed [workspace skills](docs/skills.md), with kept drafts and the computer’s existing approval rules. Build 5 excludes this feature.

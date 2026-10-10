@@ -104,11 +104,13 @@ private struct LiveAttachmentConfiguration: Decodable {
   let isolatedStore: DraftStore
   do { isolatedStore = try DraftStore(directory:folder) }
   catch { preconditionFailure("The isolated chat qualification store could not be created.") }
+  let base = ChatUITestTransport(slowMessages: slowMessages, failRename: failRename,
+    largeConversation: largeConversation, burstEvents: burstEvents, offlineReconnect: offlineReconnect,
+    pendingQuestion: pendingQuestion, staleQuestion: staleQuestion, unsupportedQuestion: unsupportedQuestion, slowQuestions: slowQuestions)
+  let transport:any HTTPTransport = ProcessInfo.processInfo.arguments.contains("-skills") ? SkillUITestTransport(base:base) : base
   return AppModel(pairingPersistence: PairingPersistence(load: {
     StoredPairing(origin: "https://fixture.example.test", token: "synthetic", hostId: "fixture-host")
-  }, save: { _ in }, remove: {}), transport: ChatUITestTransport(slowMessages: slowMessages, failRename: failRename,
-    largeConversation: largeConversation, burstEvents: burstEvents, offlineReconnect: offlineReconnect,
-    pendingQuestion: pendingQuestion, staleQuestion: staleQuestion, unsupportedQuestion: unsupportedQuestion, slowQuestions: slowQuestions),
+  }, save: { _ in }, remove: {}), transport: transport,
     draftStore: isolatedStore)
 }
 private actor ChatUITestTransport: HTTPTransport {

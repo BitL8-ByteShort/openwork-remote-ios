@@ -163,6 +163,9 @@ public actor BridgeClient {
     _ type: T.Type, path: String, method: String = "GET", body: Data? = nil, contentType: String? = nil
   ) async throws -> T {
     let (data, status) = try await transport.data(for: request(path, method: method, body: body, contentType: contentType))
+    if status==422,let object=try? JSONSerialization.jsonObject(with:data) as? [String:Any],let error=object["error"] as? [String:Any],let code=error["code"] as? String {
+      switch code {case "SKILL_APPROVAL_REQUIRED":throw RemoteError.skillApprovalRequired;case "SKILL_DENIED":throw RemoteError.skillDenied;case "SKILL_WRITE_DENIED":throw RemoteError.skillWriteDenied;case "SKILL_PROTECTED":throw RemoteError.skillProtected;case "SKILL_INVALID":throw RemoteError.skillInvalid;case "SKILL_UNAVAILABLE":throw RemoteError.skillUnavailable;default:break}
+    }
     try check(status)
     do { return try JSONDecoder().decode(T.self, from: data) } catch {
       throw RemoteError.invalidResponse
@@ -250,6 +253,15 @@ public actor BridgeClient {
     return receipt
   }
   public func send(_ intent: SendIntent) async throws -> MutationReceipt {
+    if let skills=intent.selectedSkillIds {
+      guard !skills.isEmpty else{throw RemoteError.invalidResponse}
+      try SkillValidation.selection(skills)
+      guard intent.text.utf8.count<=32768 else{throw RemoteError.oversized}
+      if let attachments=intent.attachmentIds{try AttachmentValidation.prompt(text:intent.text,ids:attachments)}
+      struct Body:Encodable{let requestId:String,text:String,attachmentIds:[String]?,selectedSkillIds:[String]}
+      let body=try JSONEncoder().encode(Body(requestId:intent.requestId.uuidString.lowercased(),text:intent.text,attachmentIds:intent.attachmentIds,selectedSkillIds:skills))
+      return try await decode(Envelope<MutationReceipt>.self,path:try base(intent.key.workspaceId,intent.key.sessionId)+"/messages",method:"POST",body:body).data
+    }
     if let ids = intent.attachmentIds {
       return try await sendAttachments(intent.key.workspaceId,intent.key.sessionId,text:intent.text,
         attachmentIds:ids,requestId:intent.requestId)
