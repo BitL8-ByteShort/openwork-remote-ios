@@ -79,14 +79,16 @@ import OpenWorkRemoteCore
   }
   init(pairingPersistence: PairingPersistence = .keychain,
        transport: any HTTPTransport = SessionTransport(), draftStore: DraftStore? = nil,
-       clearPreferences: @escaping @MainActor () -> Void = {
-         for key in ["appearance", "compactToolActivity"] { UserDefaults.standard.removeObject(forKey: key) }
-       }) {
+       clearPreferences: (@MainActor () -> Void)? = nil) {
     self.pairingPersistence = pairingPersistence
     self.transport = transport
     self.draftStore = draftStore
     self.injectedStorageDirectory = draftStore?.directory
-    self.clearPreferences = clearPreferences
+    // Keep the actor-isolated closure out of a default-argument thunk. Swift
+    // 6.1 crashes lowering AppModel() in SwiftUI's stored @State initializer.
+    self.clearPreferences = clearPreferences ?? {
+      for key in ["appearance", "compactToolActivity"] { UserDefaults.standard.removeObject(forKey: key) }
+    }
     self.questions = QuestionStore(directory: draftStore?.directory)
     self.attachments = AttachmentStore(directory: draftStore?.directory)
     self.artifacts = ArtifactStore(directory:draftStore?.directory)
