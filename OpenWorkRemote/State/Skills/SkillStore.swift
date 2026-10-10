@@ -30,6 +30,7 @@ private struct SkillDisk: Codable, Sendable {
   private(set) var notice: String?
   private var disk = SkillDisk()
   private var version: UInt64 = 0
+  private var draftGeneration = UUID()
   private let directory: URL, persistence: RevisionedSnapshotStore<SkillDisk>
   @ObservationIgnored private var readID = UUID()
   @ObservationIgnored private var readTask: Task<SkillCatalog, any Error>?
@@ -89,6 +90,21 @@ private struct SkillDisk: Codable, Sendable {
     }
     version += 1
     try await persistence.save(disk, revision: version)
+  }
+  func clearUnsentDrafts() async throws {
+    draftGeneration = UUID()
+    draftTask?.cancel()
+    draftTask = nil
+    disk.drafts.removeAll()
+    try await flush()
+  }
+  func resetLocalData() async throws {
+    draftTask?.cancel()
+    draftTask = nil
+    activate(nil)
+    ready = false
+    try await persistence.invalidateAndRemove()
+    disk = SkillDisk()
   }
   func activate(_ c: SkillContext?) {
     guard context != c else { return }
@@ -287,6 +303,7 @@ private struct SkillDisk: Codable, Sendable {
     let savedDrafts = disk.drafts.filter {
       $0.hostId == c.hostId && $0.workspaceId == c.workspaceId
     }
+    let savedDraftGeneration = draftGeneration
     let rid = UUID()
     do { _ = try action.requestBody(requestId: rid) } catch {
       notice =
@@ -360,7 +377,7 @@ private struct SkillDisk: Codable, Sendable {
           disk.intents.append(uncertain)
         }
         for d in savedDrafts
-        where !disk.drafts.contains(where: {
+        where draftGeneration == savedDraftGeneration && !disk.drafts.contains(where: {
           $0.hostId == d.hostId && $0.workspaceId == d.workspaceId && $0.id == d.id
         }) { disk.drafts.append(d) }
       }

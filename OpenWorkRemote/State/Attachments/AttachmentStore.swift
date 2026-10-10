@@ -45,7 +45,7 @@ private struct AttachmentDiskState: Codable, Sendable { var drafts: [AttachmentD
     let root = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appending(path: "OpenWorkRemote", directoryHint: .isDirectory)
     self.directory = root
-    files = directory == nil ? ProtectedAttachmentFiles.shared : ProtectedAttachmentFiles(directory:root.appending(path:"AttachmentBytes"))
+    files = ProtectedAttachmentFiles(directory:root.appending(path:"AttachmentBytes"))
     snapshots = RevisionedSnapshotStore(url:root.appending(path:"attachments.json"))
   }
   var rows: [AttachmentDraft] {
@@ -113,6 +113,19 @@ private struct AttachmentDiskState: Codable, Sendable { var drafts: [AttachmentD
     revision += 1
     try await snapshots.save(disk,revision:revision)
     try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:directory.appending(path:"attachments.json").path)
+  }
+  func resetLocalData() async throws {
+    activate(nil)
+    ready = false
+    runs.removeAll()
+    for task in tasks.values { task.cancel() }
+    tasks.removeAll()
+    // Fence both stores before awaiting any retired network operation.
+    var failures = 0
+    do { try await snapshots.invalidateAndRemove() } catch { failures += 1 }
+    do { try await files.invalidateAndRemove() } catch { failures += 1 }
+    disk = AttachmentDiskState()
+    if failures > 0 { throw RemoteError.unavailable }
   }
   func add(_ file: LocalAttachmentFile, context: AttachmentContext) async throws {
     guard self.context == context, canChoose, compatible(file), draft(file.id) == nil else { throw RemoteError.unavailable }

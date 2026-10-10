@@ -61,6 +61,11 @@ public struct ConversationState: Codable, Sendable {
   }
   public func pendingRequestId(for key: DraftKey) -> UUID? { pending[key] }
   public mutating func deselect() { selected = nil }
+  public mutating func clearDraftText() {
+    drafts.removeAll()
+    skillSelections?.removeAll()
+    // Request IDs and uncertain outcomes are recovery evidence, not unsent text.
+  }
   public mutating func removeConfirmedDeletedChat(_ key: DraftKey) {
     skillSelections?.removeValue(forKey:key)
     drafts.removeValue(forKey: key)

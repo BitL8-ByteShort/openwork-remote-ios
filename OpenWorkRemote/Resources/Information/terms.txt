@@ -1,0 +1,8 @@
+## App Store terms
+Apple's standard Licensed Application End User License Agreement applies to App Store distribution unless a custom agreement is supplied. Open the Apple EULA link to read the agreement. This app does not add a custom end-user agreement or an acceptance checkbox.
+
+## Source-code license
+PocketWork's published iOS source is available under the MIT License. The Source license screen includes the full notice. The source license is separate from the App Store end-user agreement.
+
+## Other services
+OpenWork, Tailscale and any model providers or services you configure have their own terms. PocketWork does not supply a model account or pay your provider's charges. Only connect a computer and workspace you are authorized to use.

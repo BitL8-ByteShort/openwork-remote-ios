@@ -1,8 +1,8 @@
 ![OpenWork Remote: Your computer. Your chats. Your iPhone.](docs/assets/banner.png)
 
-# OpenWork Remote
+# PocketWork
 
-An independently maintained iOS companion for [OpenWork](https://github.com/different-ai/openwork). Pick up a chat from your iPhone while the work keeps running on your computer.
+**PocketWork**, maintained by Salty Panda LLC, is an independent iOS companion for [OpenWork](https://github.com/different-ai/openwork). Pick up a chat from your iPhone while the work keeps running on your computer.
 
 This is an early source release. Desktop source builds have been tested on macOS and Ubuntu Linux. Installation and re-pairing have been confirmed on a physical iPhone. Broader cellular and recovery qualification is still pending. It isn't an official OpenWork app. Beta builds are distributed through invitation-only internal TestFlight testing. There is no public TestFlight link or App Store release.
 
@@ -103,3 +103,5 @@ Older title search, coverage and data flow: [Title search](docs/title-search.md)
 Workspace-scoped new-chat default controls and their authorization/recovery boundaries are documented in [Workspace defaults](docs/workspace-defaults.md).
 
 The source candidate adds native-backed [workspace skills](docs/skills.md), with kept drafts and the computer’s existing approval rules. Build 5 excludes this feature.
+
+Help, About and three local-data removal controls are implemented in the source candidate. They are not in TestFlight build 5. Read the [privacy policy](https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/) and [support page](https://bitl8-byteshort.github.io/openwork-remote-ios/support/), or contact support@saltypanda.com. Public release remains gated on verified provider disclosures and consent, reviewer access and physical acceptance.
