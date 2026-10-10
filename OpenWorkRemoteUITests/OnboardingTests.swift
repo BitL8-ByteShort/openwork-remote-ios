@@ -1,6 +1,16 @@
 import XCTest
 
 final class OnboardingTests: XCTestCase {
+  @MainActor func testRevokedAccessOffersFreshPairingInsteadOfRetrying() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-ui-testing-onboarding", "-ui-testing-revoked"]
+    app.launch()
+    XCTAssertTrue(app.buttons["pair-again"].waitForExistence(timeout: 5))
+    app.buttons["pair-again"].tap()
+    XCTAssertTrue(app.buttons["scan-pairing"].waitForExistence(timeout: 3))
+    XCTAssertTrue(app.buttons["paste-pairing"].exists)
+    XCTAssertFalse(app.buttons["pair-again"].exists)
+  }
   @MainActor func testPairingInputPreservesLiteralCharacters() {
     let app = XCUIApplication()
     app.launchArguments = ["-ui-testing-onboarding"]

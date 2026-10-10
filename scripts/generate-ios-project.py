@@ -11,7 +11,7 @@ def scalar(v):
  if isinstance(v,list):return '( '+', '.join(scalar(x) for x in v)+' )'
  if isinstance(v,dict):return '{ '+' '.join(str(k)+' = '+scalar(x)+';' for k,x in v.items())+' }'
  return json.dumps(str(v))
-common={'PRODUCT_NAME':'$(TARGET_NAME)','IPHONEOS_DEPLOYMENT_TARGET':'18.0','SWIFT_VERSION':'6.0','CLANG_ENABLE_MODULES':'YES','SDKROOT':'iphoneos','TARGETED_DEVICE_FAMILY':'1,2','CODE_SIGN_STYLE':'Automatic','MARKETING_VERSION':'0.1.0','CURRENT_PROJECT_VERSION':'2','ENABLE_USER_SCRIPT_SANDBOXING':'YES'}
+common={'PRODUCT_NAME':'$(TARGET_NAME)','IPHONEOS_DEPLOYMENT_TARGET':'18.0','SWIFT_VERSION':'6.0','CLANG_ENABLE_MODULES':'YES','SDKROOT':'iphoneos','TARGETED_DEVICE_FAMILY':'1,2','CODE_SIGN_STYLE':'Automatic','MARKETING_VERSION':'0.1.0','CURRENT_PROJECT_VERSION':'5','ENABLE_USER_SCRIPT_SANDBOXING':'YES'}
 def configs(key,extra):
  configs=[]
  for name in ['Debug','Release']:

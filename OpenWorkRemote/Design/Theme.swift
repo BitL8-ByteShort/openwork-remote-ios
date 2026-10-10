@@ -1,6 +1,9 @@
 import SwiftUI
 
 enum Theme {
+  // Reviewed Penpot spacing and card radius tokens.
+  static let rowGap: CGFloat = 16
+  static let radius: CGFloat = 20
   static let background = Color(
     uiColor: UIColor {
       $0.userInterfaceStyle == .dark ? UIColor(hex: 0x15181E) : UIColor(hex: 0xFAF9F6)
@@ -29,6 +32,8 @@ enum Theme {
     uiColor: UIColor {
       $0.userInterfaceStyle == .dark ? UIColor(hex: 0x3B414D) : UIColor(hex: 0xDDDFE3)
     })
+  static let diffAdded = Color(uiColor:UIColor {$0.userInterfaceStyle == .dark ? UIColor(hex:0x183D2D) : UIColor(hex:0xECF8F1)})
+  static let diffRemoved = Color(uiColor:UIColor {$0.userInterfaceStyle == .dark ? UIColor(hex:0x48262B) : UIColor(hex:0xFEF0F0)})
   static let mark = Color(red: 0.21, green: 0.35, blue: 0.87)
 }
 extension UIColor {
@@ -67,11 +72,13 @@ struct BrandMark: View {
   }
 }
 struct PrimaryButtonStyle: ButtonStyle {
+  var fill: Color = Theme.accent
+  var ink: Color = Theme.onAccent
   @Environment(\.isEnabled) private var isEnabled
   func makeBody(configuration: Configuration) -> some View {
     configuration.label.font(.headline).frame(maxWidth: .infinity).frame(minHeight: 54)
-      .foregroundStyle(Theme.onAccent).background(
-        Theme.accent, in: RoundedRectangle(cornerRadius: 18)
+      .foregroundStyle(ink).background(
+        fill, in: RoundedRectangle(cornerRadius: 18)
       ).opacity(!isEnabled ? 0.45 : configuration.isPressed ? 0.75 : 1)
   }
 }

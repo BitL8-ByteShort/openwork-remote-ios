@@ -2,7 +2,7 @@ import Foundation
 
 public enum RemoteError: Error, Sendable, Equatable {
   case invalidPairing, oversized, invalidResponse, unauthorized, forbidden, incompatible,
-    unavailable, cancelled, outcomeUnknown, notFound, conflict
+    unavailable, cancelled, outcomeUnknown, notFound, conflict, skillApprovalRequired, skillDenied, skillWriteDenied, skillProtected, skillInvalid, skillUnavailable
 }
 public enum PairingValidation {
   public static func origin(_ string: String) throws -> URL {

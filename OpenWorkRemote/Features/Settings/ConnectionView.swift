@@ -25,7 +25,9 @@ struct ConnectionView: View {
             LabeledContent("OpenWork", value: h.upstreamVersion)
             LabeledContent("Computer", value: h.platform == "macos" ? "macOS" : "Linux")
           }
-          Button("Reconnect") { model.connect() }
+          Button(model.connection == .revoked ? "Pair again" : "Reconnect") {
+            model.connect()
+          }
         } header: {
           Text("Paired computer")
         }
@@ -33,6 +35,11 @@ struct ConnectionView: View {
           ForEach(model.workspaces) { w in Label(w.name, systemImage: "folder") }
         } header: {
           Text("Allowed workspaces")
+        }
+        if let wid=model.selectedWorkspace {
+          Section { NavigationLink { WorkspaceSettingsView() } label: {Label("Workspace settings",systemImage:"folder.badge.gearshape")}
+            .accessibilityIdentifier("workspace-settings-open")
+          } header: {Text(model.workspaces.first{$0.id==wid}?.name ?? "Workspace")}
         }
         Section {
           NavigationLink("Permissions") { PermissionsView() }
@@ -55,7 +62,7 @@ struct ConnectionView: View {
         }
         Section {
           Text(
-            "OpenWork and the bridge must stay running on your computer. Both devices need Tailscale. Replies continue on the computer while this app is closed."
+            "Keep OpenWork running with Remote access enabled on your computer. Both devices need Tailscale. Replies continue on the computer while this app is closed."
           ).font(.callout).foregroundStyle(Theme.muted)
           Text("Verified folder-access requests can be answered here. Other approval types are handled in OpenWork on your computer.").font(.callout)
             .foregroundStyle(Theme.muted)
@@ -68,7 +75,9 @@ struct ConnectionView: View {
       }.scrollContentBackground(.hidden).background(Theme.background).navigationTitle("Settings")
         .sheet(isPresented: $showingModelSettings) { ModelSettingsView() }
         .navigationBarTitleDisplayMode(.inline).toolbar {
-          ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+          ToolbarItem(placement: .confirmationAction) {
+            Button("Done") { InteractionMetrics.measure("Dismiss settings handler") { dismiss() } }
+          }
         }.confirmationDialog(
           "Forget this computer?", isPresented: $confirmingForget, titleVisibility: .visible
         ) {
@@ -80,7 +89,7 @@ struct ConnectionView: View {
           }
         } message: {
           Text(
-            "This removes the phone’s saved credential. If your computer is offline, also revoke this phone in its local setup page when it is online."
+            "This removes the phone’s saved credential. If your computer is offline, also revoke this phone in OpenWork’s Remote access settings when it is online."
           )
         }
     }

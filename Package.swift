@@ -7,4 +7,10 @@ let package = Package(
   targets: [
     .target(name: "OpenWorkRemoteCore"),
     .testTarget(name: "OpenWorkRemoteCoreTests", dependencies: ["OpenWorkRemoteCore"], resources: [.copy("Fixtures")]),
+    .target(name: "OpenWorkRemoteAppState", dependencies: ["OpenWorkRemoteCore"],
+      path: "OpenWorkRemote",
+      exclude: ["App/OpenWorkRemoteApp.swift", "App/ChatUITestFixture.swift", "Assets.xcassets", "Design", "Features",
+                "Info.plist", "PrivacyInfo.xcprivacy", "Rendering"],
+      sources: ["App/AppModel.swift", "State", "Storage", "Diagnostics"]),
+    .testTarget(name: "OpenWorkRemoteAppTests", dependencies: ["OpenWorkRemoteAppState", "OpenWorkRemoteCore"],resources:[.copy("Fixtures")]),
   ], swiftLanguageModes: [.v6])

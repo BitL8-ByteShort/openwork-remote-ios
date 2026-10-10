@@ -5,11 +5,20 @@ import OpenWorkRemoteCore
 
 @MainActor @Observable final class AppModel {
   var connection: ConnectionState = .unpaired
-  var host: Host?
+  var host: OpenWorkRemoteCore.Host?
   var workspaces: [Workspace] = []
   var sessions: [ChatSession] = []
   var messages: [ChatMessage] = []
   var approvals: [Approval] = []
+  let questions: QuestionStore
+  let attachments: AttachmentStore
+  let artifacts: ArtifactStore
+  let changes = ChangeStore()
+  let workspaceDefaults:WorkspaceDefaultsStore
+  let skills:SkillStore
+  let groups:GroupStore
+  let chatSearch = ChatSearchStore()
+  let chatActions:ChatActionStore
   var status: SessionStatus?
   private var directory = PagedSnapshot<ChatSession>()
   private var history = PagedSnapshot<ChatMessage>()
@@ -26,6 +35,8 @@ import OpenWorkRemoteCore
   var pairingError: String?
   var pendingPhone = false
   var onboardingStep = 0
+  private let pairingPersistence: PairingPersistence
+  private let transport: any HTTPTransport
   private var client: BridgeClient?
   private var storedPairing: StoredPairing?
   private var draftStore: DraftStore?
@@ -36,6 +47,7 @@ import OpenWorkRemoteCore
   private var pairingGeneration = UUID()
   private var savedPendingPairing = false
   private var generation = UUID()
+  private var selectionID = UUID()
   private var foreground = true
   private var saveRevision: UInt64 = 0
   var draft: String {
@@ -50,19 +62,50 @@ import OpenWorkRemoteCore
   }
   var canSend: Bool {
     connection == .ready && !sending && !updatingControls && !uncertain && selectedSession != nil
+      && !chatActions.blocksSending(disk.conversation.selected)
       && host?.capabilities.sendText == true && ["idle", "error"].contains(status?.phase ?? "")
-      && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draft.utf8.count <= 32768
+      && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.rows.isEmpty)
+      && (attachments.rows.isEmpty || (attachments.context == attachmentContext && attachments.canSend))
+      && (disk.conversation.selectedSkills.isEmpty || host?.capabilities.skillsSelect == true)
+      && draft.utf8.count <= 32768
+  }
+  init(pairingPersistence: PairingPersistence = .keychain,
+       transport: any HTTPTransport = SessionTransport(), draftStore: DraftStore? = nil) {
+    self.pairingPersistence = pairingPersistence
+    self.transport = transport
+    self.draftStore = draftStore
+    self.questions = QuestionStore(directory: draftStore?.directory)
+    self.attachments = AttachmentStore(directory: draftStore?.directory)
+    self.artifacts = ArtifactStore(directory:draftStore?.directory)
+    self.workspaceDefaults = WorkspaceDefaultsStore(directory:draftStore?.directory)
+    self.skills = SkillStore(directory:draftStore?.directory)
+    self.groups = GroupStore(directory:draftStore?.directory)
+    self.chatActions = ChatActionStore(directory:draftStore?.directory)
   }
   func start() async {
     #if DEBUG
       if ProcessInfo.processInfo.arguments.contains("-ui-testing-onboarding") { return }
     #endif
     do {
-      draftStore = try DraftStore()
+      if draftStore == nil { draftStore = try DraftStore() }
       disk = try await draftStore!.load()
-      storedPairing = try DeviceCredentialStore.load()
+      do { try await questions.restore() }
+      catch { notice = "Your saved question drafts could not be opened. Question replies are paused; unlock the phone and restart the app." }
+      do { try await chatActions.restore() }
+      catch { notice = "Your saved chat actions could not be opened. Fork and delete are paused; unlock the phone and restart the app." }
+      do { try await skills.restore() }
+      catch { notice = "Your skill drafts could not be opened. Skill edits are paused; unlock the phone and restart the app." }
+      do { try await workspaceDefaults.restore() }
+      catch { notice = "Your saved default-model changes could not be opened. Default edits are paused; unlock the phone and restart the app." }
+      do { try await groups.restore() }
+      catch { notice = "Your saved group changes could not be opened. Group edits are paused; unlock the phone and restart the app." }
+      do { try await attachments.restore() }
+      catch { notice = "Your selected files could not be opened. Attachments are paused; unlock the phone and restart the app." }
+      do { try await artifacts.files.cleanup() }
+      catch { notice = "Temporary file previews could not be checked. Unlock the phone and reopen Files from this chat." }
+      storedPairing = try pairingPersistence.load()
       if let p = storedPairing {
-        client = try BridgeClient(origin: PairingValidation.origin(p.origin), token: p.token)
+        client = try BridgeClient(origin: PairingValidation.origin(p.origin), token: p.token, transport: transport)
         connect()
       }
     } catch {
@@ -81,14 +124,31 @@ import OpenWorkRemoteCore
     }
   }
   func connect() {
+    if connection == .revoked {
+      pairAgain()
+      return
+    }
+    guard let client else {
+      connection = .unpaired
+      return
+    }
     connectionTask?.cancel()
     refreshTask?.cancel()
     refreshTask = nil
     refreshID = nil
     let generation = UUID()
     self.generation = generation
+    questions.activate(nil)
+    attachments.activate(nil)
+    artifacts.activate(nil)
+    changes.activate(nil)
+    chatSearch.activate(nil)
+    groups.activate(nil)
+    workspaceDefaults.activate(nil)
+    skills.activate(nil)
+    chatActions.activate(nil)
+    loading = false
     connection = .connecting
-    guard let client else { return }
     connectionTask = Task {
       var attempt = 0
       while !Task.isCancelled && foreground {
@@ -125,12 +185,30 @@ import OpenWorkRemoteCore
             "Connection failed: \(diagnostic.domain,privacy:.public) code \(diagnostic.code,privacy:.public)")
           if case RemoteError.unauthorized = error {
             connection = .revoked
+            questions.activate(nil)
+            attachments.activate(nil)
+            artifacts.activate(nil)
+            changes.activate(nil)
+            chatSearch.activate(nil)
+    groups.activate(nil)
+    workspaceDefaults.activate(nil)
+    skills.activate(nil)
+            chatActions.activate(nil)
+            self.generation = UUID()
+            refreshTask?.cancel()
+            refreshTask = nil
+            refreshID = nil
+            directory = PagedSnapshot()
+            history = PagedSnapshot()
+            workspaces = []
             messages = []
             sessions = []
             approvals = []
             status = nil
             selectedSession = nil
+            selectedWorkspace = nil
             stopRequested = false
+            loading = false
             return
           }
           if case RemoteError.incompatible = error {
@@ -183,6 +261,15 @@ import OpenWorkRemoteCore
       selectedWorkspace = w.first?.id
     }
     if previousWorkspace != selectedWorkspace {
+      questions.activate(nil)
+      attachments.activate(nil)
+      artifacts.activate(nil)
+      changes.activate(nil)
+      chatSearch.activate(nil)
+    groups.activate(nil)
+    workspaceDefaults.activate(nil)
+    skills.activate(nil)
+      chatActions.activate(nil)
       directory = PagedSnapshot()
       history = PagedSnapshot()
       sessions = []
@@ -195,6 +282,15 @@ import OpenWorkRemoteCore
       }
     }
     guard let wid = selectedWorkspace else {
+      questions.activate(nil)
+      attachments.activate(nil)
+      artifacts.activate(nil)
+      changes.activate(nil)
+      chatSearch.activate(nil)
+    groups.activate(nil)
+    workspaceDefaults.activate(nil)
+    skills.activate(nil)
+      chatActions.activate(nil)
       sessions = []
       messages = []
       approvals = []
@@ -220,6 +316,15 @@ import OpenWorkRemoteCore
         do { session = try await client.session(wid, sid) } catch RemoteError.notFound {
           guard current == generation, selectedWorkspace == wid else { return }
           selectedSession = nil
+          questions.activate(nil)
+          attachments.activate(nil)
+          artifacts.activate(nil)
+          changes.activate(nil)
+          chatSearch.activate(nil)
+    groups.activate(nil)
+    workspaceDefaults.activate(nil)
+    skills.activate(nil)
+          chatActions.activate(nil)
           disk.conversation.deselect()
           history = PagedSnapshot()
           messages = []
@@ -236,6 +341,15 @@ import OpenWorkRemoteCore
       try await loadSelected()
     } else {
       selectedSession = nil
+      questions.activate(nil)
+      attachments.activate(nil)
+      artifacts.activate(nil)
+      changes.activate(nil)
+      chatSearch.activate(nil)
+    groups.activate(nil)
+    workspaceDefaults.activate(nil)
+    skills.activate(nil)
+      chatActions.activate(nil)
       messages = []
       status = nil
       approvals = []
@@ -243,6 +357,18 @@ import OpenWorkRemoteCore
   }
   func select(_ session: ChatSession) async {
     guard let host else { return }
+    let current = generation
+    let selection = UUID()
+    selectionID = selection
+    questions.activate(nil)
+    attachments.activate(nil)
+    artifacts.activate(nil)
+    changes.activate(nil)
+    chatSearch.activate(nil)
+    groups.activate(nil)
+    workspaceDefaults.activate(nil)
+    skills.activate(nil)
+    chatActions.activate(nil)
     saveDrafts()
     selectedWorkspace = session.workspaceId
     selectedSession = session
@@ -255,24 +381,36 @@ import OpenWorkRemoteCore
     stopRequested = false
     notice = nil
     loading = true
-    defer { loading = false }
+    defer { if current == generation, selection == selectionID { loading = false } }
     do { try await loadSelected() } catch {
+      guard current == generation, selection == selectionID else { return }
       notice = "This chat could not be loaded. Reconnect and try again."
     }
+    guard current == generation, selection == selectionID else { return }
     saveDrafts()
   }
   func loadSelected() async throws {
     guard let client, let selectedSession else { return }
     let session = selectedSession
     let current = generation
+    let selection = selectionID
     async let m = client.messages(session.workspaceId, session.id)
     async let s = client.status(session.workspaceId, session.id)
     async let a = client.approvals(session.workspaceId, session.id)
     let snapshot: (Envelope<[ChatMessage]>, SessionStatus, [Approval])
     do { snapshot = try await (m, s, a) } catch RemoteError.notFound {
-      guard current == generation, self.selectedSession?.id == session.id,
+      guard current == generation, selection == selectionID, self.selectedSession?.id == session.id,
         self.selectedWorkspace == session.workspaceId else { return }
       self.selectedSession = nil
+      questions.activate(nil)
+      attachments.activate(nil)
+      artifacts.activate(nil)
+      changes.activate(nil)
+      chatSearch.activate(nil)
+    groups.activate(nil)
+    workspaceDefaults.activate(nil)
+    skills.activate(nil)
+      chatActions.activate(nil)
       disk.conversation.deselect()
       history = PagedSnapshot()
       messages = []; approvals = []; status = nil
@@ -281,16 +419,35 @@ import OpenWorkRemoteCore
       return
     }
     let (page, state, pending) = snapshot
-    guard current == generation, self.selectedSession?.id == session.id,
+    guard current == generation, selection == selectionID, self.selectedSession?.id == session.id,
       self.selectedSession?.workspaceId == session.workspaceId
     else { return }
-    history.latest(page.data, cursor: page.cursor)
-    messages = history.rows.sorted { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
-    status = state
-    approvals = pending
-    if ["idle", "error"].contains(state.phase) { stopRequested = false }
+    InteractionMetrics.measure("Apply chat snapshot") {
+      history.latest(page.data, cursor: page.cursor)
+      messages = history.rows.sorted { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
+      status = state
+      approvals = pending
+      if ["idle", "error"].contains(state.phase) { stopRequested = false }
+    }
+    attachments.activate(attachmentContext)
+    artifacts.activate(artifactContext)
+    changes.activate(changeContext)
+    if let context = questionContext, host?.capabilities.questions == true {
+      questions.scheduleRead(client: client, context: context)
+    } else { questions.activate(nil) }
   }
   func changeWorkspace(_ workspace: Workspace) async {
+    selectionID = UUID()
+    questions.activate(nil)
+    attachments.activate(nil)
+    artifacts.activate(nil)
+    changes.activate(nil)
+    chatSearch.activate(nil)
+    groups.activate(nil)
+    workspaceDefaults.activate(nil)
+    skills.activate(nil)
+    chatActions.activate(nil)
+    loading = false
     saveDrafts()
     selectedWorkspace = workspace.id
     selectedSession = nil
@@ -302,6 +459,31 @@ import OpenWorkRemoteCore
     approvals = []
     stopRequested = false
     do { try await reconcile() } catch { notice = "Workspace unavailable." }
+  }
+  func rename(_ session: ChatSession, title: String, requestId: UUID) async throws {
+    guard connection == .ready, host?.capabilities.renameSession == true, let client else {
+      throw RemoteError.unavailable
+    }
+    let current = generation
+    let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    var failure: (any Error)?
+    do {
+      let receipt = try await client.rename(session.workspaceId, session.id, title: title,
+        previousTitle: session.title, requestId: requestId)
+      if !["accepted", "confirmed"].contains(receipt.state) { failure = RemoteError.outcomeUnknown }
+    } catch { failure = error }
+    guard current == generation else { throw RemoteError.cancelled }
+    // Read back even after a lost response. Never repeat the mutation to check its outcome.
+    let actual = try await client.session(session.workspaceId, session.id)
+    guard current == generation, actual.id == session.id, actual.workspaceId == session.workspaceId else {
+      throw RemoteError.cancelled
+    }
+    if selectedWorkspace == actual.workspaceId {
+      directory.latest([actual], cursor: directory.cursor)
+      sessions = directory.rows.sorted { ($0.updatedAt, $0.id) > ($1.updatedAt, $1.id) }
+      if selectedSession?.id == actual.id { selectedSession = actual }
+    }
+    guard actual.title == title else { throw failure ?? RemoteError.conflict }
   }
   func olderSessions() async {
     guard let client, let wid = selectedWorkspace, let cursor = sessionCursor else { return }
@@ -338,19 +520,25 @@ import OpenWorkRemoteCore
     guard canSend, let client else { return }
     let current = generation
     do {
-      let intent = try disk.conversation.beginSend(ready: canSend)
+      let ids = attachments.rows.isEmpty ? [] : attachments.attachmentIDs
+      let intent = try disk.conversation.beginSend(ready: canSend, attachmentIds:ids)
       sending = true
       defer {
         sending = false
         saveDrafts()
       }
       // Persist admission intent before the network request can leave the phone.
-      do { try await persist() } catch {
+      do {
+        if !ids.isEmpty { try await attachments.reserveSend(intent) }
+        try await persist()
+      } catch {
+        if !ids.isEmpty { await attachments.releaseUnsent(intent) }
         disk.conversation.applyReceipt(intent, accepted: false)
         notice = "Your request could not be saved. No message was sent."
         return
       }
       guard current == generation else {
+        if !ids.isEmpty { await attachments.releaseUnsent(intent) }
         disk.conversation.applyReceipt(intent, accepted: false)
         return
       }
@@ -361,12 +549,23 @@ import OpenWorkRemoteCore
           && r.requestId == intent.requestId.uuidString.lowercased()
           && r.resourceId == intent.key.sessionId
         disk.conversation.applyReceipt(intent, accepted: accepted)
-        if !accepted {
+        if !ids.isEmpty { await attachments.finishSend(intent,accepted:accepted) }
+        if !accepted, current == generation, disk.conversation.selected == intent.key {
           notice = "Delivery is uncertain. Check the conversation before trying again."
         }
       } catch {
-        disk.conversation.applyReceipt(intent, accepted: false)
-        notice = "Delivery is uncertain. Check the conversation before trying again."
+        let e=error as? RemoteError
+        let knownSkillRejection=e == .skillApprovalRequired || e == .skillDenied || e == .skillUnavailable
+        if knownSkillRejection {
+          disk.conversation.rejectBeforePrompt(intent)
+          if !ids.isEmpty {await attachments.releaseUnsent(intent)}
+        }else{
+          disk.conversation.applyReceipt(intent, accepted: false)
+          if !ids.isEmpty { await attachments.finishSend(intent,accepted:false) }
+        }
+        if current == generation, disk.conversation.selected == intent.key {
+          notice = knownSkillRejection ? "Nothing was sent. Review the selected skill permission on your computer, then send again. Your draft is kept." : "Delivery is uncertain. Check the conversation before trying again."
+        }
       }
       saveDrafts()
       guard current == generation else { return }
@@ -547,7 +746,7 @@ import OpenWorkRemoteCore
       connection = .pairing
       pairingTask = Task {
         do {
-          let pending = try BridgeClient(origin: PairingValidation.origin(payload.origin))
+          let pending = try BridgeClient(origin: PairingValidation.origin(payload.origin), transport: transport)
           let claim = try await pending.claim(
             payload, deviceId: UUID().uuidString, deviceName: "My iPhone")
           try Task.checkCancellation()
@@ -564,9 +763,9 @@ import OpenWorkRemoteCore
                 h.compatibility == "supported"
               else { throw RemoteError.incompatible }
               let paired = try BridgeClient(
-                origin: PairingValidation.origin(payload.origin), token: token)
+                origin: PairingValidation.origin(payload.origin), token: token, transport: transport)
               let connection = StoredPairing(origin: payload.origin, token: token, hostId: h.hostId)
-              try DeviceCredentialStore.save(connection)
+              try pairingPersistence.save(connection)
               savedPendingPairing = true
               try await paired.ack()
               try Task.checkCancellation()
@@ -596,7 +795,7 @@ import OpenWorkRemoteCore
         } catch {
           if Task.isCancelled || current != pairingGeneration { return }
           if savedPendingPairing && storedPairing == nil {
-            do { try DeviceCredentialStore.remove(); savedPendingPairing = false } catch {
+            do { try pairingPersistence.remove(); savedPendingPairing = false } catch {
               notice = "Pairing could not finish or be removed. Unlock this iPhone and try again."
             }
           }
@@ -621,7 +820,7 @@ import OpenWorkRemoteCore
     pairingTask?.cancel()
     pairingGeneration = UUID()
     if savedPendingPairing && storedPairing == nil {
-      do { try DeviceCredentialStore.remove(); savedPendingPairing = false } catch {
+      do { try pairingPersistence.remove(); savedPendingPairing = false } catch {
         notice = "The unfinished pairing could not be removed. Unlock this iPhone and try again."
       }
     }
@@ -631,11 +830,46 @@ import OpenWorkRemoteCore
   }
   func forget() async {
     saveDrafts()
-    do { try DeviceCredentialStore.remove() } catch {
+    do { try pairingPersistence.remove() } catch {
       notice = "Pairing could not be removed from Keychain. Unlock this iPhone and try again."
       return
     }
     let previousClient = client
+    let cleanup = artifacts.discardCopies()
+    clearLocalPairing()
+    let current = generation
+    onboardingStep = 0
+    do { try await cleanup.value }
+    catch {
+      guard current == generation else { return }
+      notice = "The computer was forgotten, but temporary file copies could not be removed. Unlock the phone and try local data cleanup again."
+    }
+    if let previousClient {
+      do { try await previousClient.revoke() } catch {
+        guard current == generation else { return }
+        notice = "Local pairing removed. Revoke this phone on your computer when it is online."
+      }
+    }
+  }
+  private func pairAgain() {
+    guard connection == .revoked else { return }
+    do { try pairingPersistence.remove() } catch {
+      notice = "Pairing could not be removed from Keychain. Unlock this iPhone and try again."
+      return
+    }
+    clearLocalPairing()
+    onboardingStep = 2
+  }
+  private func clearLocalPairing() {
+    questions.activate(nil)
+    attachments.activate(nil)
+    artifacts.activate(nil)
+    changes.activate(nil)
+    chatSearch.activate(nil)
+    groups.activate(nil)
+    workspaceDefaults.activate(nil)
+    skills.activate(nil)
+    chatActions.activate(nil)
     connectionTask?.cancel()
     pairingTask?.cancel()
     refreshTask?.cancel()
@@ -643,7 +877,6 @@ import OpenWorkRemoteCore
     refreshID = nil
     generation = UUID()
     pairingGeneration = UUID()
-    let current = generation
     client = nil
     storedPairing = nil
     host = nil
@@ -655,21 +888,23 @@ import OpenWorkRemoteCore
     approvals = []
     selectedSession = nil
     selectedWorkspace = nil
+    status = nil
+    stopRequested = false
+    sending = false
+    updatingControls = false
+    loading = false
+    notice = nil
+    pairingError = nil
+    pendingPhone = false
+    savedPendingPairing = false
     disk.conversation.deselect()
     saveDrafts()
     connection = .unpaired
-    onboardingStep = 0
-    if let previousClient {
-      do { try await previousClient.revoke() } catch {
-        guard current == generation else { return }
-        notice = "Local pairing removed. Revoke this phone on your computer when it is online."
-      }
-    }
   }
   func sceneActive(_ active: Bool) {
     foreground = active
     if active {
-      if client != nil { connect() }
+      if client != nil && connection != .revoked { connect() }
     } else {
       saveDrafts()
       connectionTask?.cancel()
@@ -677,12 +912,41 @@ import OpenWorkRemoteCore
       refreshTask = nil
       refreshID = nil
       generation = UUID()
-      connection = client == nil ? .unpaired : .connecting
+      questions.activate(nil)
+      attachments.activate(nil)
+      artifacts.activate(nil)
+      changes.activate(nil)
+      chatSearch.activate(nil)
+    groups.activate(nil)
+    workspaceDefaults.activate(nil)
+    skills.activate(nil)
+      chatActions.activate(nil)
+      if connection != .revoked { connection = client == nil ? .unpaired : .connecting }
     }
   }
 }
 
 extension AppModel {
+  var questionContext: QuestionContext? {
+    guard let host, let session = selectedSession else { return nil }
+    return QuestionContext(hostId: host.hostId, workspaceId: session.workspaceId,
+      sessionId: session.id, generation: generation, selection: selectionID)
+  }
+  func refreshQuestions() async {
+    guard let client, host?.capabilities.questions == true, let context = questionContext else {
+      questions.activate(nil)
+      return
+    }
+    questions.activate(context)
+    await questions.refresh(client: client, context: context)
+  }
+  func answerQuestion(_ question: QuestionRequest, context: QuestionContext, dismiss: Bool = false) async {
+    guard connection == .ready, host?.capabilities.questions == true,
+      context == questionContext, let client else { return }
+    await questions.submit(question, client: client, context: context, dismiss: dismiss)
+    guard context == questionContext else { return }
+    await refreshQuestions()
+  }
   var controlsScope: String {
     [host?.hostId ?? "", selectedWorkspace ?? "", selectedSession?.id ?? ""].joined(separator: "/")
   }
@@ -738,5 +1002,201 @@ extension AppModel {
     let current = try await client.savedPermissions(wid, sid)
     try checkControlsScope(scope, epoch)
     guard !current.grants.contains(where: { $0.id == permission.id }) else { throw RemoteError.conflict }
+  }
+}
+
+
+extension AppModel {
+  var attachmentRefreshID: String {
+    [host?.hostId ?? "",selectedWorkspace ?? "",selectedSession?.id ?? "",selectedSession?.modelLabel ?? "",
+      generation.uuidString,selectionID.uuidString,connection.label].joined(separator:"/")
+  }
+  var attachmentContext: AttachmentContext? {
+    guard let host, let session = selectedSession else { return nil }
+    return AttachmentContext(key:DraftKey(hostId:host.hostId,workspaceId:session.workspaceId,sessionId:session.id),
+      generation:generation,selection:selectionID)
+  }
+  func refreshAttachments() async {
+    guard let client, connection == .ready, let context = attachmentContext else { attachments.activate(nil); return }
+    attachments.activate(context)
+    await attachments.refreshAccess(client:client,context:context,supported:host?.capabilities.attachments == true)
+  }
+  func addAttachment(_ file: LocalAttachmentFile, context: AttachmentContext) async {
+    do {
+      try await attachments.add(file,context:context)
+      guard context == attachmentContext, let client, connection == .ready else { return }
+      await attachments.upload(file.id,client:client,context:context)
+    } catch {
+      try? await attachments.files.remove(file)
+      if context == attachmentContext { notice = "The file could not be added. Choose a supported photo/PDF, at most four files and 40 MiB in total." }
+    }
+  }
+  func retryAttachment(_ id: UUID, context: AttachmentContext, check: Bool = false) async {
+    guard context == attachmentContext, connection == .ready, let client else { return }
+    if check { await attachments.check(id,client:client,context:context) }
+    else { await attachments.upload(id,client:client,context:context) }
+  }
+  func removeAttachment(_ id: UUID, context: AttachmentContext) async {
+    guard context == attachmentContext else { return }
+    await attachments.remove(id,client:connection == .ready ? client : nil,context:context)
+  }
+}
+
+
+extension AppModel {
+  var artifactContext: ArtifactContext? {
+    guard let host, let session = selectedSession else { return nil }
+    return ArtifactContext(key:DraftKey(hostId:host.hostId,workspaceId:session.workspaceId,sessionId:session.id),generation:generation,selection:selectionID)
+  }
+  var artifactRefreshID: String { attachmentRefreshID + "/" + String(host?.capabilities.artifacts == true) }
+  func refreshArtifacts() async {
+    guard let client, connection == .ready, let context = artifactContext else { artifacts.activate(nil); return }
+    artifacts.activate(context)
+    await artifacts.refresh(client:client,context:context,supported:host?.capabilities.artifacts == true)
+  }
+  func downloadArtifact(_ ref: ArtifactRef, context: ArtifactContext) async {
+    guard let client, connection == .ready, artifactContext == context else { return }
+    await artifacts.download(ref,client:client,context:context)
+  }
+  func shareArtifact(context: ArtifactContext) async -> URL? {
+    guard let client, connection == .ready, artifactContext == context else { return nil }
+    return await artifacts.prepareShare(client:client,context:context)
+  }
+}
+
+extension AppModel {
+  var changeContext: ChangeContext? {
+    guard let host,let session=selectedSession else {return nil}
+    return ChangeContext(key:DraftKey(hostId:host.hostId,workspaceId:session.workspaceId,sessionId:session.id),generation:generation,selection:selectionID)
+  }
+  var changeRefreshID: String {attachmentRefreshID+"/"+String(host?.capabilities.changes == true)}
+  func refreshChanges() async {
+    guard let client,connection == .ready,let context=changeContext else {changes.activate(nil);return}
+    changes.activate(context)
+    await changes.refresh(client:client,context:context,supported:host?.capabilities.changes == true)
+  }
+  func openDiff(_ ref: ChangeRef,context: ChangeContext) async {
+    guard let client,connection == .ready,changeContext == context,host?.capabilities.changes == true else {return}
+    await changes.open(ref,client:client,context:context)
+  }
+}
+
+
+extension AppModel {
+  var groupContext:GroupContext? {
+    guard foreground,let host,let wid=selectedWorkspace else{return nil}
+    return GroupContext(hostId:host.hostId,workspaceId:wid,generation:generation)
+  }
+  var groupRefreshID:String {(groupContext.map{$0.hostId+"/"+$0.workspaceId+"/"+$0.generation.uuidString} ?? "offline")+"/"+String(host?.capabilities.sessionGroups == true)+"/"+String(connection == .ready)}
+  func refreshGroups() async {
+    guard let c=groupContext else{groups.activate(nil)
+    chatActions.activate(nil);return}
+    groups.activate(c)
+    guard connection == .ready,let client else{return}
+    await groups.refresh(client:client,context:c,supported:host?.capabilities.sessionGroups == true)
+  }
+  func changeGroup(_ action:GroupAction,expectedRevision:String?=nil,expectedContext:GroupContext?=nil) async -> Bool {
+    guard let c=groupContext,c==groups.context,(expectedContext == nil || expectedContext == c),connection == .ready,host?.capabilities.sessionGroups == true,let client else{return false}
+    return await groups.mutate(action,client:client,context:c,expectedRevision:expectedRevision)
+  }
+  func actionContext(for session:ChatSession)->ChatActionContext? {
+    guard foreground,let host,selectedWorkspace==session.workspaceId else{return nil}
+    return ChatActionContext(hostId:host.hostId,workspaceId:session.workspaceId,sessionId:session.id,generation:generation)
+  }
+  func refreshChatAction(session:ChatSession,context c:ChatActionContext) async {
+    guard actionContext(for:session)==c else{return}
+    chatActions.activate(c)
+    guard connection == .ready,let client else{return}
+    await chatActions.refresh(client:client,context:c,supported:host?.capabilities.forkSession == true && host?.capabilities.deleteSession == true)
+  }
+  func performChatAction(_ action:SessionAction,session:ChatSession,context c:ChatActionContext,revision:String) async -> Bool {
+    guard actionContext(for:session)==c,chatActions.context==c,connection == .ready,let client,
+      host?.capabilities.forkSession == true,host?.capabilities.deleteSession == true else{return false}
+    guard let resource=await chatActions.mutate(action,client:client,context:c,expectedRevision:revision) else{return false}
+    guard actionContext(for:session)==c else{return false}
+    switch action {
+    case .fork:
+      do{let created=try await client.session(c.workspaceId,resource);guard actionContext(for:session)==c else{return false}
+        directory.latest([created],cursor:directory.cursor);sessions=directory.rows.sorted{($0.updatedAt,$0.id)>($1.updatedAt,$1.id)}
+        await select(created)
+      }catch{notice="The new chat was created, but could not be opened. Check recent chats on your computer."}
+    case .delete:
+      disk.conversation.removeConfirmedDeletedChat(DraftKey(hostId:c.hostId,workspaceId:c.workspaceId,sessionId:c.sessionId))
+      directory.remove(id:c.sessionId);sessions=directory.rows.sorted{($0.updatedAt,$0.id)>($1.updatedAt,$1.id)}
+      if selectedSession?.id==c.sessionId,selectedSession?.workspaceId==c.workspaceId {
+        selectionID=UUID();selectedSession=nil;history=PagedSnapshot();messages=[];status=nil;approvals=[];stopRequested=false
+        questions.activate(nil);attachments.activate(nil);artifacts.activate(nil);changes.activate(nil)
+      }
+      chatSearch.activate(nil)
+    groups.activate(nil)
+    workspaceDefaults.activate(nil)
+    skills.activate(nil)
+      do{try await persist()}catch{notice="The chat was deleted on your computer, but its local draft could not be cleared. Unlock the phone and restart the app."}
+    }
+    return true
+  }
+  func reviewChatAction(session:ChatSession,context c:ChatActionContext) async {
+    guard actionContext(for:session)==c,connection == .ready,let client else{return}
+    await chatActions.reviewChats(client:client,context:c)
+    guard actionContext(for:session)==c,chatActions.reviewed else{return}
+    do{let page=try await client.sessions(c.workspaceId);guard actionContext(for:session)==c else{return};directory.latest(page.data,cursor:page.cursor);sessions=directory.rows.sorted{($0.updatedAt,$0.id)>($1.updatedAt,$1.id)}}catch{notice="Recent chats could not be refreshed."}
+  }
+
+}
+
+
+extension AppModel {
+  var searchContext:ChatSearchContext? {
+    guard foreground,connection == .ready,let host,let wid=selectedWorkspace else{return nil}
+    return ChatSearchContext(hostId:host.hostId,workspaceId:wid,generation:generation)
+  }
+  func searchOlderTitles(_ query:String) {
+    guard let c=searchContext,let client else{chatSearch.activate(nil);return}
+    chatSearch.activate(c)
+    chatSearch.schedule(query,client:client,context:c,supported:host?.capabilities.searchSessions == true)
+  }
+  func moreTitleMatches() async {
+    guard let c=searchContext,c==chatSearch.context,let client else{return}
+    await chatSearch.more(client:client,context:c)
+  }
+  func openSearchResult(_ session:ChatSession,context c:ChatSearchContext) async {
+    guard searchContext==c,session.workspaceId==c.workspaceId else{return}
+    await select(session)
+  }
+}
+
+
+extension AppModel {
+  var skillContext:SkillContext? {
+    guard connection == .ready,foreground,let host,let wid=selectedWorkspace else{return nil}
+    return SkillContext(hostId:host.hostId,workspaceId:wid,generation:generation)
+  }
+  var skillsRefreshID:String{(skillContext.map{$0.hostId+"/"+$0.workspaceId+"/"+$0.generation.uuidString} ?? "offline")+"/"+String(host?.capabilities.skillsRead == true)}
+  var selectedSkillIDs:[String]{disk.conversation.selectedSkills}
+  func toggleSelectedSkill(_ item:SkillSummary){
+    guard connection == .ready,!sending,host?.capabilities.skillsSelect==true,item.selectable,selectedSession != nil else{return}
+    var ids=selectedSkillIDs;if ids.contains(item.id){ids.removeAll{$0==item.id}}else{guard ids.count<8 else{notice="Select up to eight skills for one message.";return};ids.append(item.id)}
+    do{try disk.conversation.setSelectedSkills(ids);saveDrafts()}catch{notice="This skill could not be selected."}
+  }
+  func removeSelectedSkill(_ id:String){guard !sending else{return};do{try disk.conversation.setSelectedSkills(selectedSkillIDs.filter{$0 != id});saveDrafts()}catch{}}
+  func refreshSkills()async{
+    guard let c=skillContext,let client else{skills.activate(nil);return};skills.activate(c)
+    await skills.refresh(client:client,context:c,read:host?.capabilities.skillsRead==true,write:host?.capabilities.skillsWrite==true)
+  }
+  func skillDetail(_ id:String,context c:SkillContext)async throws->SkillDetail{guard skillContext==c,let client else{throw RemoteError.cancelled};return try await skills.detail(id,client:client,context:c)}
+  func changeSkill(_ action:SkillAction,context c:SkillContext)async->Bool{guard skillContext==c,let client else{return false};let saved=await skills.change(action,client:client,context:c);if saved,case let .delete(id,_) = action{removeSelectedSkill(id)};return saved}
+  var workspaceDefaultsContext:WorkspaceDefaultsContext? {
+    guard foreground,connection == .ready,let host,let wid=selectedWorkspace else{return nil}
+    return WorkspaceDefaultsContext(hostId:host.hostId,workspaceId:wid,generation:generation)
+  }
+  var defaultsRefreshID:String { (workspaceDefaultsContext.map{$0.hostId+"/"+$0.workspaceId+"/"+$0.generation.uuidString} ?? "offline")+"/"+String(host?.capabilities.workspaceDefaults == true) }
+  func refreshWorkspaceDefaults() async {
+    guard let c=workspaceDefaultsContext,let client else{workspaceDefaults.activate(nil);return}
+    workspaceDefaults.activate(c)
+    await workspaceDefaults.refresh(client:client,context:c,supported:host?.capabilities.workspaceDefaults == true)
+  }
+  func saveWorkspaceDefaults(_ selection:ModelSelection,revision:String,context c:WorkspaceDefaultsContext) async->Bool {
+    guard workspaceDefaultsContext==c,workspaceDefaults.context==c,let client,host?.capabilities.workspaceDefaults == true else{return false}
+    return await workspaceDefaults.save(selection,revision:revision,client:client,context:c)
   }
 }

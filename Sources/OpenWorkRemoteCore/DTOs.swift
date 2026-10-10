@@ -5,8 +5,23 @@ public struct Envelope<Value: Decodable & Sendable>: Decodable, Sendable {
   public let cursor: String?
 }
 public struct Capabilities: Codable, Sendable {
+  public let renameSession: Bool?
   public let modelSettings: Bool?
   public let savedPermissions: Bool?
+  public let questions: Bool?
+  public let attachments: Bool?
+  public let artifacts: Bool?
+  public let changes: Bool?
+  public let sessionGroups: Bool?
+  public let forkSession: Bool?
+  public let deleteSession: Bool?
+  public let searchSessions: Bool?
+  public let workspaceDefaults: Bool?
+  public let skillsRead: Bool?
+  public let skillsWrite: Bool?
+  public let skillsSelect: Bool?
+  public let automationsRead: Bool?
+  public let automationsWrite: Bool?
   public let readSessions: Bool
   public let readMessages: Bool
   public let readStatus: Bool
@@ -100,6 +115,7 @@ public struct Approval: Codable, Sendable, Identifiable {
 public struct MutationReceipt: Codable, Sendable {
   public let requestId: String
   public let resourceId: String?
+  public let resourceRevision:String?
   public let state: String
   public let observedAt: String
 }

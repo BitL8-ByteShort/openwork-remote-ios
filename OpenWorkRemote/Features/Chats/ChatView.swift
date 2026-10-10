@@ -2,7 +2,7 @@ import OpenWorkRemoteCore
 import SwiftUI
 
 private enum ChatSheet: String, Identifiable {
-  case chats, settings, model
+  case chats, settings, model, files
   var id: String { rawValue }
 }
 struct ChatView: View {
@@ -10,6 +10,7 @@ struct ChatView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var sheet: ChatSheet?
   @State private var approval: Approval?
+  @State private var question: QuestionPresentation?
   @State private var nearBottom = true
   @State private var newReplies = false
   @AppStorage("compactToolActivity") private var compactToolActivity = true
@@ -23,7 +24,7 @@ struct ChatView: View {
           }
           Text(model.connection.label).font(.caption)
           Spacer()
-          Button("Reconnect") { model.connect() }.font(.caption.weight(.semibold)).frame(
+          Button(model.connection == .revoked ? "Pair again" : "Reconnect") { model.connect() }.font(.caption.weight(.semibold)).frame(
             minHeight: 44)
         }.padding(.horizontal, 24).background(Theme.surface)
       }
@@ -43,6 +44,18 @@ struct ChatView: View {
         ApprovalBanner(approval: first) { approval = first }.padding(.horizontal, 24).padding(
           .top, 12)
       }
+      if let first = model.questions.pending.first, let context = model.questionContext {
+        QuestionBanner(question: first) { question = QuestionPresentation(question: first, context: context) }
+          .padding(.horizontal, 24).padding(.top, 12)
+      }
+      if model.questions.hasUncertainReply {
+        Label("A question answer is unconfirmed. Check this chat on your computer.", systemImage: "exclamationmark.circle")
+          .font(.callout).foregroundStyle(Theme.muted).padding(.horizontal, 24).padding(.vertical, 12)
+      }
+      if model.questions.readFailed {
+        Label("Questions could not be checked. Reconnect or continue on your computer.", systemImage: "questionmark.bubble")
+          .font(.callout).foregroundStyle(Theme.muted).padding(.horizontal, 24).padding(.vertical, 12)
+      }
       if model.status?.phase == "error" {
         Label("The model could not finish. Check its setup in OpenWork on your computer.", systemImage: "exclamationmark.circle")
           .font(.callout).foregroundStyle(Theme.muted).padding(.horizontal, 24).padding(.vertical, 12)
@@ -55,18 +68,20 @@ struct ChatView: View {
         conversation
       }
       ComposerView()
-    }.background(Theme.background).foregroundStyle(Theme.ink).sheet(item: $sheet) {
+    }.background(Theme.background).foregroundStyle(Theme.ink).sheet(item: $sheet, onDismiss: { model.artifacts.closePreview() }) {
       switch $0 {
       case .chats: ChatListView()
       case .settings: ConnectionView()
       case .model: ModelSettingsView()
+      case .files: ArtifactListView()
       }
-    }.sheet(item: $approval) { ApprovalSheet(approval: $0) }.toolbar(.hidden, for: .navigationBar)
+    }.sheet(item: $approval) { ApprovalSheet(approval: $0) }
+      .sheet(item: $question) { QuestionSheet(presentation: $0) }.toolbar(.hidden, for: .navigationBar)
   }
   private var header: some View {
     HStack {
       Button {
-        sheet = .chats
+        InteractionMetrics.measure("Open history handler") { sheet = .chats }
       } label: {
         Image(systemName: "line.3.horizontal").font(.title3).frame(width: 44, height: 44)
       }.accessibilityLabel("Open chat history")
@@ -116,6 +131,7 @@ struct ChatView: View {
     ScrollViewReader { proxy in
       ZStack(alignment: .bottom) {
         ScrollView {
+          VStack(alignment:.leading,spacing:10) {
           LazyVStack(alignment: .leading, spacing: 10) {
             if model.messageCursor != nil {
               Button("Load earlier replies") { Task { await model.earlierMessages() } }.font(
@@ -129,6 +145,15 @@ struct ChatView: View {
                 MessageView(message: message).id(message.id)
               }
             }
+          }
+            // The result entry and scroll target stay realized independently
+            // of the message stack's estimated heights for long replies.
+            if model.host?.capabilities.artifacts == true {
+              Button { sheet = .files } label: {
+                Label("Files from this chat",systemImage:"doc.on.doc").font(.callout.weight(.medium))
+                  .frame(minHeight:44)
+              }.accessibilityLabel("Files from this chat")
+            }
             if model.status?.phase == "running"
               && !model.messages.contains(where: { $0.state == "streaming" })
             {
@@ -137,7 +162,8 @@ struct ChatView: View {
             }
             Color.clear.frame(height: 1).id("bottom")
           }.padding(.horizontal, 24).padding(.bottom, 16)
-        }.onScrollGeometryChange(for: Bool.self) { g in
+        }.defaultScrollAnchor(.bottom, for:.initialOffset)
+        .onScrollGeometryChange(for: Bool.self) { g in
           g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 100
         } action: { _, value in
           nearBottom = value
@@ -145,7 +171,6 @@ struct ChatView: View {
         }.onAppear {
           nearBottom = true
           newReplies = false
-          proxy.scrollTo("bottom", anchor: .bottom)
         }.onChange(of: model.messages) { _, _ in
           if nearBottom {
             if reduceMotion {
@@ -156,10 +181,6 @@ struct ChatView: View {
           } else {
             newReplies = true
           }
-        }.onChange(of: model.selectedSession?.id) { _, _ in
-          nearBottom = true
-          newReplies = false
-          proxy.scrollTo("bottom", anchor: .bottom)
         }
         if newReplies {
           Button {
@@ -173,6 +194,6 @@ struct ChatView: View {
           }.padding(.bottom, 12)
         }
       }
-    }
+    }.id(model.selectedSession?.id)
   }
 }

@@ -19,12 +19,12 @@ struct HostSetupView: View {
             2, "Connect to Tailscale",
             "Connect this iPhone and your computer to the same private network.")
           step(
-            3, "Open the bridge setup page",
-            "Start OpenWork Remote on your computer, then open its local setup page.")
+            3, "Enable Remote access",
+            "In OpenWork, open Settings → Remote access. Allow phone access, then choose Pair a phone.")
         }.padding(24).background(Theme.raised, in: RoundedRectangle(cornerRadius: 24))
         DisclosureGroup("Detailed setup") {
           Text(
-            "On your \(platform) computer, follow the private repository’s bridge setup guide. The setup page is http://127.0.0.1:9289. Choose Create pairing code."
+            "On your \(platform) computer, use a compatible OpenWork build with Remote access enabled. Keep the pairing window open, then approve this phone and choose its allowed projects."
           ).font(.callout).foregroundStyle(Theme.muted).padding(.top, 8)
         }
       }.padding(24)

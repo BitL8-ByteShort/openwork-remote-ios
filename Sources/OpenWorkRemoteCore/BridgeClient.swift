@@ -2,12 +2,25 @@ import Foundation
 
 public protocol HTTPTransport: Sendable {
   func data(for request: URLRequest) async throws -> (Data, Int)
+  func binary(for request: URLRequest, maximumBytes: Int) async throws -> BinaryHTTPResponse
   func events(for request: URLRequest) async throws -> AsyncThrowingStream<SSEFrame, any Error>
 }
 extension HTTPTransport {
+  public func binary(for request: URLRequest, maximumBytes: Int) async throws -> BinaryHTTPResponse { throw RemoteError.incompatible }
   public func events(for request: URLRequest) async throws -> AsyncThrowingStream<
     SSEFrame, any Error
   > { throw RemoteError.unavailable }
+}
+public struct BinaryHTTPResponse: Sendable {
+  public let data: Data
+  public let status: Int
+  public let mime: String?
+  public let contentRange: String?
+  public let entityTag: String?
+  public let length: Int?
+  public init(data: Data, status: Int, mime: String?, contentRange: String?, entityTag: String?, length: Int?) {
+    self.data = data; self.status = status; self.mime = mime; self.contentRange = contentRange; self.entityTag = entityTag; self.length = length
+  }
 }
 private final class RedirectBlocker: NSObject, URLSessionTaskDelegate, Sendable {
   func urlSession(
@@ -37,6 +50,27 @@ public actor SessionTransport: HTTPTransport {
       if data.count > 8_388_608 { throw RemoteError.oversized }
     }
     return (data, http.statusCode)
+  }
+  public func binary(for request: URLRequest, maximumBytes: Int) async throws -> BinaryHTTPResponse {
+    guard (1...1_048_576).contains(maximumBytes) else { throw RemoteError.oversized }
+    let (bytes, response) = try await session.bytes(for: request)
+    defer { bytes.task.cancel() }
+    guard let http = response as? HTTPURLResponse else { throw RemoteError.invalidResponse }
+    let length = http.value(forHTTPHeaderField: "Content-Length").flatMap(Int.init)
+    func result(_ data: Data) -> BinaryHTTPResponse {
+      BinaryHTTPResponse(data: data, status: http.statusCode, mime: http.mimeType,
+        contentRange: http.value(forHTTPHeaderField: "Content-Range"), entityTag: http.value(forHTTPHeaderField: "ETag"), length: length)
+    }
+    guard http.statusCode == 206 else { return result(Data()) }
+    guard length == maximumBytes, response.expectedContentLength == maximumBytes else { throw RemoteError.invalidResponse }
+    var data = Data(); data.reserveCapacity(maximumBytes)
+    for try await byte in bytes {
+      try Task.checkCancellation()
+      guard data.count < maximumBytes else { throw RemoteError.oversized }
+      data.append(byte)
+    }
+    guard data.count == maximumBytes else { throw RemoteError.invalidResponse }
+    return result(data)
   }
   public func events(for request: URLRequest) async throws -> AsyncThrowingStream<
     SSEFrame, any Error
@@ -86,7 +120,7 @@ public actor BridgeClient {
     self.token = token
     self.transport = transport
   }
-  private func request(_ path: String, method: String = "GET", body: Data? = nil) throws
+  private func request(_ path: String, method: String = "GET", body: Data? = nil, contentType: String? = nil) throws
     -> URLRequest
   {
     guard path.hasPrefix("/v1/"), !path.contains(".."),
@@ -102,7 +136,7 @@ public actor BridgeClient {
     r.httpBody = body
     r.setValue("application/json", forHTTPHeaderField: "Accept")
     if let token { r.setValue("Bearer " + token, forHTTPHeaderField: "Authorization") }
-    if body != nil { r.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+    if body != nil { r.setValue(contentType ?? "application/json", forHTTPHeaderField: "Content-Type") }
     return r
   }
   private func check(_ status: Int) throws {
@@ -117,10 +151,21 @@ public actor BridgeClient {
     default: throw RemoteError.unavailable
     }
   }
-  private func decode<T: Decodable & Sendable>(
-    _ type: T.Type, path: String, method: String = "GET", body: Data? = nil
+  func binary(_ path: String, range: String, mime: String, maximumBytes: Int) async throws -> BinaryHTTPResponse {
+    var req = try request(path)
+    req.setValue(range, forHTTPHeaderField: "Range"); req.setValue(mime, forHTTPHeaderField: "Accept")
+    req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+    let result = try await transport.binary(for: req, maximumBytes: maximumBytes)
+    try check(result.status)
+    return result
+  }
+  func decode<T: Decodable & Sendable>(
+    _ type: T.Type, path: String, method: String = "GET", body: Data? = nil, contentType: String? = nil
   ) async throws -> T {
-    let (data, status) = try await transport.data(for: request(path, method: method, body: body))
+    let (data, status) = try await transport.data(for: request(path, method: method, body: body, contentType: contentType))
+    if status==422,let object=try? JSONSerialization.jsonObject(with:data) as? [String:Any],let error=object["error"] as? [String:Any],let code=error["code"] as? String {
+      switch code {case "SKILL_APPROVAL_REQUIRED":throw RemoteError.skillApprovalRequired;case "SKILL_DENIED":throw RemoteError.skillDenied;case "SKILL_WRITE_DENIED":throw RemoteError.skillWriteDenied;case "SKILL_PROTECTED":throw RemoteError.skillProtected;case "SKILL_INVALID":throw RemoteError.skillInvalid;case "SKILL_UNAVAILABLE":throw RemoteError.skillUnavailable;default:break}
+    }
     try check(status)
     do { return try JSONDecoder().decode(T.self, from: data) } catch {
       throw RemoteError.invalidResponse
@@ -132,7 +177,7 @@ public actor BridgeClient {
     }
     return value
   }
-  private func base(_ wid: String, _ sid: String) throws -> String {
+  func base(_ wid: String, _ sid: String) throws -> String {
     "/v1/workspaces/" + (try id(wid)) + "/sessions/" + (try id(sid))
   }
   private func cursor(_ value: String?) throws -> String {
@@ -158,6 +203,13 @@ public actor BridgeClient {
   public func session(_ wid: String, _ sid: String) async throws -> ChatSession {
     try await decode(Envelope<ChatSession>.self, path: try base(wid, sid)).data
   }
+  public func rename(_ wid: String, _ sid: String, title: String, previousTitle: String, requestId: UUID) async throws -> MutationReceipt {
+    let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty, title.unicodeScalars.count <= 200 else { throw RemoteError.invalidResponse }
+    return try await decode(Envelope<MutationReceipt>.self,
+      path: (try base(wid, sid)) + "/rename", method: "POST",
+      body: JSONEncoder().encode(["requestId": requestId.uuidString.lowercased(), "title": title, "previousTitle": previousTitle])).data
+  }
   public func messages(_ wid: String, _ sid: String, cursor value: String? = nil) async throws
     -> Envelope<[ChatMessage]>
   {
@@ -170,7 +222,50 @@ public actor BridgeClient {
   public func approvals(_ wid: String, _ sid: String) async throws -> [Approval] {
     try await decode(Envelope<[Approval]>.self, path: (try base(wid, sid)) + "/approvals").data
   }
+  public func questions(_ wid: String, _ sid: String) async throws -> [QuestionRequest] {
+    let questions = try await decode(Envelope<[QuestionRequest]>.self,
+      path: (try base(wid, sid)) + "/questions").data
+    guard questions.count <= 32, Set(questions.map(\.id)).count == questions.count else {
+      throw RemoteError.invalidResponse
+    }
+    for question in questions { try question.validateShape(sessionId: sid) }
+    return questions
+  }
+  public func replyQuestion(_ wid: String, _ sid: String, question: QuestionRequest,
+    answers: QuestionAnswers, requestId: UUID) async throws -> MutationReceipt {
+    try question.validateShape(sessionId: sid)
+    try question.validate(answers: answers)
+    return try await settleQuestion(wid, sid, question: question, answers: answers, requestId: requestId, action: "reply")
+  }
+  public func dismissQuestion(_ wid: String, _ sid: String, question: QuestionRequest,
+    requestId: UUID) async throws -> MutationReceipt {
+    try question.validateShape(sessionId: sid)
+    guard question.supported else { throw RemoteError.incompatible }
+    return try await settleQuestion(wid, sid, question: question, answers: nil, requestId: requestId, action: "dismiss")
+  }
+  private func settleQuestion(_ wid: String, _ sid: String, question: QuestionRequest,
+    answers: QuestionAnswers?, requestId: UUID, action: String) async throws -> MutationReceipt {
+    let receipt = try await decode(Envelope<MutationReceipt>.self,
+      path: (try base(wid, sid)) + "/questions/" + (try id(question.id)) + "/" + action,
+      method: "POST", body: JSONEncoder().encode(QuestionSubmission(requestId: requestId, revision: question.revision, answers: answers))).data
+    guard receipt.requestId == requestId.uuidString.lowercased(), receipt.resourceId == question.id,
+      ["accepted", "confirmed", "outcome_unknown"].contains(receipt.state) else { throw RemoteError.invalidResponse }
+    return receipt
+  }
   public func send(_ intent: SendIntent) async throws -> MutationReceipt {
+    if let skills=intent.selectedSkillIds {
+      guard !skills.isEmpty else{throw RemoteError.invalidResponse}
+      try SkillValidation.selection(skills)
+      guard intent.text.utf8.count<=32768 else{throw RemoteError.oversized}
+      if let attachments=intent.attachmentIds{try AttachmentValidation.prompt(text:intent.text,ids:attachments)}
+      struct Body:Encodable{let requestId:String,text:String,attachmentIds:[String]?,selectedSkillIds:[String]}
+      let body=try JSONEncoder().encode(Body(requestId:intent.requestId.uuidString.lowercased(),text:intent.text,attachmentIds:intent.attachmentIds,selectedSkillIds:skills))
+      return try await decode(Envelope<MutationReceipt>.self,path:try base(intent.key.workspaceId,intent.key.sessionId)+"/messages",method:"POST",body:body).data
+    }
+    if let ids = intent.attachmentIds {
+      return try await sendAttachments(intent.key.workspaceId,intent.key.sessionId,text:intent.text,
+        attachmentIds:ids,requestId:intent.requestId)
+    }
     let body = try JSONEncoder().encode([
       "requestId": intent.requestId.uuidString.lowercased(), "text": intent.text,
     ])
