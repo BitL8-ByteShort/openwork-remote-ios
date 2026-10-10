@@ -6,8 +6,8 @@ import XCTest
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:15)); app.buttons["Open chat history"].tap()
     let chat = app.buttons.matching(NSPredicate(format:"label CONTAINS %@","Sample chat")).firstMatch
     XCTAssertTrue(chat.waitForExistence(timeout:5)); chat.tap()
-    let attachments = app.buttons["Add attachments"]
-    XCTAssertTrue(attachments.waitForExistence(timeout:5)); attachments.tap()
+    let attachments = app.buttons["composer-add"]
+    XCTAssertTrue(attachments.waitForExistence(timeout:5)); attachments.tap(); app.buttons["Photos or files"].tap()
     return app
   }
   func testUnavailableHostShowsComputerInstructionsAndDoneDismissesImmediately() {
@@ -16,8 +16,8 @@ import XCTest
     XCTAssertTrue(history.waitForExistence(timeout:15)); history.tap()
     let chat = app.buttons.matching(NSPredicate(format:"label CONTAINS %@","Sample chat")).firstMatch
     XCTAssertTrue(chat.waitForExistence(timeout:5)); chat.tap()
-    let attachments = app.buttons["Add attachments"]
-    XCTAssertTrue(attachments.waitForExistence(timeout:5)); attachments.tap()
+    let attachments = app.buttons["composer-add"]
+    XCTAssertTrue(attachments.waitForExistence(timeout:5)); attachments.tap(); app.buttons["Photos or files"].tap()
     XCTAssertTrue(app.staticTexts["This computer does not support attachments yet. Update OpenWork Remote on your computer."].waitForExistence(timeout:5))
     XCTAssertFalse(app.buttons["Choose photos"].isEnabled)
     let done = app.buttons["attachment-done"]; XCTAssertTrue(done.exists); done.tap()

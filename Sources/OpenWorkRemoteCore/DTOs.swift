@@ -19,6 +19,7 @@ public struct Capabilities: Codable, Sendable {
   public let workspaceDefaults: Bool?
   public let skillsRead: Bool?
   public let skillsWrite: Bool?
+  public let skillsSelect: Bool?
   public let automationsRead: Bool?
   public let automationsWrite: Bool?
   public let readSessions: Bool
@@ -114,6 +115,7 @@ public struct Approval: Codable, Sendable, Identifiable {
 public struct MutationReceipt: Codable, Sendable {
   public let requestId: String
   public let resourceId: String?
+  public let resourceRevision:String?
   public let state: String
   public let observedAt: String
 }

@@ -15,6 +15,7 @@ import OpenWorkRemoteCore
   let artifacts: ArtifactStore
   let changes = ChangeStore()
   let workspaceDefaults:WorkspaceDefaultsStore
+  let skills:SkillStore
   let groups:GroupStore
   let chatSearch = ChatSearchStore()
   let chatActions:ChatActionStore
@@ -65,6 +66,7 @@ import OpenWorkRemoteCore
       && host?.capabilities.sendText == true && ["idle", "error"].contains(status?.phase ?? "")
       && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.rows.isEmpty)
       && (attachments.rows.isEmpty || (attachments.context == attachmentContext && attachments.canSend))
+      && (disk.conversation.selectedSkills.isEmpty || host?.capabilities.skillsSelect == true)
       && draft.utf8.count <= 32768
   }
   init(pairingPersistence: PairingPersistence = .keychain,
@@ -76,6 +78,7 @@ import OpenWorkRemoteCore
     self.attachments = AttachmentStore(directory: draftStore?.directory)
     self.artifacts = ArtifactStore(directory:draftStore?.directory)
     self.workspaceDefaults = WorkspaceDefaultsStore(directory:draftStore?.directory)
+    self.skills = SkillStore(directory:draftStore?.directory)
     self.groups = GroupStore(directory:draftStore?.directory)
     self.chatActions = ChatActionStore(directory:draftStore?.directory)
   }
@@ -90,6 +93,8 @@ import OpenWorkRemoteCore
       catch { notice = "Your saved question drafts could not be opened. Question replies are paused; unlock the phone and restart the app." }
       do { try await chatActions.restore() }
       catch { notice = "Your saved chat actions could not be opened. Fork and delete are paused; unlock the phone and restart the app." }
+      do { try await skills.restore() }
+      catch { notice = "Your skill drafts could not be opened. Skill edits are paused; unlock the phone and restart the app." }
       do { try await workspaceDefaults.restore() }
       catch { notice = "Your saved default-model changes could not be opened. Default edits are paused; unlock the phone and restart the app." }
       do { try await groups.restore() }
@@ -140,6 +145,7 @@ import OpenWorkRemoteCore
     chatSearch.activate(nil)
     groups.activate(nil)
     workspaceDefaults.activate(nil)
+    skills.activate(nil)
     chatActions.activate(nil)
     loading = false
     connection = .connecting
@@ -186,6 +192,7 @@ import OpenWorkRemoteCore
             chatSearch.activate(nil)
     groups.activate(nil)
     workspaceDefaults.activate(nil)
+    skills.activate(nil)
             chatActions.activate(nil)
             self.generation = UUID()
             refreshTask?.cancel()
@@ -261,6 +268,7 @@ import OpenWorkRemoteCore
       chatSearch.activate(nil)
     groups.activate(nil)
     workspaceDefaults.activate(nil)
+    skills.activate(nil)
       chatActions.activate(nil)
       directory = PagedSnapshot()
       history = PagedSnapshot()
@@ -281,6 +289,7 @@ import OpenWorkRemoteCore
       chatSearch.activate(nil)
     groups.activate(nil)
     workspaceDefaults.activate(nil)
+    skills.activate(nil)
       chatActions.activate(nil)
       sessions = []
       messages = []
@@ -314,6 +323,7 @@ import OpenWorkRemoteCore
           chatSearch.activate(nil)
     groups.activate(nil)
     workspaceDefaults.activate(nil)
+    skills.activate(nil)
           chatActions.activate(nil)
           disk.conversation.deselect()
           history = PagedSnapshot()
@@ -338,6 +348,7 @@ import OpenWorkRemoteCore
       chatSearch.activate(nil)
     groups.activate(nil)
     workspaceDefaults.activate(nil)
+    skills.activate(nil)
       chatActions.activate(nil)
       messages = []
       status = nil
@@ -356,6 +367,7 @@ import OpenWorkRemoteCore
     chatSearch.activate(nil)
     groups.activate(nil)
     workspaceDefaults.activate(nil)
+    skills.activate(nil)
     chatActions.activate(nil)
     saveDrafts()
     selectedWorkspace = session.workspaceId
@@ -397,6 +409,7 @@ import OpenWorkRemoteCore
       chatSearch.activate(nil)
     groups.activate(nil)
     workspaceDefaults.activate(nil)
+    skills.activate(nil)
       chatActions.activate(nil)
       disk.conversation.deselect()
       history = PagedSnapshot()
@@ -432,6 +445,7 @@ import OpenWorkRemoteCore
     chatSearch.activate(nil)
     groups.activate(nil)
     workspaceDefaults.activate(nil)
+    skills.activate(nil)
     chatActions.activate(nil)
     loading = false
     saveDrafts()
@@ -540,10 +554,17 @@ import OpenWorkRemoteCore
           notice = "Delivery is uncertain. Check the conversation before trying again."
         }
       } catch {
-        disk.conversation.applyReceipt(intent, accepted: false)
-        if !ids.isEmpty { await attachments.finishSend(intent,accepted:false) }
+        let e=error as? RemoteError
+        let knownSkillRejection=e == .skillApprovalRequired || e == .skillDenied || e == .skillUnavailable
+        if knownSkillRejection {
+          disk.conversation.rejectBeforePrompt(intent)
+          if !ids.isEmpty {await attachments.releaseUnsent(intent)}
+        }else{
+          disk.conversation.applyReceipt(intent, accepted: false)
+          if !ids.isEmpty { await attachments.finishSend(intent,accepted:false) }
+        }
         if current == generation, disk.conversation.selected == intent.key {
-          notice = "Delivery is uncertain. Check the conversation before trying again."
+          notice = knownSkillRejection ? "Nothing was sent. Review the selected skill permission on your computer, then send again. Your draft is kept." : "Delivery is uncertain. Check the conversation before trying again."
         }
       }
       saveDrafts()
@@ -847,6 +868,7 @@ import OpenWorkRemoteCore
     chatSearch.activate(nil)
     groups.activate(nil)
     workspaceDefaults.activate(nil)
+    skills.activate(nil)
     chatActions.activate(nil)
     connectionTask?.cancel()
     pairingTask?.cancel()
@@ -897,6 +919,7 @@ import OpenWorkRemoteCore
       chatSearch.activate(nil)
     groups.activate(nil)
     workspaceDefaults.activate(nil)
+    skills.activate(nil)
       chatActions.activate(nil)
       if connection != .revoked { connection = client == nil ? .unpaired : .connecting }
     }
@@ -1107,6 +1130,7 @@ extension AppModel {
       chatSearch.activate(nil)
     groups.activate(nil)
     workspaceDefaults.activate(nil)
+    skills.activate(nil)
       do{try await persist()}catch{notice="The chat was deleted on your computer, but its local draft could not be cleared. Unlock the phone and restart the app."}
     }
     return true
@@ -1143,6 +1167,24 @@ extension AppModel {
 
 
 extension AppModel {
+  var skillContext:SkillContext? {
+    guard connection == .ready,foreground,let host,let wid=selectedWorkspace else{return nil}
+    return SkillContext(hostId:host.hostId,workspaceId:wid,generation:generation)
+  }
+  var skillsRefreshID:String{(skillContext.map{$0.hostId+"/"+$0.workspaceId+"/"+$0.generation.uuidString} ?? "offline")+"/"+String(host?.capabilities.skillsRead == true)}
+  var selectedSkillIDs:[String]{disk.conversation.selectedSkills}
+  func toggleSelectedSkill(_ item:SkillSummary){
+    guard connection == .ready,!sending,host?.capabilities.skillsSelect==true,item.selectable,selectedSession != nil else{return}
+    var ids=selectedSkillIDs;if ids.contains(item.id){ids.removeAll{$0==item.id}}else{guard ids.count<8 else{notice="Select up to eight skills for one message.";return};ids.append(item.id)}
+    do{try disk.conversation.setSelectedSkills(ids);saveDrafts()}catch{notice="This skill could not be selected."}
+  }
+  func removeSelectedSkill(_ id:String){guard !sending else{return};do{try disk.conversation.setSelectedSkills(selectedSkillIDs.filter{$0 != id});saveDrafts()}catch{}}
+  func refreshSkills()async{
+    guard let c=skillContext,let client else{skills.activate(nil);return};skills.activate(c)
+    await skills.refresh(client:client,context:c,read:host?.capabilities.skillsRead==true,write:host?.capabilities.skillsWrite==true)
+  }
+  func skillDetail(_ id:String,context c:SkillContext)async throws->SkillDetail{guard skillContext==c,let client else{throw RemoteError.cancelled};return try await skills.detail(id,client:client,context:c)}
+  func changeSkill(_ action:SkillAction,context c:SkillContext)async->Bool{guard skillContext==c,let client else{return false};let saved=await skills.change(action,client:client,context:c);if saved,case let .delete(id,_) = action{removeSelectedSkill(id)};return saved}
   var workspaceDefaultsContext:WorkspaceDefaultsContext? {
     guard foreground,connection == .ready,let host,let wid=selectedWorkspace else{return nil}
     return WorkspaceDefaultsContext(hostId:host.hostId,workspaceId:wid,generation:generation)

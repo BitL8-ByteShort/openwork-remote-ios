@@ -4,8 +4,12 @@ struct ComposerView: View {
   @Environment(AppModel.self) private var model
   @FocusState private var focused: Bool
   @State private var attachments: AttachmentPresentation?
+  @State private var skills=false
   var body: some View {
     VStack(spacing: 8) {
+      if !model.selectedSkillIDs.isEmpty {
+        ScrollView(.horizontal){HStack{ForEach(model.selectedSkillIDs,id:\.self){id in Button{model.removeSelectedSkill(id)}label:{Label((model.skills.catalog?.items.first{$0.id==id}?.name ?? "Selected skill")+" · Remove",systemImage:"sparkles").font(.caption).padding(10).background(Theme.surface,in:Capsule())}.disabled(model.sending).accessibilityIdentifier("selected-skill-"+id)}}}
+      }
       if !model.attachments.rows.isEmpty, let context = model.attachmentContext {
         ScrollView(.horizontal) {
           HStack {
@@ -30,11 +34,11 @@ struct ComposerView: View {
           .orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 18))
       }
       HStack(alignment: .bottom, spacing: 8) {
-        Button {
-          focused = false
-          if let context = model.attachmentContext { attachments = AttachmentPresentation(context:context) }
-        } label: { Image(systemName:"plus").font(.title3).frame(width:44,height:44) }
-          .disabled(model.selectedSession == nil || model.sending).accessibilityLabel("Add attachments")
+        Menu {
+          Button("Photos or files",systemImage:"paperclip"){focused=false;if let context=model.attachmentContext{attachments=AttachmentPresentation(context:context)}}
+          Button("Skills",systemImage:"sparkles"){focused=false;skills=true}
+        }label:{Image(systemName:"plus").font(.title3).frame(width:44,height:44)}
+          .disabled(model.selectedSession == nil || model.sending).accessibilityLabel("Add to message").accessibilityIdentifier("composer-add")
         TextField(
           "Message OpenWork", text: Binding(get: { model.draft }, set: { model.draft = $0 }),
           axis: .vertical
@@ -71,6 +75,7 @@ struct ComposerView: View {
         .caption2
       ).foregroundStyle(Theme.muted).frame(maxWidth: .infinity)
     }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8).background(Theme.background)
+      .sheet(isPresented:$skills){NavigationStack{SkillListView().toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){skills=false}}}}}
       .sheet(item:$attachments) { AttachmentPicker(context:$0.context) }
       .task(id:model.attachmentRefreshID) { await model.refreshAttachments() }
   }

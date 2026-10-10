@@ -26,7 +26,7 @@ import XCTest
     let app = XCUIApplication()
     app.launchArguments = ["-ui-testing-live-attachments","-attachment-fixture-files"]
     app.launchEnvironment["OPENWORK_ATTACHMENT_UI_CONFIG"] = path; app.launch()
-    XCTAssertTrue(app.buttons["Add attachments"].waitForExistence(timeout:30)); app.buttons["Add attachments"].tap()
+    XCTAssertTrue(app.buttons["composer-add"].waitForExistence(timeout:30)); app.buttons["composer-add"].tap(); app.buttons["Photos or files"].tap()
     let pdf = app.buttons["Use fixture PDF"]
     XCTAssertTrue(pdf.waitForExistence(timeout:15)); pdf.tap()
     XCTAssertTrue(app.staticTexts.matching(NSPredicate(format:"label CONTAINS %@","Ready to send")).firstMatch.waitForExistence(timeout:30))

@@ -6,6 +6,7 @@ struct WorkspaceSettingsView:View {
   List {
    Section {Text("Workspace changes affect OpenWork on your computer. Administration access is required.").foregroundStyle(Theme.muted)} header:{Text(model.workspaces.first{$0.id==model.selectedWorkspace}?.name ?? "Workspace")}
    Section {NavigationLink {WorkspaceDefaultsView()} label:{VStack(alignment:.leading,spacing:6){Text("Defaults").font(.headline);Text("Model and reasoning for new chats").font(.caption).foregroundStyle(Theme.muted)}.padding(.vertical,6)}.accessibilityIdentifier("workspace-defaults-open")}
+   Section {NavigationLink{SkillListView()}label:{VStack(alignment:.leading,spacing:6){Text("Skills").font(.headline);Text("Instructions for this workspace").font(.caption).foregroundStyle(Theme.muted)}.padding(.vertical,6)}.accessibilityIdentifier("workspace-skills-open")}
    Section {Text("Phone access is managed on your computer. Tool approval rules remain in OpenWork.").font(.callout).foregroundStyle(Theme.muted)}
   }.navigationTitle("Workspace").navigationBarTitleDisplayMode(.inline).scrollContentBackground(.hidden).background(Theme.background)
  }
