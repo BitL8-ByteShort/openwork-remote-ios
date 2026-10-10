@@ -1,0 +1,26 @@
+## Connect your computer
+Keep the tested OpenWork preview running on your Mac or Linux computer with Remote access enabled. The current beta requires Tailscale on your phone and computer, signed into the same private network. Create a pairing code in OpenWork, scan or paste it here, then approve the phone and workspace access on your computer.
+
+## Keep chatting
+Choose a workspace and chat, or start a new chat. Model & settings changes the available model and reasoning for that chat. Long-press a chat in Your Chats to rename, fork or delete it when your computer supports the action. Use the plus button to choose Photos or files, or workspace skills.
+
+## Permissions and Activity
+Settings shows which workspaces and features your phone can access. Change those grants on your computer. Tool and file approvals still follow OpenWork's rules. Compact tool activity groups tool calls into an expandable Activity row; required approvals and questions stay visible.
+
+## If your computer is offline
+Check that OpenWork is open, Remote access is enabled, the computer is awake and both devices are connected to Tailscale. Tap Reconnect in Settings. If you revoked this phone on the computer, use Pair again and approve a fresh code. Help and legal information remain available offline.
+
+## An action is unconfirmed
+If a send, file upload or change could not be confirmed, check the chat or current state on your computer before repeating it. The app keeps an unconfirmed action separate from an unsent draft so it cannot quietly send the same action twice.
+
+## Files and changes
+File access requires a separate grant on your computer. Downloads and previews are local copies; sharing sends the selected copy to the app you choose. Reviewing changed files is read-only. Removing a local copy does not delete the original on your computer.
+
+## Get support
+Email support@saltypanda.com or use the support link to open GitHub Issues. Issues are public. Include the app version, your computer's operating system and simple steps to reproduce the problem. Leave out pairing codes, tokens, private chats, personal files and model account credentials. Use the repository's private security-reporting option for a security concern.
+
+## Data on this phone
+About & Help and Settings both open Data on this phone. Clear unsent drafts keeps unconfirmed action details and selected files. Remove downloaded copies keeps the original files on your computer. Reset all local data removes pairing and this app's saved copies and attempts to revoke access on the computer. If the computer is offline, revoke this phone in OpenWork later. Chats and original files on the computer are kept.
+
+## Independent companion
+PocketWork is maintained by Salty Panda LLC as an independent companion for OpenWork. It is not an official OpenWork product. Your computer owns the workspaces, model accounts and tool settings. A model provider may charge for use separately.

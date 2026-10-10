@@ -20,6 +20,7 @@ actor ProtectedAttachmentFiles {
   private let directory: URL
   private let quotaBytes: Int
   private let availableCapacity: @Sendable (URL) throws -> Int64?
+  private var retired = false
   private static func protectedAttributes(permissions: Int) -> [FileAttributeKey: Any] {
     var attributes: [FileAttributeKey: Any] = [.posixPermissions: permissions]
     // iOS Data Protection is required on the phone. macOS SwiftPM test hosts
@@ -38,7 +39,8 @@ actor ProtectedAttachmentFiles {
     self.quotaBytes = min(max(quotaBytes, 1), AttachmentValidation.stagingBytes)
     self.availableCapacity = availableCapacity
   }
-  private func prepare() throws {
+  private func prepare(allowRetired: Bool = false) throws {
+    guard !retired || allowRetired else { throw RemoteError.cancelled }
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
       attributes: Self.protectedAttributes(permissions: 0o700))
     let attrs = try FileManager.default.attributesOfItem(atPath: directory.path)
@@ -48,6 +50,18 @@ actor ProtectedAttachmentFiles {
       directory.resolvingSymlinksInPath().standardizedFileURL == directory.standardizedFileURL else { throw RemoteError.invalidResponse }
     var resource = URLResourceValues(); resource.isExcludedFromBackup = true
     var target = directory; try target.setResourceValues(resource)
+  }
+  func invalidateAndRemove() throws {
+    retired = true
+    try prepare(allowRetired: true)
+    var unknown = false
+    for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+      guard url.lastPathComponent.range(of: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\\.bin$", options: .regularExpression) != nil else { unknown = true; continue }
+      let type = try FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType
+      guard type == .typeRegular || type == .typeSymbolicLink else { unknown = true; continue }
+      try FileManager.default.removeItem(at: url)
+    }
+    if unknown { throw RemoteError.invalidResponse }
   }
   private func path(_ id: UUID) -> URL { directory.appending(path: id.uuidString.lowercased() + ".bin") }
   private func openRegular(_ url: URL, flags: Int32, privateFile: Bool = false) throws -> FileHandle {

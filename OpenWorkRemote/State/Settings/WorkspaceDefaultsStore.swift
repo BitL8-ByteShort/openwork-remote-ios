@@ -33,6 +33,7 @@ private struct DefaultsDisk:Codable,Sendable{var intents:[WorkspaceDefaultIntent
   for n in disk.intents.indices{disk.intents[n].phase = .uncertain};ready=true
  }
  private func persist() async throws{version += 1;try await persistence.save(disk,revision:version)}
+ func resetLocalData() async throws{activate(nil);ready=false;try await persistence.invalidateAndRemove();disk=DefaultsDisk()}
  private func remove(_ id:UUID){disk.intents.removeAll{$0.requestId==id}}
  func activate(_ c:WorkspaceDefaultsContext?){guard context != c else{return};readID=UUID();readTask?.cancel();readTask=nil;context=c;snapshot=nil;availability = .unsupported;loading=false;needsRefresh=false;notice=nil;reviewed=false}
  private func allowed(_ client:BridgeClient,_ c:WorkspaceDefaultsContext) async throws {

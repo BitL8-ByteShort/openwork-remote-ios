@@ -6,6 +6,13 @@ import SwiftUI
   @AppStorage("appearance") private var appearance = "system"
   #if DEBUG
     init() {
+      if ProcessInfo.processInfo.arguments.contains("-ui-testing-information") || ProcessInfo.processInfo.arguments.contains("-ui-testing-data-controls") {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "information-ui-" + UUID().uuidString)
+        let fixture = AppModel(pairingPersistence: PairingPersistence(load: { nil }, save: { _ in }, remove: {}),
+          draftStore: try? DraftStore(directory: directory))
+        _model = State(initialValue: fixture)
+        return
+      }
       #if targetEnvironment(simulator)
         if ProcessInfo.processInfo.arguments.contains("-ui-testing-live-artifacts") {
           _model = State(initialValue:liveArtifactUITestFixture())
@@ -43,13 +50,17 @@ import SwiftUI
   #endif
   var body: some Scene {
     WindowGroup {
-      RootView().environment(model).preferredColorScheme(
+      RootView().id(ObjectIdentifier(model)).environment(model).preferredColorScheme(
         appearance == "dark" ? .dark : appearance == "light" ? .light : nil
-      ).tint(Theme.accent).task {
+      ).tint(Theme.accent).task(id: ObjectIdentifier(model)) {
         InteractionMetrics.startSampling()
         await model.start()
       }.onChange(of: phase) { _, p in
         model.sceneActive(p == .active)
+      }.onChange(of: model.resetReplacement?.id) { _, _ in
+        guard let report = model.resetReplacement else { return }
+        do { model = try model.freshAfterReset(report) }
+        catch { model.notice = "Local reset finished, but app storage could not be reopened. Unlock the phone and restart the app." }
       }
     }
   }
@@ -59,7 +70,12 @@ private struct RootView: View {
   var body: some View {
     NavigationStack {
       Group {
-        if model.connection == .revoked {
+        if model.isRetired {
+          VStack(spacing: 20) {
+            ProgressView("Removing local data…")
+            if let notice = model.notice { Text(notice).font(.callout) }
+          }.padding(24)
+        } else if model.connection == .revoked {
           RevokedConnectionView()
         } else if model.hasPairing || model.host != nil {
           if model.onboardingStep == 4 { WorkspacePicker() } else { ChatView() }

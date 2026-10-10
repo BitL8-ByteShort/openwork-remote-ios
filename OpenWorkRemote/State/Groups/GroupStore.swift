@@ -61,6 +61,12 @@ private struct GroupDisk: Codable, Sendable { var intents: [GroupIntent] = [] }
     version += 1
     try await persistence.save(disk, revision: version)
   }
+  func resetLocalData() async throws {
+    activate(nil)
+    ready = false
+    try await persistence.invalidateAndRemove()
+    disk = GroupDisk()
+  }
   func activate(_ value: GroupContext?) {
     guard context != value else { return }
     readID = UUID()

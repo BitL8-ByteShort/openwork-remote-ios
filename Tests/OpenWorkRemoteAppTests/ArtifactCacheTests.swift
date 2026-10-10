@@ -11,12 +11,18 @@ private actor ResultBytes: HTTPTransport {
   let mime: String
   var pause = false
   var calls = 0
+  var held: CheckedContinuation<Void, Never>?
+  var holdIgnoringCancellation = false
   init(_ bytes: Data, mime: String = "text/plain") { self.bytes = bytes; self.mime = mime }
   func configure(pause: Bool) { self.pause = pause }
   func count() -> Int { calls }
+  func holdNextChunk() { holdIgnoringCancellation = true }
+  func isHeld() -> Bool { held != nil }
+  func releaseHeldChunk() { held?.resume(); held = nil }
   func data(for request: URLRequest) async throws -> (Data, Int) { throw RemoteError.unavailable }
   func binary(for request: URLRequest, maximumBytes: Int) async throws -> BinaryHTTPResponse {
     calls += 1
+    if holdIgnoringCancellation { await withCheckedContinuation { held = $0 } }
     if pause { try await Task.sleep(for: .seconds(60)) }
     let range = request.value(forHTTPHeaderField: "Range")!.dropFirst(6).split(separator: "-").map { Int($0)! }
     return BinaryHTTPResponse(data: bytes.subdata(in: range[0]..<range[1]+1), status: 206, mime: mime,
@@ -35,6 +41,21 @@ private func temporary() throws -> URL {
   return directory.resolvingSymlinksInPath()
 }
 @Suite struct ArtifactCacheTests {
+  @Test func lateChunkCannotRecreateFilesAfterLocalReset() async throws {
+    let directory = try temporary(); defer { try? FileManager.default.removeItem(at:directory) }
+    let data = Data("Synthetic result".utf8), transport = ResultBytes(data), ref = try reference(data)
+    let client = try BridgeClient(origin:URL(string:"https://fixture.test")!,transport:transport)
+    let cache = ProtectedArtifactFiles(directory:directory)
+    await transport.holdNextChunk()
+    let download = Task { try await cache.download(ref,client:client,workspaceId:"ws_test") }
+    for _ in 0..<100 { if await transport.isHeld() { break }; try await Task.sleep(for:.milliseconds(10)) }
+    #expect(await transport.isHeld())
+    try await cache.invalidateAndRemove()
+    await transport.releaseHeldChunk()
+    await #expect(throws:(any Error).self) { try await download.value }
+    #expect(try FileManager.default.contentsOfDirectory(atPath:directory.path).isEmpty)
+    #expect(await transport.count() == 1)
+  }
   @Test func explicitDownloadVerifiesHashAndKeepsAProtectedNamedOriginalForSharing() async throws {
     let directory = try temporary(); defer { try? FileManager.default.removeItem(at:directory) }
     let data = Data("generated result\n".utf8), transport = ResultBytes(data), ref = try reference(data)

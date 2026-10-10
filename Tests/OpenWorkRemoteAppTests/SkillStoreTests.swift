@@ -73,6 +73,26 @@ private actor SkillStoreTransport: HTTPTransport {
   }
 }
 @MainActor @Suite struct SkillStoreTests {
+  @Test func clearingDraftDuringAnUnconfirmedSaveDoesNotRestoreItsText() async throws {
+    let (s, c, t, client, dir) = try await fixture()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    _ = try s.beginDraft(detail: nil, context: c)
+    try await s.flush()
+    await t.configure(postRace: true, delayed: true)
+    let action = SkillAction.save(name: "owned-skill", content: "Updated", revision: s.catalog!.items[0].revision,
+      catalogRevision: s.catalog!.revision)
+    let save = Task { await s.change(action, client: client, context: c) }
+    for _ in 0..<100 { if await t.counts().1 == 2 { break }; try await Task.sleep(for: .milliseconds(10)) }
+    #expect(await t.counts().1 == 2)
+    let rid = try #require(s.pending?.requestId)
+    try await s.clearUnsentDrafts()
+    #expect(s.draft(id:nil,context:c) == nil)
+    await t.release()
+    #expect(await save.value == false)
+    #expect(s.draft(id:nil,context:c) == nil)
+    #expect(s.pending?.requestId == rid)
+    #expect(s.pending?.phase == .uncertain)
+  }
   private func fixture() async throws -> (
     SkillStore, SkillContext, SkillStoreTransport, BridgeClient, URL
   ) {

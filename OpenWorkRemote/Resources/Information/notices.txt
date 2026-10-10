@@ -1,0 +1,8 @@
+## PocketWork iOS source
+Copyright (c) 2026 Chris (BitL8-ByteShort). MIT License. The complete license is included on the Source license screen and in the public source repository.
+
+## Shipped libraries and artwork
+No third-party SDK or external Swift package is bundled with the iOS client. The app uses Apple system frameworks, system fonts and SF Symbols. Its app icon and connection artwork are original project assets. OpenWork's host software and Tailscale run separately; their source and licenses are not bundled into this iOS app.
+
+## OpenWork relationship
+PocketWork is an independently maintained companion for OpenWork. OpenWork is referenced to identify the software this app connects to. PocketWork is not an official OpenWork product.

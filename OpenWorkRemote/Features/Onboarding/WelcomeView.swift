@@ -7,8 +7,12 @@ struct WelcomeView: View {
       VStack(alignment: .leading, spacing: 0) {
         HStack(spacing: 12) {
           BrandMark()
-          Text("OpenWork Remote").font(.headline)
+          Text(ProductInformation.displayName).font(.headline)
         }.padding(.top, 20)
+        if let report = model.lastResetReport {
+          Text(report.summary).font(.callout).foregroundStyle(Theme.muted)
+            .padding(.top, 24).accessibilityIdentifier("welcome-reset-report")
+        }
         SetupIllustration().padding(.top, 58)
         Text("Your workspace,\nwherever you are.").font(.largeTitle.weight(.semibold)).tracking(
           -1.1
@@ -22,6 +26,10 @@ struct WelcomeView: View {
           Image(systemName: "checkmark.shield")
           Text("A private connection to your computer").font(.caption)
         }.foregroundStyle(Theme.muted).frame(maxWidth: .infinity).padding(.top, 24)
+        NavigationLink { AboutView() } label: {
+          Label("About & Help", systemImage: "questionmark.circle")
+            .frame(maxWidth: .infinity).frame(minHeight: 44)
+        }.padding(.top, 12).accessibilityIdentifier("welcome-about")
       }.padding(.horizontal, 24).padding(.bottom, 24)
     }.background(Theme.background).foregroundStyle(Theme.ink)
   }

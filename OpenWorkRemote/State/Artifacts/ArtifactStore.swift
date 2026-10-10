@@ -45,6 +45,14 @@ struct ArtifactContext: Equatable, Sendable {
       try await files.reset()
     }
   }
+  func resetLocalData() async throws {
+    closePreview()
+    readID = UUID()
+    context = nil
+    items = []
+    availability = .unsupported
+    try await files.invalidateAndRemove()
+  }
   func refresh(client: BridgeClient, context: ArtifactContext, supported: Bool) async {
     guard self.context == context else { return }
     let read = UUID(); readID = read

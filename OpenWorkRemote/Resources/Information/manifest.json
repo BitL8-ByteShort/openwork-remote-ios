@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "displayName": "PocketWork",
+  "publisher": "Salty Panda LLC",
+  "policyVersion": "2026-10-09.3",
+  "effectiveDate": "2026-10-09",
+  "policyApproved": true,
+  "privacyURL": "https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/",
+  "supportURL": "https://github.com/BitL8-ByteShort/openwork-remote-ios/issues",
+  "supportPageURL": "https://bitl8-byteshort.github.io/openwork-remote-ios/support/",
+  "termsURL": "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/",
+  "notices": [
+    {
+      "id": "pocketwork-source",
+      "name": "PocketWork iOS source",
+      "license": "MIT"
+    }
+  ],
+  "supportEmail": "support@saltypanda.com"
+}

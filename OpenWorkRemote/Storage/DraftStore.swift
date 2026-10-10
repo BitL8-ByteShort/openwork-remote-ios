@@ -17,6 +17,9 @@ actor DraftStore {
       at: root, withIntermediateDirectories: true,
       attributes: [.protectionKey: FileProtectionType.complete, .posixPermissions: 0o700])
     self.directory = root
+    var target = root, values = URLResourceValues()
+    values.isExcludedFromBackup = true
+    try target.setResourceValues(values)
     snapshots = RevisionedSnapshotStore(url: root.appending(path: "drafts.json"))
   }
   func load() async throws -> DiskState {
@@ -30,4 +33,5 @@ actor DraftStore {
     defer { InteractionMetrics.end("Persist draft snapshot", span) }
     try await snapshots.save(state, revision: revision)
   }
+  func invalidateAndRemove() async throws { try await snapshots.invalidateAndRemove() }
 }

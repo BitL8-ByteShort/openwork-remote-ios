@@ -61,6 +61,14 @@ struct ConnectionView: View {
           Text("Appearance")
         }
         Section {
+          NavigationLink { DataControlsView() } label: {
+            Label("Data on this phone", systemImage: "iphone")
+          }.accessibilityIdentifier("settings-data-controls")
+          NavigationLink { AboutView() } label: {
+            Label("About & Help", systemImage: "questionmark.circle")
+          }.accessibilityIdentifier("settings-about")
+        }
+        Section {
           Text(
             "Keep OpenWork running with Remote access enabled on your computer. Both devices need Tailscale. Replies continue on the computer while this app is closed."
           ).font(.callout).foregroundStyle(Theme.muted)

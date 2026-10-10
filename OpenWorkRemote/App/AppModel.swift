@@ -12,7 +12,7 @@ import OpenWorkRemoteCore
   var approvals: [Approval] = []
   let questions: QuestionStore
   let attachments: AttachmentStore
-  let artifacts: ArtifactStore
+  private(set) var artifacts: ArtifactStore
   let changes = ChangeStore()
   let workspaceDefaults:WorkspaceDefaultsStore
   let skills:SkillStore
@@ -50,9 +50,17 @@ import OpenWorkRemoteCore
   private var selectionID = UUID()
   private var foreground = true
   private var saveRevision: UInt64 = 0
+  private let injectedStorageDirectory: URL?
+  private let clearPreferences: @MainActor () -> Void
+  private(set) var isRetired = false
+  private(set) var localStorageReady = false
+  private(set) var localDataBusy = false
+  private(set) var resetReplacement: DataResetReport?
+  var lastResetReport: DataResetReport?
   var draft: String {
     get { disk.conversation.currentDraft }
     set {
+      guard !isRetired else { return }
       disk.conversation.setDraft(newValue)
       saveDrafts()
     }
@@ -70,10 +78,17 @@ import OpenWorkRemoteCore
       && draft.utf8.count <= 32768
   }
   init(pairingPersistence: PairingPersistence = .keychain,
-       transport: any HTTPTransport = SessionTransport(), draftStore: DraftStore? = nil) {
+       transport: any HTTPTransport = SessionTransport(), draftStore: DraftStore? = nil,
+       clearPreferences: (@MainActor () -> Void)? = nil) {
     self.pairingPersistence = pairingPersistence
     self.transport = transport
     self.draftStore = draftStore
+    self.injectedStorageDirectory = draftStore?.directory
+    // Keep the actor-isolated closure out of a default-argument thunk. Swift
+    // 6.1 crashes lowering AppModel() in SwiftUI's stored @State initializer.
+    self.clearPreferences = clearPreferences ?? {
+      for key in ["appearance", "compactToolActivity"] { UserDefaults.standard.removeObject(forKey: key) }
+    }
     self.questions = QuestionStore(directory: draftStore?.directory)
     self.attachments = AttachmentStore(directory: draftStore?.directory)
     self.artifacts = ArtifactStore(directory:draftStore?.directory)
@@ -83,6 +98,7 @@ import OpenWorkRemoteCore
     self.chatActions = ChatActionStore(directory:draftStore?.directory)
   }
   func start() async {
+    guard !isRetired else { return }
     #if DEBUG
       if ProcessInfo.processInfo.arguments.contains("-ui-testing-onboarding") { return }
     #endif
@@ -103,6 +119,8 @@ import OpenWorkRemoteCore
       catch { notice = "Your selected files could not be opened. Attachments are paused; unlock the phone and restart the app." }
       do { try await artifacts.files.cleanup() }
       catch { notice = "Temporary file previews could not be checked. Unlock the phone and reopen Files from this chat." }
+      guard !isRetired else { return }
+      localStorageReady = true
       storedPairing = try pairingPersistence.load()
       if let p = storedPairing {
         client = try BridgeClient(origin: PairingValidation.origin(p.origin), token: p.token, transport: transport)
@@ -113,17 +131,18 @@ import OpenWorkRemoteCore
     }
   }
   func saveDrafts() {
-    guard let draftStore else { return }
+    guard let draftStore, !isRetired else { return }
     saveRevision += 1
     let revision = saveRevision
     let state = disk
     Task {
       do { try await draftStore.save(state, revision: revision) } catch {
-        notice = "Your draft could not be saved. Keep the app open until you copy it."
+        if !isRetired { notice = "Your draft could not be saved. Keep the app open until you copy it." }
       }
     }
   }
   func connect() {
+    guard !isRetired else { return }
     if connection == .revoked {
       pairAgain()
       return
@@ -506,6 +525,7 @@ import OpenWorkRemoteCore
     } catch { notice = "Earlier replies could not be loaded." }
   }
   private func persist() async throws {
+    guard !isRetired else { throw RemoteError.cancelled }
     guard let draftStore else { throw RemoteError.unavailable }
     saveRevision += 1
     try await draftStore.save(disk, revision: saveRevision)
@@ -735,6 +755,7 @@ import OpenWorkRemoteCore
     } catch { notice = "The approval could not be checked. Reconnect and try again." }
   }
   func pair(_ text: String) {
+    guard !isRetired else { return }
     cancelPairing()
     pairingTask?.cancel()
     let current = UUID()
@@ -851,6 +872,71 @@ import OpenWorkRemoteCore
       }
     }
   }
+  func clearLocalDrafts() async -> Bool {
+    guard !isRetired, localStorageReady, !localDataBusy else { return false }
+    localDataBusy = true
+    defer { localDataBusy = false }
+    disk.conversation.clearDraftText()
+    var failures = false
+    do { try await persist() } catch { failures = true }
+    do { try await questions.clearUnsentDrafts() } catch { failures = true }
+    do { try await skills.clearUnsentDrafts() } catch { failures = true }
+    if failures { notice = "Some drafts could not be cleared. Unlock the phone and try again. Unconfirmed action details are kept." }
+    return !failures
+  }
+  func clearDownloadedFiles() async -> Bool {
+    guard !isRetired, !localDataBusy else { return false }
+    localDataBusy = true
+    defer { localDataBusy = false }
+    let old = artifacts
+    var success = true
+    do { try await old.resetLocalData() } catch { success = false }
+    guard !isRetired else { return false }
+    artifacts = ArtifactStore(directory: injectedStorageDirectory)
+    artifacts.activate(artifactContext)
+    if !success { notice = "Some downloaded copies could not be removed. Unlock the phone and try again." }
+    return success
+  }
+  /// Explicit full-reset confirmation is owned by the native view. Only the
+  /// device revocation endpoint is used; host conversations/files stay intact.
+  func resetLocalData() async -> DataResetReport? {
+    guard !isRetired, !localDataBusy else { return nil }
+    do { try pairingPersistence.remove() } catch {
+      notice = "Pairing could not be removed from Keychain. Unlock this iPhone and try again. Your local data has not been deleted."
+      return nil
+    }
+    localDataBusy = true
+    isRetired = true
+    let previousClient = client
+    clearLocalPairing()
+    onboardingStep = 0
+    var failures: [String] = []
+    do { try await draftStore?.invalidateAndRemove() } catch { failures.append("Chat drafts and action records") }
+    do { try await questions.resetLocalData() } catch { failures.append("Question drafts") }
+    do { try await skills.resetLocalData() } catch { failures.append("Skill drafts") }
+    do { try await chatActions.resetLocalData() } catch { failures.append("Chat action records") }
+    do { try await groups.resetLocalData() } catch { failures.append("Group action records") }
+    do { try await workspaceDefaults.resetLocalData() } catch { failures.append("Default-model action records") }
+    do { try await attachments.resetLocalData() } catch { failures.append("Selected attachments") }
+    do { try await artifacts.resetLocalData() } catch { failures.append("Downloaded file copies") }
+    clearPreferences()
+    let revocation: DataResetReport.HostRevocation
+    if let previousClient {
+      do { try await previousClient.revoke(); revocation = .revoked }
+      catch { revocation = .unconfirmed }
+    } else { revocation = .noConnection }
+    let report = DataResetReport(localFailures: failures, hostRevocation: revocation)
+    resetReplacement = report
+    return report
+  }
+  func freshAfterReset(_ report: DataResetReport) throws -> AppModel {
+    guard isRetired else { throw RemoteError.invalidResponse }
+    let store = try injectedStorageDirectory.map { try DraftStore(directory: $0) }
+    let fresh = AppModel(pairingPersistence: pairingPersistence, transport: transport, draftStore: store,
+      clearPreferences: clearPreferences)
+    fresh.lastResetReport = report
+    return fresh
+  }
   private func pairAgain() {
     guard connection == .revoked else { return }
     do { try pairingPersistence.remove() } catch {
@@ -902,6 +988,7 @@ import OpenWorkRemoteCore
     connection = .unpaired
   }
   func sceneActive(_ active: Bool) {
+    guard !isRetired else { return }
     foreground = active
     if active {
       if client != nil && connection != .revoked { connect() }

@@ -149,6 +149,16 @@ struct QuestionDiskState: Codable, Sendable { var drafts: [QuestionDraft] = [] }
       catch { if context == current { notice = "Your answers could not be saved. Keep this sheet open until you copy them." } }
     }
   }
+  func clearUnsentDrafts() async throws {
+    disk.drafts.removeAll { ![.sending, .uncertain].contains($0.state) }
+    try await persist()
+  }
+  func resetLocalData() async throws {
+    activate(nil)
+    ready = false
+    try await snapshots.invalidateAndRemove()
+    disk = QuestionDiskState()
+  }
   func submit(_ question: QuestionRequest, client: BridgeClient, context: QuestionContext, dismiss: Bool = false) async {
     guard self.context == context, canEdit(question), dismiss || canReply(question) else { return }
     let key = key(question, context: context)

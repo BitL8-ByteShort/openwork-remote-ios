@@ -28,6 +28,9 @@ for f in sorted((root/'OpenWorkRemote').rglob('*')):
  if not f.is_file() or f.suffix not in ['.swift','.xcprivacy']:continue
  p=str(f.relative_to(root));t='sourcecode.swift' if f.suffix=='.swift' else 'text.xml';fid=add(p,'PBXFileReference',lastKnownFileType=t,path=p,sourceTree='<group>');appfiles.append(fid);bid=add(p+'build','PBXBuildFile',fileRef=fid);(sourcebuild if f.suffix=='.swift' else resources).append(bid)
 assets=root/'OpenWorkRemote/Assets.xcassets'
+information=root/'OpenWorkRemote/Resources/Information'
+if information.exists():
+ fid=add('information','PBXFileReference',lastKnownFileType='folder',path='OpenWorkRemote/Resources/Information',sourceTree='<group>');appfiles.append(fid);resources.append(add('informationbuild','PBXBuildFile',fileRef=fid))
 if assets.exists():
  fid=add('assets','PBXFileReference',lastKnownFileType='folder.assetcatalog',path='OpenWorkRemote/Assets.xcassets',sourceTree='<group>');appfiles.append(fid);resources.append(add('assetsbuild','PBXBuildFile',fileRef=fid))
 testfiles=[];testbuild=[]

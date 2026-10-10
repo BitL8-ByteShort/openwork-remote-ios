@@ -26,6 +26,7 @@ actor ProtectedArtifactFiles {
   private let availableCapacity: @Sendable (URL) throws -> Int64?
   private var reservations: [UUID: Int] = [:]
   private var previews: [UUID: URL] = [:]
+  private var retired = false
   init(directory: URL? = nil, quotaBytes: Int = 104_857_600,
        availableCapacity: @escaping @Sendable (URL) throws -> Int64? = { try $0.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage }) {
     self.directory = directory ?? FileManager.default.urls(for:.cachesDirectory,in:.userDomainMask)[0].appending(path:"OpenWorkRemote/ArtifactDownloads",directoryHint:.isDirectory)
@@ -38,7 +39,8 @@ actor ProtectedArtifactFiles {
     #endif
     return value
   }
-  private func prepare() throws {
+  private func prepare(allowRetired: Bool = false) throws {
+    guard !retired || allowRetired else { throw RemoteError.cancelled }
     try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true,attributes:Self.attributes(0o700))
     let s = try info(directory)
     guard s.st_mode & S_IFMT == S_IFDIR, s.st_uid == getuid(), s.st_mode & 0o777 == 0o700,
@@ -77,6 +79,17 @@ actor ProtectedArtifactFiles {
     for url in try FileManager.default.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil) where owned(url) { try FileManager.default.removeItem(at:url) }
     previews.removeAll()
   }
+  func invalidateAndRemove() throws {
+    retired = true
+    try prepare(allowRetired: true)
+    var unknown = false
+    for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+      guard owned(url) else { unknown = true; continue }
+      try FileManager.default.removeItem(at: url)
+    }
+    previews.removeAll()
+    if unknown { throw RemoteError.invalidResponse }
+  }
   private func capacity(_ bytes: Int) throws {
     var used = reservations.values.reduce(0,+)
     for url in try FileManager.default.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil) where owned(url) {
@@ -107,10 +120,12 @@ actor ProtectedArtifactFiles {
       while offset < ref.bytes {
         try Task.checkCancellation()
         let bytes = try await client.artifactChunk(workspaceId,ref.sessionId,ref:ref,offset:offset)
+        guard !retired else { throw RemoteError.cancelled }
         try Task.checkCancellation()
         guard offset + bytes.count <= ref.bytes else { throw RemoteError.invalidResponse }
         try file.write(contentsOf:bytes); hash.update(data:bytes); offset += bytes.count
         await progress(offset)
+        guard !retired else { throw RemoteError.cancelled }
       }
       guard offset == ref.bytes, hash.finalize().map({String(format:"%02x",$0)}).joined() == ref.sha256 else { throw RemoteError.invalidResponse }
       try file.synchronize(); try file.close(); try Task.checkCancellation()
