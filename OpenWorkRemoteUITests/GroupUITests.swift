@@ -11,6 +11,18 @@ import XCTest
     history.tap()
     return app
   }
+  // The history list is lazy. Workspace/group sections can place Recent chats
+  // below the initial viewport, especially as additional controls are added.
+  private func sampleChat(in app: XCUIApplication) -> XCUIElement {
+    let chat = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Sample chat"))
+      .firstMatch
+    for _ in 0..<4 {
+      if chat.waitForExistence(timeout: 1) && chat.isHittable { return chat }
+      app.swipeUp()
+    }
+    XCTAssertTrue(chat.waitForExistence(timeout: 5), "The recent chat remains reachable by scrolling")
+    return chat
+  }
   func testCreateRenameAndRemoveGroupPreserveTheRecentChat() {
     let app = open()
     let new = app.buttons["groups-new"]
@@ -41,15 +53,11 @@ import XCTest
     app.alerts.buttons["Remove group"].tap()
     XCTAssertTrue(app.buttons["groups-manage-done"].waitForExistence(timeout: 5))
     app.buttons["groups-manage-done"].tap()
-    XCTAssertTrue(
-      app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Sample chat")).firstMatch
-        .exists)
+    XCTAssertTrue(sampleChat(in: app).exists)
   }
   func testMoveChatUsesExplicitSaveAndLocalCancel() {
     let app = open()
-    let chat = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Sample chat"))
-      .firstMatch
-    XCTAssertTrue(chat.waitForExistence(timeout: 5))
+    let chat = sampleChat(in: app)
     chat.press(forDuration: 1)
     app.buttons["Move to group"].tap()
     XCTAssertTrue(app.buttons["move-chat-save"].waitForExistence(timeout: 5))
