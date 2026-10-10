@@ -23,7 +23,7 @@ struct WelcomeView: View {
         Button("Get started") { model.onboardingStep = 1 }.buttonStyle(PrimaryButtonStyle())
           .padding(.top, 44).accessibilityIdentifier("get-started")
         HStack(spacing: 6) {
-          Image(systemName: "checkmark.shield")
+          Image(systemName: "checkmark.shield").accessibilityHidden(true)
           Text("A private connection to your computer").font(.caption)
         }.foregroundStyle(Theme.muted).frame(maxWidth: .infinity).padding(.top, 24)
         NavigationLink { AboutView() } label: {

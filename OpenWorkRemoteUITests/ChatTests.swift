@@ -54,4 +54,21 @@ final class ChatTests: XCTestCase {
     app.buttons["Cancel"].tap()
     XCTAssertTrue(app.buttons["Sample chat"].exists)
   }
+  @MainActor func testVisibleChatActionsRenameSavesWithoutLongPress() {
+    let app = chats()
+    let actions = app.buttons["chat-actions-ses_test"]
+    for _ in 0..<8 {
+      if actions.exists && actions.isHittable { break }
+      app.swipeUp()
+    }
+    XCTAssertTrue(actions.isHittable)
+    actions.tap()
+    app.buttons["Rename"].tap()
+    let field = app.textFields["chat-name"]
+    XCTAssertTrue(field.waitForExistence(timeout: 3))
+    field.tap()
+    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 11) + "Renamed with menu")
+    app.buttons["save-chat-name"].tap()
+    XCTAssertTrue(app.buttons["Renamed with menu"].waitForExistence(timeout: 5))
+  }
 }

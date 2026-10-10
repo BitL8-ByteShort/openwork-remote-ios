@@ -72,7 +72,7 @@ struct ComposerView: View {
       }.padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 8).background(
         Theme.surface, in: RoundedRectangle(cornerRadius: 26))
       Text(model.connection == .ready ? "Runs on your computer" : model.connection.label).font(
-        .caption2
+        .caption
       ).foregroundStyle(Theme.muted).frame(maxWidth: .infinity)
     }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8).background(Theme.background)
       .sheet(isPresented:$skills){NavigationStack{SkillListView().toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){skills=false}}}}}

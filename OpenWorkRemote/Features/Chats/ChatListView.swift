@@ -143,25 +143,38 @@ struct ChatListView: View {
       .accessibilityAddTraits(groupFilter == id ? .isSelected : [])
   }
   private func chatRow(_ session: ChatSession) -> some View {
-    Button {
-      InteractionMetrics.measure("Select chat handler") { dismiss() }
-      Task { await model.select(session) }
-    } label: {
-      VStack(alignment: .leading, spacing: 6) {
-        Text(session.title).font(.body).foregroundStyle(Theme.ink).lineLimit(2)
-        if let label = session.modelLabel { Text(label).font(.caption).foregroundStyle(Theme.muted) }
-      }.padding(.vertical, 5)
-    }.contextMenu {
+    HStack(spacing: 8) {
+      Button {
+        InteractionMetrics.measure("Select chat handler") { dismiss() }
+        Task { await model.select(session) }
+      } label: {
+        VStack(alignment: .leading, spacing: 6) {
+          Text(session.title).font(.body).foregroundStyle(Theme.ink).lineLimit(2)
+          if let label = session.modelLabel { Text(label).font(.caption).foregroundStyle(Theme.muted) }
+        }.padding(.vertical, 5).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+          .contentShape(Rectangle())
+      }.buttonStyle(.plain)
+        .contextMenu { chatMenu(session) }
+        .accessibilityAction(named: "Rename") {
+          if model.connection == .ready, model.host?.capabilities.renameSession == true { renaming = session }
+        }.accessibilityAction(named: "Move to group") { moveChat(session) }
+        .accessibilityAction(named: "Continue in a new chat") { action(session,.fork(beforeMessageId:nil)) }
+        .accessibilityAction(named: "Delete chat") { action(session,.delete) }
+      Menu { chatMenu(session) } label: {
+        Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle())
+      }.buttonStyle(.plain).foregroundStyle(Theme.muted)
+        .accessibilityLabel("Actions for \(session.title)")
+        .accessibilityIdentifier("chat-actions-" + session.id)
+    }
+  }
+  private func chatMenu(_ session: ChatSession) -> some View {
+    Group {
       Button("Rename", systemImage: "pencil") { renaming = session }
         .disabled(model.connection != .ready || model.host?.capabilities.renameSession != true)
       Button("Move to group", systemImage: "folder") { moveChat(session) }.disabled(!model.groups.canEdit)
       Button("Continue in a new chat", systemImage: "arrow.triangle.branch") { action(session, .fork(beforeMessageId:nil)) }.disabled(model.connection != .ready || model.host?.capabilities.forkSession != true)
       Button("Delete chat", systemImage: "trash", role: .destructive) { action(session, .delete) }.disabled(model.connection != .ready || model.host?.capabilities.deleteSession != true)
-    }.accessibilityAction(named: "Rename") {
-      if model.connection == .ready, model.host?.capabilities.renameSession == true { renaming = session }
-    }.accessibilityAction(named: "Move to group") { moveChat(session) }
-      .accessibilityAction(named: "Continue in a new chat") { action(session,.fork(beforeMessageId:nil)) }
-      .accessibilityAction(named: "Delete chat") { action(session,.delete) }
+    }
   }
   private func action(_ session:ChatSession,_ action:SessionAction) {
     guard model.connection == .ready,model.host?.capabilities.forkSession == true,model.host?.capabilities.deleteSession == true,let context=model.actionContext(for:session) else{return}
