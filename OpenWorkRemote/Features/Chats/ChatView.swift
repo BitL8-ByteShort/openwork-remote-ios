@@ -8,6 +8,7 @@ private enum ChatSheet: String, Identifiable {
 struct ChatView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var sheet: ChatSheet?
   @State private var approval: Approval?
   @State private var question: QuestionPresentation?
@@ -92,13 +93,20 @@ struct ChatView: View {
         VStack(spacing: 3) {
           Text(
             model.workspaces.first(where: { $0.id == model.selectedWorkspace })?.name ?? "OpenWork"
-          ).font(.headline).lineLimit(1)
+          ).font(.headline).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            .fixedSize(horizontal: false, vertical: true)
           Text(
             [model.selectedSession?.modelLabel, model.host?.displayName].compactMap { $0 }.joined(
               separator: " · ")
-          ).font(.caption2).foregroundStyle(Theme.muted).lineLimit(1)
+          ).font(.caption).foregroundStyle(Theme.muted)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            .fixedSize(horizontal: false, vertical: true)
         }
-      }.accessibilityLabel("Model and chat settings")
+      }.frame(minHeight: 44).accessibilityLabel("Model and chat settings")
+        .accessibilityValue([
+          model.workspaces.first(where: { $0.id == model.selectedWorkspace })?.name,
+          model.selectedSession?.modelLabel, model.host?.displayName
+        ].compactMap { $0 }.joined(separator: ", "))
       Spacer(minLength: 6)
       Button {
         Task { await model.createChat() }

@@ -20,7 +20,8 @@ struct MessageView: View {
           HStack(spacing: 10) {
             BrandMark(size: 26)
             Text("OpenWork").font(.caption.weight(.semibold)).foregroundStyle(Theme.muted)
-          }.padding(.bottom, 4)
+          }.frame(minHeight: 44, alignment: .leading)
+            .accessibilityElement(children: .combine).padding(.bottom, 4)
         }
         ForEach(Array(message.blocks.enumerated()), id: \.offset) { _, block in
           switch block.kind {
