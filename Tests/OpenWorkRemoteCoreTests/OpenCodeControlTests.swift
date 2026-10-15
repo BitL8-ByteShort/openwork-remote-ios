@@ -7,11 +7,13 @@ actor NativeControlsTransport:HTTPTransport {
   var model:[String:String]=["providerID":"provider","id":"old"]
   var rules:[[String:String]]=[["action":"read","resource":"*.env","effect":"deny"]]
   var pending=true
+  let modelStatus:String
+  init(modelStatus:String="active"){self.modelStatus=modelStatus}
   let catalog=#"{"location":{"directory":"/project"},"data":[{"id":"new","modelID":"provider-actual","providerID":"provider","name":"Native model","enabled":true,"status":"active","variants":[{"id":"high","headers":{"private":"discard"}}],"capabilities":{"tools":true,"input":["text","image"],"output":["text"]}}]}"#
   func data(for request:URLRequest) async throws -> (Data,Int) {
     requests.append(request);let path=request.url!.path
     if path=="/api/info"{return (Data(#"{"version":"2.0.29","urls":[],"paths":{"tmp":"/tmp"}}"#.utf8),200)}
-    if path=="/api/model"{return (Data(catalog.utf8),200)}
+    if path=="/api/model"{return (Data(catalog.replacingOccurrences(of:"\"status\":\"active\"",with:"\"status\":\"\(modelStatus)\"").utf8),200)}
     if path.hasSuffix("/model") && request.httpMethod=="POST" {
       let body=try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:Any]
       model=body["model"] as! [String:String];return (Data(),204)
@@ -53,6 +55,23 @@ actor NativeControlsTransport:HTTPTransport {
     let transport=NativeControlsTransport(),(client,target)=try setup(transport)
     await #expect(throws:RemoteError.conflict){_ = try await client.setModel(target:target,model:OpenCodeModelRef(providerID:"provider",id:"new"),expectedModel:nil)}
     await #expect(throws:RemoteError.invalidResponse){_ = try await client.setModel(target:target,model:OpenCodeModelRef(providerID:"provider",id:"new",variant:"invented"),expectedModel:OpenCodeModelRef(providerID:"provider",id:"old"))}
+    #expect(await transport.allRequests().contains{$0.httpMethod=="POST"}==false)
+  }
+  @Test func modelIdentityIsDistinctAcrossProvidersAndDelimiterCharacters() async throws {
+    let fields:[(String,String)]=[("one","same"),("two","same"),("a/b","c"),("a","b/c")]
+    let models=fields.map{provider,id in
+      ["providerID":provider,"id":id,"modelID":id,"name":"Synthetic","enabled":true,"status":"active",
+       "variants":[],"capabilities":["tools":true,"input":["text"],"output":["text"]]] as [String:Any]
+    }
+    let bytes=try JSONSerialization.data(withJSONObject:["location":["directory":"/project"],"data":models])
+    let connection=try OpenCodeConnection(origin:URL(string:"https://synthetic.example")!,displayName:"Computer")
+    let client=try OpenCodeClient(connection:connection,token:"synthetic-token",transport:NativeResponseTransport(String(decoding:bytes,as:UTF8.self)))
+    let catalog=try await client.models(location:OpenCodeLocation(directory:"/project"))
+    #expect(Set(catalog.map(\.selectionKey)).count==4)
+  }
+  @Test func anUnknownModelStatusCannotBeAssumedSupported() async throws {
+    let transport=NativeControlsTransport(modelStatus:"future-status"),(client,target)=try setup(transport)
+    await #expect(throws:RemoteError.invalidResponse){_ = try await client.setModel(target:target,model:OpenCodeModelRef(providerID:"provider",id:"new"),expectedModel:OpenCodeModelRef(providerID:"provider",id:"old"))}
     #expect(await transport.allRequests().contains{$0.httpMethod=="POST"}==false)
   }
 }

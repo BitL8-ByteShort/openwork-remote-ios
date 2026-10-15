@@ -15,7 +15,7 @@ public struct OpenCodeModelRef:Codable,Sendable,Equatable,Hashable {
     try self.init(providerID:c.decode(String.self,forKey:.providerID),id:c.decode(String.self,forKey:.id),variant:c.decodeIfPresent(String.self,forKey:.variant))
   }
 }
-public struct OpenCodeModel:Decodable,Sendable,Identifiable,Equatable {
+public struct OpenCodeModel:Decodable,Sendable,Equatable {
   public struct Variant:Decodable,Sendable,Equatable{public let id:String}
   public struct Capabilities:Decodable,Sendable,Equatable{public let tools:Bool;public let input:[String];public let output:[String]}
   public let id:String
@@ -26,9 +26,10 @@ public struct OpenCodeModel:Decodable,Sendable,Identifiable,Equatable {
   public let status:String
   public let variants:[Variant]
   public let capabilities:Capabilities
-  public var selectionKey:String{providerID+"/"+id}
+  public var selectionKey:String{"\(providerID.utf8.count):\(providerID)\(id)"}
+  public var selectable:Bool{enabled && ["alpha","beta","deprecated","active"].contains(status)}
   func accepts(_ ref:OpenCodeModelRef)->Bool {
-    enabled && ref.providerID==providerID && ref.id==id && (ref.variant.map{variant in variants.contains{$0.id==variant}} ?? true)
+    selectable && ref.providerID==providerID && ref.id==id && (ref.variant.map{variant in variants.contains{$0.id==variant}} ?? true)
   }
 }
 public enum OpenCodePermissionEffect:String,Codable,Sendable{case allow,deny,ask}
