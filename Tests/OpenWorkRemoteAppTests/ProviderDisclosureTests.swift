@@ -11,14 +11,41 @@ private actor MemoryDisclosureFile:ProviderDisclosurePersistence{
 }
 private actor DisclosureReader:OpenCodeSharingReading{
   let destination:OpenCodeSharingDestination
+  var unavailable=false
   init(_ destination:OpenCodeSharingDestination){self.destination=destination}
-  func sharingDestination(target:OpenCodeTarget)async throws->OpenCodeSharingDestination{destination}
+  func failReads(){unavailable=true}
+  func sharingDestination(target:OpenCodeTarget)async throws->OpenCodeSharingDestination{
+    if unavailable{throw RemoteError.unavailable};return destination
+  }
 }
 @Suite @MainActor struct ProviderDisclosureTests{
   private func destination(_ id:ConnectionID=ConnectionID(),digest:UInt8=1)throws->OpenCodeSharingDestination{
     let object:[String:Any]=["connectionID":["rawValue":id.rawValue.uuidString],"origin":"https://synthetic.example",
       "model":["providerID":"Provider","id":"model"],"configurationDigest":Data(repeating:digest,count:32).base64EncodedString()]
     return try JSONDecoder().decode(OpenCodeSharingDestination.self,from:JSONSerialization.data(withJSONObject:object))
+  }
+  @Test func failedDestinationRecheckDoesNotReuseAnEarlierReviewAsItsFailureReason()async throws{
+    let destination=try destination(),store=ProviderDisclosureStore(persistence:MemoryDisclosureFile())
+    let target=OpenCodeTarget(connectionID:destination.connectionID,projectID:"project",sessionID:"ses_owned",directory:"/project")
+    let reader=DisclosureReader(destination),classes=OpenCodeSharedData.conversationContext.union([.photos])
+    try await store.restore();store.activate(target)
+    do{try await store.requireAuthorization(target:target,reader:reader,classes:classes,operation:.attachment);Issue.record("Missing consent must block preparation.")}
+    catch is NativeSharingReviewRequired{}
+    #expect(store.review != nil)
+    await reader.failReads()
+    do{try await store.requireAuthorization(target:target,reader:reader,classes:classes,operation:.attachment);Issue.record("Failed destination reads must block preparation.")}
+    catch let error as RemoteError{#expect(error == .forbidden)}
+  }
+  @Test func messageAndFormConsentBlocksKeepTheirKnownNotSubmittedError()async throws{
+    let destination=try destination(),store=ProviderDisclosureStore(persistence:MemoryDisclosureFile())
+    let target=OpenCodeTarget(connectionID:destination.connectionID,projectID:"project",sessionID:"ses_owned",directory:"/project")
+    let reader=DisclosureReader(destination)
+    try await store.restore();store.activate(target)
+    for operation in [OpenCodeSharingOperation.message,.formAnswer]{
+      do{try await store.requireAuthorization(target:target,reader:reader,classes:OpenCodeSharedData.conversationContext,operation:operation);Issue.record("Missing consent must block the operation.")}
+      catch let error as RemoteError{#expect(error == .forbidden)}
+      #expect(store.review?.operation==operation)
+    }
   }
   @Test func firstSharingRequiresDeliberateUnknownDestinationReviewAndPersistsTheExactContext()async throws{
     let destination=try destination(),file=MemoryDisclosureFile(),store=ProviderDisclosureStore(persistence:file)

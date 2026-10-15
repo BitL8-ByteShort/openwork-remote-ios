@@ -49,6 +49,7 @@ struct ProviderDisclosureReview:Identifiable,Sendable{
   let policyVersion:String
   let operation:OpenCodeSharingOperation
 }
+struct NativeSharingReviewRequired:Error,Sendable{}
 /// Review is local and deliberate. It never starts or retries the user's operation.
 @MainActor @Observable final class ProviderDisclosureStore{
   static let policyVersion="2026-10-15.1"
@@ -70,20 +71,34 @@ struct ProviderDisclosureReview:Identifiable,Sendable{
     !disk.consents.contains{$0.destination.id==destination.id && $0.policyVersion==policyVersion && $0.classes.isSuperset(of:classes)}
   }
   func authorize(target:OpenCodeTarget,reader:any OpenCodeSharingReading,classes:Set<OpenCodeSharedData>,operation:OpenCodeSharingOperation = .message)async->Bool{
-    if storageIssue{notice="Sharing permissions could not be cleared. Unlock this device and clear them again in Data Controls.";return false}
-    guard ready,!saving,!clearing,self.target==target,!classes.isEmpty,!Task.isCancelled else{return false}
+    await authorization(target:target,reader:reader,classes:classes,operation:operation) == .approved
+  }
+  func requireAuthorization(target:OpenCodeTarget,reader:any OpenCodeSharingReading,classes:Set<OpenCodeSharedData>,operation:OpenCodeSharingOperation)async throws{
+    switch await authorization(target:target,reader:reader,classes:classes,operation:operation){
+    case .approved:return
+    case .reviewRequired:
+      guard operation == .attachment else{throw RemoteError.forbidden}
+      throw NativeSharingReviewRequired()
+    case .unavailable:throw RemoteError.forbidden
+    }
+  }
+  private enum Authorization{case approved,reviewRequired,unavailable}
+  private func authorization(target:OpenCodeTarget,reader:any OpenCodeSharingReading,classes:Set<OpenCodeSharedData>,operation:OpenCodeSharingOperation)async->Authorization{
+    if storageIssue{notice="Sharing permissions could not be cleared. Unlock this device and clear them again in Data Controls.";return .unavailable}
+    guard ready,!saving,!clearing,self.target==target,!classes.isEmpty,!Task.isCancelled else{return .unavailable}
     let current=generation
     do{
       let destination=try await reader.sharingDestination(target:target)
       try destination.validate()
-      guard generation==current,self.target==target,!Task.isCancelled,destination.connectionID==target.connectionID else{return false}
-      guard requiresReview(destination:destination,classes:classes) else{return true}
+      guard generation==current,self.target==target,!Task.isCancelled,destination.connectionID==target.connectionID else{return .unavailable}
+      guard requiresReview(destination:destination,classes:classes) else{return .approved}
       if review?.destination.id != destination.id || review?.classes != classes || review?.target != target || review?.operation != operation{
         review=ProviderDisclosureReview(target:target,destination:destination,classes:classes,policyVersion:Self.policyVersion,operation:operation)
       }
       notice="Review where your data may be shared before continuing."
+      return .reviewRequired
     }catch{if generation==current{notice="The provider context could not be checked. Keep your draft and reconnect before sharing."}}
-    return false
+    return .unavailable
   }
   func approve(_ request:ProviderDisclosureReview,using reader:any OpenCodeSharingReading,acknowledgesUnknownDestination:Bool)async->Bool{
     guard ready,!saving,!clearing,!storageIssue,review?.id==request.id,target==request.target,

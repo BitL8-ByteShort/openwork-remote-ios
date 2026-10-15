@@ -6,20 +6,20 @@ import OpenWorkRemoteCore
 
 private actor NativeFileService:OpenCodeFileServing {
   var uploads=0
-  var fail=false
+  var failure:RemoteError?
   var hold=false
   var continuation:CheckedContinuation<Void,Never>?
   func holdPreparation(){hold=true}
   func waitUntilHeld() async{while continuation==nil{await Task.yield()}}
   func release(){continuation?.resume();continuation=nil}
-  func setFailure(){fail=true}
+  func setFailure(_ error:RemoteError = .outcomeUnknown){failure=error}
   func attachmentModel(target:OpenCodeTarget) async throws -> OpenCodeModel{
     try JSONDecoder().decode(OpenCodeModel.self,from:Data(#"{"id":"model","providerID":"provider","modelID":"model","name":"Model","enabled":true,"status":"active","variants":[],"capabilities":{"tools":true,"input":["text","image"],"output":["text"]}}"#.utf8))
   }
   func prepareAttachment(bytes:Data,name:String,mime:String,target:OpenCodeTarget,model:OpenCodeModel) async throws -> OpenCodePromptFile{
     uploads+=1
     if hold{await withCheckedContinuation{continuation=$0};if Task.isCancelled{throw RemoteError.outcomeUnknown}}
-    if fail{throw RemoteError.outcomeUnknown}
+    if let failure{throw failure}
     let value:[String:Any]=["id":UUID().uuidString,"target":try JSONSerialization.jsonObject(with:JSONEncoder().encode(target)),"name":name,"mime":mime,"bytes":bytes.count,"sha256":SHA256.hash(data:bytes).map{String(format:"%02x",$0)}.joined(),"placement":"inline"]
     return try JSONDecoder().decode(OpenCodePromptFile.self,from:JSONSerialization.data(withJSONObject:value))
   }
@@ -27,6 +27,20 @@ private actor NativeFileService:OpenCodeFileServing {
 }
 @Suite @MainActor struct NativeAttachmentStoreTests {
   private let png=Data(base64Encoded:"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=")!
+  @Test func serverPermissionDenialStillReportsPreparationFailure()async throws{
+    let root=FileManager.default.temporaryDirectory.appending(path:"native-files-denied-"+UUID().uuidString)
+    defer{try? FileManager.default.removeItem(at:root)}
+    let journal=NativeConversationJournal(persistence:try NativeConversationFile(directory:root));try await journal.restore()
+    let files=ProtectedAttachmentFiles(directory:root.appending(path:"bytes")),service=NativeFileService()
+    await service.setFailure(.forbidden)
+    let store=NativeAttachmentStore(journal:journal,files:files)
+    let target=OpenCodeTarget(connectionID:ConnectionID(),projectID:"project",sessionID:"ses_owned",directory:"/project")
+    let context=store.activate(target:target,client:service)
+    try await store.add(files.savePhotoPNG(png),context:context)
+    #expect(store.rows.first?.phase == .failed)
+    #expect(store.notice=="This file could not be prepared. Check the connection and current model, then try again.")
+    #expect(!store.canSend)
+  }
   @Test(.timeLimit(.minutes(1))) func resetDuringPreparationCannotRecreateSelectedBytesOrJournal()async throws{
     let root=FileManager.default.temporaryDirectory.appending(path:"native-reset-preparation-"+UUID().uuidString)
     defer{try? FileManager.default.removeItem(at:root)}

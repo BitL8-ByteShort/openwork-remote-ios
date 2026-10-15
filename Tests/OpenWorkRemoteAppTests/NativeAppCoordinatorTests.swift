@@ -56,7 +56,7 @@ actor NativeShellTransport:HTTPTransport {
     case "/api/session/ses_owned/form":value=["data":[["id":"frm_owned","sessionID":"ses_owned","title":"Choose","fields":[["key":"answer","type":"string","required":true]]]]]
     case "/api/model","/api/model/default":
       catalogReads+=1;guard privacyCatalog else{throw RemoteError.unavailable}
-      let model:[String:Any]=["providerID":"Synthetic provider","id":"model","modelID":"model","name":"Model","enabled":true,"status":"active","variants":[],"capabilities":["tools":true,"input":["text"],"output":["text"]]]
+      let model:[String:Any]=["providerID":"Synthetic provider","id":"model","modelID":"model","name":"Model","enabled":true,"status":"active","variants":[],"capabilities":["tools":true,"input":["text","image"],"output":["text"]]]
       if path.hasSuffix("default"){value=["location":["directory":"/project"],"data":model]}
       else{value=["location":["directory":"/project"],"data":[model]]}
     default:throw RemoteError.invalidResponse
@@ -71,6 +71,34 @@ actor NativeShellTransport:HTTPTransport {
   func sentPrompts()->Int{prompts}
 }
 @Suite @MainActor struct NativeAppCoordinatorTests {
+  @Test func selectedPhotoWaitsForSharingReviewWithoutReportingAnUploadFailureOrRetrying()async throws{
+    let directory=FileManager.default.temporaryDirectory.appending(path:"native-photo-review-"+UUID().uuidString)
+    defer{try? FileManager.default.removeItem(at:directory)}
+    let saved=try nativeStored(),transport=NativeShellTransport()
+    await transport.allowHistory();await transport.enablePrivacyCatalog()
+    let app=try NativeAppCoordinator(directory:directory,connectionPersistence:OpenCodePersistence(load:{saved},save:{_ in},remove:{}),transport:transport)
+    defer{app.deactivate()}
+    try await app.start();await app.open(try #require(app.navigation.sessions.first))
+    let context=try #require(app.attachments.context)
+    let png=Data(base64Encoded:"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=")!
+    let file=try await app.attachments.files.savePhotoPNG(png)
+    try await app.attachments.add(file,context:context)
+    #expect(app.attachments.rows.first?.phase == .selected)
+    #expect(app.attachments.notice=="Review sharing permission, then tap Retry to prepare this file.")
+    #expect(!app.attachments.canSend)
+    let review=try #require(app.sharing.review),client=try #require(app.connection.client)
+    #expect(review.operation == .attachment && review.classes.contains(.photos))
+    #expect(await app.sharing.approve(review,using:client,acknowledgesUnknownDestination:true))
+    #expect(app.attachments.rows.first?.phase == .selected)
+    #expect(!app.attachments.canSend)
+    #expect(await transport.sentPrompts()==0)
+    #expect(!(await transport.calledPaths()).contains("/api/experimental/fs/write"))
+    await app.attachments.prepare(file.id,context:context)
+    #expect(app.attachments.rows.first?.phase == .ready)
+    #expect(app.attachments.notice==nil)
+    #expect(app.attachments.canSend)
+    #expect(await transport.sentPrompts()==0)
+  }
   @Test(.timeLimit(.minutes(1))) func initialConnectedEventDoesNotReportAChatLoadFailure()async throws{
     let directory=FileManager.default.temporaryDirectory.appending(path:"native-first-snapshot-"+UUID().uuidString)
     defer{try? FileManager.default.removeItem(at:directory)}

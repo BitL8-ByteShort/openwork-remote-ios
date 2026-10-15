@@ -68,9 +68,13 @@ struct NativeAttachmentContext:Hashable,Identifiable,Sendable {
       row.prepared=prepared;row.phase = .ready;try await update(row,target:context.target)
     }catch{
       guard epoch==mutationEpoch else{return}
-      row.prepared=nil;row.phase=error as? RemoteError == .outcomeUnknown ? .uploadUnknown : .failed
+      let needsReview=error is NativeSharingReviewRequired
+      row.prepared=nil;row.phase=needsReview ? .selected : error as? RemoteError == .outcomeUnknown ? .uploadUnknown : .failed
       do{try await update(row,target:context.target)}catch{}
-      if self.context==context{notice=row.phase == .uploadUnknown ? "The computer may have a temporary copy. Prepare a new copy only if you want to retry; it will use a different temporary path." : "This file could not be prepared. Check the connection and current model, then try again."}
+      if self.context==context{
+        if needsReview{notice="Review sharing permission, then tap Retry to prepare this file."}
+        else{notice=row.phase == .uploadUnknown ? "The computer may have a temporary copy. Prepare a new copy only if you want to retry; it will use a different temporary path." : "This file could not be prepared. Check the connection and current model, then try again."}
+      }
     }
   }
   func remove(_ id:UUID,context:NativeAttachmentContext) async{

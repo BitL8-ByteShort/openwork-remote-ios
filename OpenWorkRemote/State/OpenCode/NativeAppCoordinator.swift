@@ -89,7 +89,8 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     guard activeClient !== client else{return}
     deactivate();activeClient=client
     await client.observeSharingAuthorization{[weak self,weak client] target,classes,operation in
-      guard let self,let client,await self.authorizeSharing(target:target,client:client,classes:classes,operation:operation) else{throw RemoteError.forbidden}
+      guard let self,let client else{throw RemoteError.forbidden}
+      try await self.requireSharing(target:target,client:client,classes:classes,operation:operation)
     }
     guard activeClient === client,connection.state == .ready else{return}
     visibility.activate(saved.id);navigation.activate(saved,reader:client)
@@ -224,6 +225,10 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
   private func authorizeSharing(target:OpenCodeTarget,client:OpenCodeClient,classes:Set<OpenCodeSharedData>,operation:OpenCodeSharingOperation)async->Bool{
     guard activeClient === client,connection.state == .ready,navigation.target==target else{return false}
     return await sharing.authorize(target:target,reader:client,classes:classes,operation:operation)
+  }
+  private func requireSharing(target:OpenCodeTarget,client:OpenCodeClient,classes:Set<OpenCodeSharedData>,operation:OpenCodeSharingOperation)async throws{
+    guard activeClient === client,connection.state == .ready,navigation.target==target else{throw RemoteError.forbidden}
+    try await sharing.requireAuthorization(target:target,reader:client,classes:classes,operation:operation)
   }
   func send() async {
     guard canSend,let context=workspace.context,context.target==navigation.target else{return}
