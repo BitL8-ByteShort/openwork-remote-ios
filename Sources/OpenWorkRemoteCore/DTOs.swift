@@ -65,6 +65,11 @@ public struct MessageBlock: Codable, Sendable, Equatable {
   public let status: String?
   public let summary: String?
   public let label: String?
+  public init(kind:String,text:String?=nil,language:String?=nil,name:String?=nil,
+              status:String?=nil,summary:String?=nil,label:String?=nil) {
+    self.kind=kind;self.text=text;self.language=language;self.name=name
+    self.status=status;self.summary=summary;self.label=label
+  }
   enum CodingKeys: String, CodingKey { case kind, text, language, name, status, summary, label }
   public init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)

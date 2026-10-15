@@ -68,11 +68,12 @@ extension OpenCodeClient {
     }
     try OpenCodeLocation.validate(target.directory)
   }
-  func verifyTarget(_ target:OpenCodeTarget) async throws {
+  @discardableResult func verifyTarget(_ target:OpenCodeTarget) async throws -> OpenCodeSession {
     try validateTarget(target)
     let actual=try await session(id:target.sessionID)
     guard actual.projectID==target.projectID,actual.location.directory==target.directory,
       actual.time.archived==nil else{throw RemoteError.conflict}
+    return actual
   }
   public func send(target:OpenCodeTarget,input:OpenCodePrompt) async throws -> OpenCodePromptAdmission {
     try await verifyTarget(target)

@@ -13,7 +13,10 @@ public struct OpenCodeProject: Codable, Sendable, Identifiable, Equatable {
   public let time:Time
   public var displayName:String { name ?? URL(fileURLWithPath:canonical).lastPathComponent }
 }
-public struct OpenCodeLocation: Codable, Sendable, Equatable { public let directory:String }
+public struct OpenCodeLocation: Codable, Sendable, Equatable {
+  public let directory:String
+  public init(directory:String){self.directory=directory}
+}
 public struct OpenCodeLocationInfo: Decodable, Sendable, Equatable {
   public struct Project: Decodable, Sendable, Equatable {
     public let id:String
@@ -29,6 +32,9 @@ public struct OpenCodeSession: Codable, Sendable, Identifiable, Equatable {
   public let projectID:String
   public let parentID:String?
   public let title:String?
+  public let model:OpenCodeModelRef?
+  public let agent:String?
+  public let permissions:[OpenCodePermissionRule]?
   public let location:OpenCodeLocation
   public let time:Time
 }
