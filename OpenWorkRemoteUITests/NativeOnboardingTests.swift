@@ -33,6 +33,29 @@ final class NativeOnboardingTests:XCTestCase {
     XCTAssertTrue(app.staticTexts["native-pairing-error"].waitForExistence(timeout:3))
     XCTAssertFalse(app.buttons["native-confirm-connection"].exists)
   }
+  @MainActor func testRejectedCodeRequiresFreshInputInsteadOfReplayingConnect() {
+    continueAfterFailure=false
+    let app=launch();openPaste(app)
+    let field=app.textViews["native-pairing-payload"]
+    field.tap();field.typeText("https://synthetic.example/auth/connect/synthetic_code")
+    app.buttons["native-review-payload"].tap()
+    let connect=app.buttons["native-confirm-connection"]
+    XCTAssertTrue(connect.waitForExistence(timeout:3));connect.tap()
+    XCTAssertTrue(app.staticTexts["native-pairing-error"].waitForExistence(timeout:5))
+    XCTAssertFalse(connect.exists,"A rejected single-use code must not be offered again")
+    let fresh=app.buttons["native-fresh-pairing-code"]
+    XCTAssertTrue(fresh.waitForExistence(timeout:3));fresh.tap()
+    XCTAssertTrue(app.buttons["native-paste-pairing"].waitForExistence(timeout:3))
+    XCTAssertFalse(app.staticTexts["native-reviewed-origin"].exists)
+    app.buttons["native-paste-pairing"].tap()
+    XCTAssertTrue(field.waitForExistence(timeout:3))
+    XCTAssertEqual(field.value as? String,"")
+    field.tap();field.typeText("https://synthetic.example/auth/connect/fresh_synthetic_code")
+    app.buttons["native-review-payload"].tap()
+    XCTAssertTrue(connect.waitForExistence(timeout:3))
+    XCTAssertFalse(app.staticTexts["native-pairing-error"].exists)
+    app.buttons["native-cancel-review"].tap()
+  }
   @MainActor func testRotationRetainsOriginReview() {
     let app=launch();openPaste(app)
     app.textViews["native-pairing-payload"].tap()

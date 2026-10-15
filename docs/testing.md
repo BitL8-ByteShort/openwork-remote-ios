@@ -10,6 +10,8 @@ Build the **OpenWorkRemote** scheme with Xcode. The universal target declares de
 
 Use the current Xcode Simulator IDs, not another developer's machine-local UUID. Native UI suites include `NativeAppTests`, `NativeAccessibilityTests`, `NativeIPadLayoutTests` and `NativeStartupTests`. The DEBUG native fixture uses `-ui-testing-native-app` and an in-process synthetic transport. The no-pairing startup fixture uses `-ui-testing-native-startup`. They are not real server connections. Animation-reduced cases must be identified as such.
 
+`NativeOnboardingTests` uses the production pairing views with an in-process rejection transport. It proves explicit origin review, cancellation, invalid-input handling and fresh-code recovery without redeeming a real code. After an unsuccessful redemption, the primary action discards the old payload and returns to scanning/pasting; it must not offer Connect again for a potentially consumed code. The five onboarding cases pass on phone and iPad Simulators, including landscape review. Live HTTPS pairing remains a separate check.
+
 Set TEST_RUNNER_POCKETWORK_UI_NARROW_WINDOW=1 when invoking xcodebuild for the native iPad UI cohort to resize the actual iPadOS app window below 600 points after launch. The test helper checks the resulting window width. This changes Simulator window geometry, rather than the browser preview scale. Use element/window-scoped gestures in a resized window; an application-wide swipe can miss its content. The normal cohort keeps its ordinary launch behavior when this opt-in is absent.
 
 ## Real native checks

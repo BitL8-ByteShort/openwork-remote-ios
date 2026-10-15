@@ -134,7 +134,16 @@ struct OpenCodeConnectionFlow:View {
       Text("Pairing gives PocketWork access to this OpenCode server’s projects and chats. Project visibility settings only change what this app shows.")
         .font(.callout).foregroundStyle(Theme.muted).lineSpacing(4)
       if let issue=coordinator.issue {Text(issueText(issue)).font(.callout).foregroundStyle(.red).accessibilityIdentifier("native-pairing-error")}
-      Button("Connect"){connect()}.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("native-confirm-connection")
+      if coordinator.issue != nil {
+        // Redemption can consume the code even when its response is lost.
+        // Discard it before offering another connection attempt.
+        Button("Use a fresh pairing code") {
+          pairingTask?.cancel();pairingTask=nil;coordinator.pairAgain()
+          reviewed=nil;selectedOrigin=nil;inputError=nil;step = .pair
+        }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("native-fresh-pairing-code")
+      } else {
+        Button("Connect"){connect()}.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("native-confirm-connection")
+      }
       Button("Cancel"){coordinator.cancelPairing();reviewed=nil;selectedOrigin=nil;step = .pair}
         .frame(maxWidth:.infinity,minHeight:44).accessibilityIdentifier("native-cancel-review")
     }
