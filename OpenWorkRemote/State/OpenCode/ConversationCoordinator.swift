@@ -9,7 +9,9 @@ enum NativeStreamState {case stopped,connecting,live,polling}
   private(set) var target:OpenCodeTarget?
   private(set) var latest:[OpenCodeMessage]=[]
   private(set) var isActive=false
-  private(set) var sending=false
+  private var sendingTargets=Set<OpenCodeTarget>()
+  var sending:Bool{target.map{sendingTargets.contains($0)} ?? false}
+  private(set) var currentSession:OpenCodeSession?
   private(set) var stopping=false
   private(set) var loading=false
   private(set) var issue:NativeConversationIssue?
@@ -17,6 +19,8 @@ enum NativeStreamState {case stopped,connecting,live,polling}
   private(set) var liveText=NativeLiveTextBuffer()
   @ObservationIgnored private var service:(any OpenCodeConversationServing)?
   @ObservationIgnored private var generation=UUID()
+  @ObservationIgnored private var mutationEpoch=UUID()
+  @ObservationIgnored private var mutationService:ObjectIdentifier?
   @ObservationIgnored private var snapshotSequence:UInt64=0
   @ObservationIgnored private var consumer:Task<Void,Never>?
   @ObservationIgnored private var recovery:Task<Void,Never>?
@@ -25,16 +29,21 @@ enum NativeStreamState {case stopped,connecting,live,polling}
   @ObservationIgnored private var seenEvents:[String]=[]
   init(journal:NativeConversationJournal){self.journal=journal}
   func activate(target:OpenCodeTarget,service:any OpenCodeConversationServing) async {
-    deactivate();self.target=target;self.service=service
+    clearSelection()
+    let identity=ObjectIdentifier(service)
+    if mutationService != identity{mutationEpoch=UUID();mutationService=identity}
+    self.target=target;self.service=service
     let current=generation
     await subscribe(current:current,attempt:0)
     guard current==generation else{return}
     await refresh()
   }
-  func deactivate() {
+  func deactivate(){mutationEpoch=UUID();mutationService=nil;clearSelection()}
+  /// Navigation can stop old reads without abandoning an authorized, captured send.
+  func clearSelection() {
     generation=UUID();consumer?.cancel();recovery?.cancel();refreshTask?.cancel()
     consumer=nil;recovery=nil;refreshTask=nil;service=nil;target=nil;latest=[];seenEvents=[]
-    dirty=false;isActive=false;sending=false;stopping=false;loading=false;issue=nil;streamState = .stopped;liveText.reset()
+    dirty=false;isActive=false;currentSession=nil;stopping=false;loading=false;issue=nil;streamState = .stopped;liveText.reset()
   }
   func refresh() async {
     guard let service,let target else{return}
@@ -48,10 +57,10 @@ enum NativeStreamState {case stopped,connecting,live,polling}
       async let active=service.activeSessions()
       let (actual,page,queued,running)=try await (session,messages,inbox,active)
       guard current==generation,sequence==snapshotSequence,!Task.isCancelled else{return}
-      guard actual.projectID==target.projectID,OpenCodeIdentity.matches(actual.location.directory,target.directory),actual.time.archived==nil else{
+      guard OpenCodeIdentity.matches(actual.id,target.sessionID),actual.projectID==target.projectID,OpenCodeIdentity.matches(actual.location.directory,target.directory),actual.time.archived==nil else{
         issue = .locationChanged;return
       }
-      latest=page.data;liveText.confirmed(by:page.data);isActive=running.contains(target.sessionID)
+      currentSession=actual;latest=page.data;liveText.confirmed(by:page.data);isActive=running.contains(target.sessionID)
       if issue == .unavailable{issue=nil}
       try await reconcile(target:target,page:page,inbox:queued,service:service,current:current)
     }catch{
@@ -63,41 +72,48 @@ enum NativeStreamState {case stopped,connecting,live,polling}
     }
   }
   func send() async {
-    guard !sending,let target,let service,journal.ready,!journal.storageIssue,journal.pending(for:target)==nil,
+    guard let target,let service,!sendingTargets.contains(target),journal.ready,!journal.storageIssue,journal.pending(for:target)==nil,
       issue != .locationChanged,issue != .authenticationRequired else{return}
-    let current=generation;sending=true;issue=nil
-    defer{if current==generation{sending=false}}
+    let current=generation,epoch=mutationEpoch;sendingTargets.insert(target);issue=nil
+    defer{sendingTargets.remove(target)}
     let pending:NativePendingPrompt
     do{pending=try await journal.prepare(target:target)}catch{if current==generation{issue = .storage};return}
-    guard current==generation,!Task.isCancelled else{return}
+    guard epoch==mutationEpoch,!Task.isCancelled else{
+      // Durable intent exists, but no request was dispatched. Keep its draft editable.
+      try? await journal.reject(pending);return
+    }
     do{
       let result=try await service.send(target:target,input:pending.prompt)
-      guard current==generation else{return}
+      guard epoch==mutationEpoch else{try? await journal.mark(pending,state:.unknown);return}
       guard result.matches(pending.prompt,sessionID:target.sessionID) else{throw RemoteError.conflict}
       try await journal.confirm(pending)
     }catch{
-      guard current==generation else{return}
-      if journal.storageIssue{issue = .storage;return}
-      if let notSubmitted=error as? OpenCodePromptNotSubmitted {
-        do{
+      guard epoch==mutationEpoch else{try? await journal.mark(pending,state:.unknown);return}
+      if journal.storageIssue{if current==generation{issue = .storage};return}
+      let resultIssue:NativeConversationIssue
+      do{
+        if let notSubmitted=error as? OpenCodePromptNotSubmitted{
           try await journal.reject(pending)
-          issue=switch notSubmitted.reason {
+          resultIssue=switch notSubmitted.reason{
           case .unauthorized:.authenticationRequired
           case .conflict:.locationChanged
           case .incompatible:.incompatible
           default:.sendRejected
           }
-        }catch{issue = .storage}
-      }else{switch error as? RemoteError {
-      case .unauthorized,.forbidden,.invalidResponse,.notFound,.incompatible,.oversized:
-        do{try await journal.reject(pending);issue = .sendRejected}catch{issue = .storage}
-      default:
-        let conflict=error as? RemoteError == .conflict
-        do{try await journal.mark(pending,state:conflict ? .conflicting : .unknown)}catch{issue = .storage;return}
-        issue=conflict ? .conflictingSend : .unknownSend
-      }}
+        }else{
+          switch error as? RemoteError{
+          case .unauthorized,.forbidden,.invalidResponse,.notFound,.incompatible,.oversized:
+            try await journal.reject(pending);resultIssue = .sendRejected
+          default:
+            let conflict=error as? RemoteError == .conflict
+            try await journal.mark(pending,state:conflict ? .conflicting : .unknown)
+            resultIssue=conflict ? .conflictingSend : .unknownSend
+          }
+        }
+      }catch{if current==generation{issue = .storage};return}
+      if current==generation{issue=resultIssue}
     }
-    guard current==generation else{return}
+    guard current==generation,epoch==mutationEpoch else{return}
     guard ![.authenticationRequired,.locationChanged,.incompatible].contains(issue) else{return}
     await refresh()
   }

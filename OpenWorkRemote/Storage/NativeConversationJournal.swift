@@ -89,18 +89,18 @@ actor NativeConversationFile:NativeConversationPersistence {
     catch{disk.pending[target.nativeDraftKey]?.state = .unknown;throw error}
   }
   func mark(_ item:NativePendingPrompt,state:NativePendingState) async throws {
-    guard pending(for:item.target)?.prompt.id==item.prompt.id else{return}
+    guard ready,!retired,pending(for:item.target)?.prompt.id==item.prompt.id else{return}
     disk.pending[item.target.nativeDraftKey]?.state=state
     try await persist()
   }
   func confirm(_ item:NativePendingPrompt) async throws {
-    guard pending(for:item.target)?.prompt.id==item.prompt.id else{throw RemoteError.conflict}
+    guard ready,!retired,pending(for:item.target)?.prompt.id==item.prompt.id else{throw RemoteError.conflict}
     disk.pending.removeValue(forKey:item.target.nativeDraftKey)
     if OpenCodeIdentity.matches(draft(for:item.target),item.prompt.text){disk.drafts.removeValue(forKey:item.target.nativeDraftKey)}
     try await persist()
   }
   func reject(_ item:NativePendingPrompt) async throws {
-    guard pending(for:item.target)?.prompt.id==item.prompt.id else{return}
+    guard ready,!retired,pending(for:item.target)?.prompt.id==item.prompt.id else{return}
     disk.pending.removeValue(forKey:item.target.nativeDraftKey)
     try await persist()
   }

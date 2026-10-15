@@ -1,6 +1,6 @@
 import Foundation
 
-public protocol OpenCodeConversationServing:Sendable {
+public protocol OpenCodeConversationServing:AnyObject,Sendable {
   func session(id:String) async throws -> OpenCodeSession
   func messages(sessionID:String,cursor:String?) async throws -> OpenCodeMessagePage
   func send(target:OpenCodeTarget,input:OpenCodePrompt) async throws -> OpenCodePromptAdmission
