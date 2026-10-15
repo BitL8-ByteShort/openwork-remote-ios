@@ -1,34 +1,47 @@
 import SwiftUI
 
 @main struct OpenWorkRemoteApp: App {
-  @State private var model = AppModel()
+  @State private var launch = NativeAppLaunch()
+  @State private var startupAbout=false
+  #if DEBUG
+  @State private var legacyModel:AppModel?
+  #endif
   @Environment(\.scenePhase) private var phase
   @AppStorage("appearance") private var appearance = "system"
   #if DEBUG
     init() {
+      if ProcessInfo.processInfo.arguments.contains("-ui-testing-native-startup"){
+        let directory=FileManager.default.temporaryDirectory.appending(path:"native-startup-ui-"+UUID().uuidString)
+        _launch=State(initialValue:NativeAppLaunch(factory:{
+          try AppModel.nativeApp(directory:directory,
+            connectionPersistence:OpenCodePersistence(load:{nil},save:{_ in},remove:{}),
+            pairingPersistence:PairingPersistence(load:{nil},save:{_ in},remove:{}))
+        }))
+        return
+      }
       if ProcessInfo.processInfo.arguments.contains("-ui-testing-information") || ProcessInfo.processInfo.arguments.contains("-ui-testing-data-controls") {
         let directory = FileManager.default.temporaryDirectory.appending(path: "information-ui-" + UUID().uuidString)
         let fixture = AppModel(pairingPersistence: PairingPersistence(load: { nil }, save: { _ in }, remove: {}),
           draftStore: try? DraftStore(directory: directory))
-        _model = State(initialValue: fixture)
+        _legacyModel = State(initialValue: fixture)
         return
       }
       #if targetEnvironment(simulator)
         if ProcessInfo.processInfo.arguments.contains("-ui-testing-live-artifacts") {
-          _model = State(initialValue:liveArtifactUITestFixture())
+          _legacyModel = State(initialValue:liveArtifactUITestFixture())
           return
         }
         if ProcessInfo.processInfo.arguments.contains("-ui-testing-live-attachments") {
-          _model = State(initialValue:liveAttachmentUITestFixture())
+          _legacyModel = State(initialValue:liveAttachmentUITestFixture())
           return
         }
         if ProcessInfo.processInfo.arguments.contains("-ui-testing-live-questions") {
-          _model = State(initialValue: liveQuestionUITestFixture())
+          _legacyModel = State(initialValue: liveQuestionUITestFixture())
           return
         }
       #endif
       if ProcessInfo.processInfo.arguments.contains("-ui-testing-chats") {
-        _model = State(initialValue: chatUITestFixture(
+        _legacyModel = State(initialValue: chatUITestFixture(
           slowMessages: ProcessInfo.processInfo.arguments.contains("-slow-messages"),
           failRename: ProcessInfo.processInfo.arguments.contains("-fail-rename"),
           largeConversation: ProcessInfo.processInfo.arguments.contains("-large-conversation"),
@@ -44,7 +57,11 @@ import SwiftUI
         let fixture = AppModel(pairingPersistence: PairingPersistence(
           load: { nil }, save: { _ in }, remove: {}))
         fixture.connection = .revoked
-        _model = State(initialValue: fixture)
+        _legacyModel = State(initialValue: fixture)
+        return
+      }
+      if ProcessInfo.processInfo.arguments.contains("-ui-testing-onboarding"){
+        _legacyModel=State(initialValue:AppModel(pairingPersistence:PairingPersistence(load:{nil},save:{_ in},remove:{})))
       }
     }
   #endif
@@ -59,15 +76,37 @@ import SwiftUI
         NativeControlUITestFixture().tint(Theme.accent)
       } else if ProcessInfo.processInfo.arguments.contains("-ui-testing-native-onboarding") {
         NativeOnboardingFixture().tint(Theme.accent)
+      } else if let legacyModel {
+        legacyRoot(legacyModel)
       } else {
-        legacyRoot
+        nativeRoot
       }
       #else
-      legacyRoot
+      nativeRoot
       #endif
     }
   }
-  private var legacyRoot:some View {
+  private var nativeRoot:some View{
+    Group{
+      if launch.storageUnavailable{
+        VStack(alignment:.leading,spacing:24){
+          Text("Saved data is unavailable").font(.largeTitle.weight(.semibold))
+          Text("Unlock this device and retry. PocketWork has not discarded your saved connection or drafts.").foregroundStyle(Theme.muted)
+          Button("Retry"){launch.open()}.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("native-startup-retry")
+          Button("About & Help"){startupAbout=true}.frame(minHeight:44).accessibilityIdentifier("native-about-open")
+        }.padding(24).frame(maxWidth:560).frame(maxWidth:.infinity,maxHeight:.infinity)
+      }else if let model=launch.model{
+        NativeRootView().id(ObjectIdentifier(model)).environment(model)
+          .task(id:ObjectIdentifier(model)){InteractionMetrics.startSampling();await model.start()}
+          .onChange(of:phase){_,value in model.sceneActive(value == .active)}
+          .onChange(of:model.resetReplacement?.id){_,_ in if let report=model.resetReplacement{launch.completeReset(report)}}
+      }else{ProgressView("Opening PocketWork…").frame(maxWidth:.infinity,maxHeight:.infinity).task{launch.open()}}
+    }.background(Theme.background).foregroundStyle(Theme.ink).tint(Theme.accent)
+      .preferredColorScheme(appearance == "dark" ? .dark:appearance == "light" ? .light:nil)
+      .sheet(isPresented:$startupAbout){NavigationStack{AboutView(allowsDataControls:false).toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){startupAbout=false}}}}}
+  }
+  #if DEBUG
+  private func legacyRoot(_ model:AppModel)->some View {
       RootView().id(ObjectIdentifier(model)).environment(model).preferredColorScheme(
         appearance == "dark" ? .dark : appearance == "light" ? .light : nil
       ).tint(Theme.accent).task(id: ObjectIdentifier(model)) {
@@ -77,10 +116,11 @@ import SwiftUI
         model.sceneActive(p == .active)
       }.onChange(of: model.resetReplacement?.id) { _, _ in
         guard let report = model.resetReplacement else { return }
-        do { model = try model.freshAfterReset(report) }
+        do { legacyModel = try model.freshAfterReset(report) }
         catch { model.notice = "Local reset finished, but app storage could not be reopened. Unlock the phone and restart the app." }
       }
   }
+  #endif
 }
 #if DEBUG
 private struct NativeOnboardingFixture:View {
@@ -88,7 +128,6 @@ private struct NativeOnboardingFixture:View {
     persistence:OpenCodePersistence(load:{nil},save:{_ in},remove:{}))
   var body:some View {OpenCodeConnectionFlow(coordinator:coordinator)}
 }
-#endif
 private struct RootView: View {
   @Environment(AppModel.self) private var model
   var body: some View {
@@ -125,3 +164,5 @@ private struct RootView: View {
     }.foregroundStyle(Theme.ink)
   }
 }
+
+#endif

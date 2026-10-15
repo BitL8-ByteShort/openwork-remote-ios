@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Shared native root. The shipping entrypoint changes only after the remaining
-/// data controls, information and universal-layout qualification are complete.
+/// Native production root. Legacy network onboarding is a DEBUG fixture only.
 struct NativeRootView:View{
   @Environment(AppModel.self) private var model
   @State private var dataControls=false
+  @State private var about=false
   private struct ConnectionObservation:Equatable{
     let state:NativeConnectionState
     let client:ObjectIdentifier?
@@ -23,7 +23,7 @@ struct NativeRootView:View{
             switch native.connection.state{
             case .unpaired,.pairing:
               OpenCodeConnectionFlow(coordinator:native.connection,migration:model.nativeMigration,
-                onConnected:{Task{await native.connectionChanged()}},onDataControls:{dataControls=true},
+                onConnected:{Task{await native.connectionChanged()}},onDataControls:{dataControls=true},onAbout:{about=true},
                 beginsWithPairing:native.connection.state == .pairing)
             case .ready,.connecting,.offline:
               NavigationStack{ChatView()}
@@ -43,6 +43,7 @@ struct NativeRootView:View{
       .sheet(isPresented:$dataControls){
         NavigationStack{DataControlsView().toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){dataControls=false}.frame(minHeight:44)}}}
       }
+      .sheet(isPresented:$about){NavigationStack{AboutView().toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){about=false}.frame(minHeight:44).accessibilityIdentifier("native-about-done")}}}}
   }
   private func problem(_ title:String,_ message:String,retry:@escaping()->Void,button:String="Retry")->some View{
     NavigationStack{
@@ -55,6 +56,7 @@ struct NativeRootView:View{
           Button("Data Controls"){dataControls=true}.frame(minHeight:44).accessibilityIdentifier("native-local-data-open")
         }.padding(24).frame(maxWidth:560,alignment:.leading).frame(maxWidth:.infinity)
       }.background(Theme.background).navigationTitle("PocketWork").navigationBarTitleDisplayMode(.inline)
+        .toolbar{ToolbarItem(placement:.topBarTrailing){Button("About & Help"){about=true}.accessibilityIdentifier("native-about-open")}}
     }
   }
 }

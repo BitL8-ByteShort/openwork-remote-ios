@@ -15,7 +15,8 @@ import Testing
 
   @Test func helpDoesNotRequireHost() throws {
     let information = try ProductInformation.load()
-    #expect(information.document(.help).text.contains("Tailscale"))
+    #expect(information.document(.help).text.contains("OpenCode v2"))
+    #expect(!information.document(.help).text.contains("requires Tailscale"))
     #expect(information.document(.help).text.contains("Remote access"))
     #expect(information.document(.help).text.contains("offline"))
   }
@@ -42,6 +43,17 @@ import Testing
     #expect(information.document(.privacy).text.contains(information.manifest.effectiveDate))
     #expect(information.document(.privacy).text.contains(information.manifest.policyVersion))
     #expect(information.manifest.privacyURL.absoluteString == "https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/")
+  }
+
+  @Test @MainActor func nativeSharingReviewUsesTheBundledPolicyAndAccurateResetLimits()throws{
+    let information=try ProductInformation.load()
+    #expect(information.manifest.policyVersion==ProviderDisclosureStore.policyVersion)
+    let privacy=information.document(.privacy).text
+    #expect(privacy.contains("OpenCode v2"))
+    #expect(privacy.contains("does not revoke"))
+    #expect(privacy.contains("cannot verify the final provider destination"))
+    #expect(!privacy.contains("attempt to revoke"))
+    #expect(!privacy.contains("requires Tailscale"))
   }
 
   @Test func invalidOrPlaceholderURLFailsReleaseValidation() throws {

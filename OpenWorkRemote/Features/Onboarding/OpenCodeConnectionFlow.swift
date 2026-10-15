@@ -8,6 +8,7 @@ struct OpenCodeConnectionFlow:View {
   var migration:ConnectionMigration?
   var onConnected:() -> Void = {}
   var onDataControls:(()->Void)? = nil
+  var onAbout:(()->Void)? = nil
   var beginsWithPairing=false
   @State private var step:Step = .welcome
   @State private var sheet:Sheet?
@@ -38,6 +39,7 @@ struct OpenCodeConnectionFlow:View {
         .navigationTitle(step == .setup ? "Computer setup" : step == .welcome ? "" : "Pair your computer")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+          if let onAbout{ToolbarItem(placement:.topBarTrailing){Button(action:onAbout){Label("About & Help",systemImage:"questionmark.circle")}.accessibilityIdentifier("native-about-open")}}
           if let onDataControls{ToolbarItem(placement:.topBarTrailing){Button(action:onDataControls){Label("Data Controls",systemImage:"info.circle")}.accessibilityIdentifier("native-local-data-open")}}
           if step != .welcome && !coordinator.isBusy {
             ToolbarItem(placement:.topBarLeading) {

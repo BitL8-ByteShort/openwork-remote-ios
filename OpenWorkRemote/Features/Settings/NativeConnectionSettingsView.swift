@@ -30,6 +30,7 @@ struct NativeConnectionSettingsView:View {
         Section{Button("New chat defaults"){if let scope=native.projectKey{newDefaults=NativeDefaultsPresentation(scope:scope,value:native.defaults.value,locations:native.newChatLocations)}}.disabled(native.projectKey==nil).accessibilityIdentifier("native-defaults-open")}
         Section{Picker("Appearance",selection:$appearance){Text("System").tag("system");Text("Light").tag("light");Text("Dark").tag("dark")}}
         Section{NavigationLink("Data Controls"){DataControlsView()}.accessibilityIdentifier("native-local-data-open")}
+        Section{NavigationLink("About & Help"){AboutView()}.accessibilityIdentifier("settings-about")}
         Section{
           Text("Keep OpenCode running with its built-in Remote access enabled. Replies continue on the computer while PocketWork is closed.")
           Text("Forgetting removes this device’s credential. OpenCode v2 does not offer individual device revocation. Rotate the server password on your computer to invalidate all paired devices.")
