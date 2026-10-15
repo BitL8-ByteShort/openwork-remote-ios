@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 
 struct WorkspacePicker: View {
@@ -33,3 +34,5 @@ struct WorkspacePicker: View {
       .navigationBarTitleDisplayMode(.inline)
   }
 }
+
+#endif

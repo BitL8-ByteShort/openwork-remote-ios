@@ -1,3 +1,4 @@
+#if DEBUG
 import OpenWorkRemoteCore
 import SwiftUI
 
@@ -103,3 +104,5 @@ struct SkillDetailView: View {
     }
   }
 }
+
+#endif

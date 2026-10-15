@@ -29,6 +29,7 @@ public struct SessionSearchPage: Decodable, Sendable {
     else { throw RemoteError.invalidResponse }
   }
 }
+#if DEBUG || !os(iOS)
 extension BridgeClient {
   public func searchSessions(_ wid: String, query: String, cursor: String? = nil) async throws
     -> SessionSearchPage
@@ -55,3 +56,5 @@ extension BridgeClient {
     return page
   }
 }
+
+#endif

@@ -1,3 +1,4 @@
+#if DEBUG || !os(iOS)
 import Foundation
 import Observation
 import OpenWorkRemoteCore
@@ -146,3 +147,5 @@ struct ArtifactContext: Equatable, Sendable {
     }
   }
 }
+
+#endif

@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 import OpenWorkRemoteCore
 
@@ -75,3 +76,5 @@ struct ChangesView: View {
     switch value {case .added:"Added";case .modified:"Modified";case .deleted:"Deleted";case .renamed:"Renamed";case .typeChanged:"Type changed"}
   }
 }
+
+#endif

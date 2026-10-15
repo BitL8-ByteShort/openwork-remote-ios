@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 struct ArtifactListView:View {
   @Environment(AppModel.self) private var model
@@ -68,3 +69,5 @@ struct LegacyArtifactListView: View {
     }
   }
 }
+
+#endif

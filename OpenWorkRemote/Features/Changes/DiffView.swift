@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 import OpenWorkRemoteCore
 
@@ -62,3 +63,5 @@ struct DiffView: View {
     return prefix+": "+line.text+(line.shortened ? ", shortened; continue on your computer" : "")
   }
 }
+
+#endif

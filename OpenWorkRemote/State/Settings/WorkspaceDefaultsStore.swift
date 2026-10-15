@@ -1,3 +1,4 @@
+#if DEBUG || !os(iOS)
 import Foundation
 import Observation
 import OpenWorkRemoteCore
@@ -89,3 +90,5 @@ private struct DefaultsDisk:Codable,Sendable{var intents:[WorkspaceDefaultIntent
   remove(id);try await persist();reviewed=false;notice=nil
  }
 }
+
+#endif

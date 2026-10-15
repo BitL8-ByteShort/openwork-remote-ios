@@ -1,3 +1,4 @@
+#if DEBUG
 import OpenWorkRemoteCore
 
 /// Presentation facts for the shared views; no fabricated bridge Host/capabilities.
@@ -25,3 +26,5 @@ extension AppModel {
   func followLatest(_ following:Bool){native?.followLatest(following)}
   func jumpToLatest(){native?.jumpToLatest()}
 }
+
+#endif

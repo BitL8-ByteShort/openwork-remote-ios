@@ -43,6 +43,7 @@ public enum SessionAction: Codable, Sendable, Equatable {
   case fork(beforeMessageId: String?)
   case delete
 }
+#if DEBUG || !os(iOS)
 extension BridgeClient {
   public func sessionActions(_ wid: String, _ sid: String) async throws -> SessionActionPreview {
     try await decode(
@@ -101,3 +102,5 @@ extension BridgeClient {
     return r
   }
 }
+
+#endif

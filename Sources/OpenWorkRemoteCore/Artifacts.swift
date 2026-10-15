@@ -63,6 +63,7 @@ public struct ArtifactCatalog: Decodable, Sendable, Equatable {
     guard items.count <= 100, Set(items.map(\.id)).count == items.count else { throw RemoteError.invalidResponse }
   }
 }
+#if DEBUG || !os(iOS)
 extension BridgeClient {
   public func artifacts(_ wid: String, _ sid: String) async throws -> ArtifactCatalog {
     let result = try await decode(Envelope<ArtifactCatalog>.self, path: (try base(wid, sid)) + "/artifacts").data
@@ -80,3 +81,5 @@ extension BridgeClient {
     return response.data
   }
 }
+
+#endif

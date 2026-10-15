@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 import OpenWorkRemoteCore
 struct WorkspaceSettingsView:View {
@@ -52,3 +53,5 @@ struct WorkspaceDefaultsView:View {
  private func useCurrent(){guard let snapshot=store.snapshot,let context=store.context else{return};formRevision=snapshot.revision;formContext=context;selectedID=snapshot.current.flatMap{c in snapshot.models.first{$0.providerId==c.providerId && $0.modelId==c.modelId}?.id} ?? "";variant=snapshot.current?.variant ?? ""}
  private func save()async{guard let selection,let revision=formRevision,let c=formContext else{return};if await model.saveWorkspaceDefaults(selection,revision:revision,context:c){useCurrent()}}
 }
+
+#endif

@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 import OSLog
 import Observation
@@ -1428,3 +1429,5 @@ extension AppModel {
     return await workspaceDefaults.save(selection,revision:revision,client:client,context:c)
   }
 }
+
+#endif

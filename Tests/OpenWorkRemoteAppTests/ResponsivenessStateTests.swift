@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 import Testing
 import OpenWorkRemoteCore
@@ -167,3 +168,5 @@ private actor SelectionTransport: HTTPTransport {
     #expect(model.attachments.context == attachments)
   }
 }
+
+#endif

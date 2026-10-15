@@ -1,3 +1,4 @@
+#if DEBUG
 import OpenWorkRemoteCore
 import SwiftUI
 
@@ -138,3 +139,5 @@ struct ChatActionView: View {
     }
   }
 }
+
+#endif

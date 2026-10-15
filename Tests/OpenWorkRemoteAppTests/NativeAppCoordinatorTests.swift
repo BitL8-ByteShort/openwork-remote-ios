@@ -126,7 +126,10 @@ actor NativeShellTransport:HTTPTransport {
     let pairing=StoredPairing(origin:"https://legacy.invalid",token:"synthetic-legacy-token",hostId:"legacy-host")
     let model=AppModel(native:native,legacyDraftStore:legacy,pairingPersistence:PairingPersistence(load:{pairing},save:{_ in},remove:{}),transport:transport)
     await model.start()
-    #expect(model.connection == .ready);#expect(model.host==nil)
+    #expect(model.connection == .ready)
+    #if DEBUG
+    #expect(model.host==nil) // Shipping facade has no legacy Host property.
+    #endif
     #expect(model.serviceName=="OpenCode")
     #expect(model.computerName=="Native computer")
     #expect(model.connectionLabel=="Connected")

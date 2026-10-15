@@ -32,12 +32,16 @@ struct DataControlsView: View {
         case .reset:"Remove both saved connections, local drafts and recovery text, unconfirmed actions, selected attachments, downloaded copies, sharing permissions, local groups/defaults, project visibility, last-opened chat and app preferences. Clipboard and shared copies remain outside this reset. Server tokens are not revoked. Chats, uploaded host files and work already running on the computer stay there."
         }
       }
+      #if DEBUG
       return switch self {
       case .drafts: "Remove unsent chat text, question answers and skill drafts from this phone. Unconfirmed and in-progress action details and selected file copies stay until reviewed or reset. Your computer's chats stay intact."
       case .downloads: "Remove this app's downloaded results and preview copies. Selected attachments and copies already shared to another app stay. Original files on the computer stay intact."
       case .sharing:"Remove saved local sharing permissions."
       case .reset: "Remove pairing, local drafts, unfinished action records, selected attachments, downloaded copies and app preferences. This attempts to revoke the phone on your computer. If it is offline, revoke the phone there later. Your computer's chats and original files stay intact."
       }
+      #else
+      return "Open the native connection to review local data controls."
+      #endif
     }
   }
   var body: some View {

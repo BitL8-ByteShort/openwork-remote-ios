@@ -1,3 +1,4 @@
+#if DEBUG || !os(iOS)
 import Foundation
 import Observation
 import OpenWorkRemoteCore
@@ -277,3 +278,5 @@ private struct AttachmentDiskState: Codable, Sendable { var drafts: [AttachmentD
     try? await persist()
   }
 }
+
+#endif

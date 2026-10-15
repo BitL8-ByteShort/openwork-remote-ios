@@ -1,3 +1,4 @@
+#if DEBUG || !os(iOS)
 import Foundation
 import Observation
 import OpenWorkRemoteCore
@@ -134,3 +135,5 @@ struct ChatSearchContext: Equatable, Sendable {
     }
   }
 }
+
+#endif

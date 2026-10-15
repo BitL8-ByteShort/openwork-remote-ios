@@ -2,7 +2,7 @@
 
 PocketWork is independently maintained by Salty Panda LLC. It connects to OpenCode v2 and is not an official or endorsed OpenCode product. OpenCode's maintainers are not responsible for this iOS/iPadOS app.
 
-This repository includes the native companion, typed clients, synthetic fixtures and original artwork. It does not bundle OpenCode, OpenTunnel, OpenWork or Tailscale. Those products retain their own licenses and terms. The default app entrypoint uses OpenCode; older beta code/fixtures are being retired separately, while local draft recovery remains available.
+This repository includes the native companion, typed clients, synthetic fixtures and original artwork. It does not bundle OpenCode, OpenTunnel, OpenWork or Tailscale. Those products retain their own licenses and terms. The iOS Release app uses OpenCode and excludes earlier bridge screens and the bridge client. Mac/DEBUG historical regression fixtures remain separate. Local recovery of earlier draft text remains available.
 
 The app icon and new PocketWork repository banner are original project artwork under this repository's MIT license. The OpenCode logo in the app identifies the compatible service; its retained notice follows below. This license does not grant trademark rights or imply affiliation.
 

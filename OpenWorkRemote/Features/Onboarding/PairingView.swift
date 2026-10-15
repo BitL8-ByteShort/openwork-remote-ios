@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 
 struct PairingView: View {
@@ -82,3 +83,5 @@ struct PairingView: View {
       }
   }
 }
+
+#endif

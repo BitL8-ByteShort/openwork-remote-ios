@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 struct PermissionsView:View {
   @Environment(AppModel.self) private var model
@@ -93,3 +94,5 @@ struct LegacyPermissionsView: View {
     catch { self.error = "Revocation could not be confirmed. Wait for active chats to finish, then reload permissions before trying again." }
   }
 }
+
+#endif

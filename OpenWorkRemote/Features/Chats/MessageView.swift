@@ -4,7 +4,9 @@ import SwiftUI
 struct MessageView: View {
   let message: ChatMessage
   @Environment(AppModel.self) private var model
+  #if DEBUG
   @State private var chatAction:ChatActionRequest?
+  #endif
   @State private var nativeAction:NativeChatActionRequest?
   @State private var copied = false
   var body: some View {
@@ -66,19 +68,32 @@ struct MessageView: View {
     }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
       .contextMenu {
         Button("Fork before this message",systemImage:"arrow.triangle.branch") { forkBefore() }
-          .disabled(model.connection != .ready || (model.native==nil && model.host?.capabilities.forkSession != true) || message.state == "streaming")
+          .disabled(!canFork)
       }.accessibilityAction(named:"Fork before this message") { forkBefore() }
+      #if DEBUG
       .sheet(item:$chatAction) { ChatActionView(request:$0) }
+      #endif
       .sheet(item:$nativeAction){request in if let native=model.native{NativeChatActionView(native:native,request:request)}}
+  }
+  private var canFork: Bool {
+    guard model.connection == .ready, message.state != "streaming" else { return false }
+    if model.native != nil { return true }
+    #if DEBUG
+    return model.host?.capabilities.forkSession == true
+    #else
+    return false
+    #endif
   }
   private func forkBefore() {
     if let native=model.native{
       guard model.connection == .ready,let session=model.selectedSession,let target=native.actionTarget(session),message.state != "streaming" else{return}
       nativeAction=NativeChatActionRequest(session:session,target:target,deleting:false,beforeMessageID:message.id);return
     }
+    #if DEBUG
     guard model.connection == .ready,model.host?.capabilities.forkSession == true,let session=model.selectedSession,let context=model.actionContext(for:session),message.state != "streaming" else{return}
     chatAction=ChatActionRequest(session:session,action:.fork(beforeMessageId:message.id),context:context)
 
+    #endif
   }
 }
 struct ToolActivityView: View {

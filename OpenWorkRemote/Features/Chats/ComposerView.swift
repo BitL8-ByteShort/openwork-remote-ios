@@ -4,8 +4,10 @@ struct ComposerView: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(AppModel.self) private var model
   @FocusState private var focused: Bool
+  #if DEBUG
   @State private var attachments: AttachmentPresentation?
   @State private var skills=false
+  #endif
   @State private var nativeSkills:NativeWorkspaceContext?
   @State private var nativeAttachments:NativeAttachmentContext?
   var body: some View {
@@ -20,8 +22,9 @@ struct ComposerView: View {
         }}
       }
       if !model.selectedSkillIDs.isEmpty {
-        ScrollView(.horizontal){HStack{ForEach(model.selectedSkillIDs,id:\.self){id in Button{model.removeSelectedSkill(id)}label:{Label((model.native?.workspace.selectedSkills.first{$0.id==id}?.name ?? model.skills.catalog?.items.first{$0.id==id}?.name ?? "Selected skill")+" · Remove",systemImage:"sparkles").font(.caption).padding(10).background(Theme.surface,in:Capsule())}.disabled(model.sending || model.uncertain).accessibilityIdentifier("selected-skill-"+id)}}}
+        ScrollView(.horizontal){HStack{ForEach(model.selectedSkillIDs,id:\.self){id in Button{model.removeSelectedSkill(id)}label:{Label(skillName(id)+" · Remove",systemImage:"sparkles").font(.caption).padding(10).background(Theme.surface,in:Capsule())}.disabled(model.sending || model.uncertain).accessibilityIdentifier("selected-skill-"+id)}}}
       }
+      #if DEBUG
       if !model.attachments.rows.isEmpty, let context = model.attachmentContext {
         ScrollView(.horizontal) {
           HStack {
@@ -34,6 +37,7 @@ struct ComposerView: View {
           }
         }
       }
+      #endif
       if model.uncertain {
         VStack(alignment: .leading, spacing: 8) {
           Label("Delivery is uncertain", systemImage: "exclamationmark.circle").font(
@@ -50,11 +54,16 @@ struct ComposerView: View {
           Button("Photos or files",systemImage:"paperclip"){
             focused=false
             if let context=model.native?.attachments.context{nativeAttachments=context}
-            else if let context=model.attachmentContext{attachments=AttachmentPresentation(context:context)}
+            #if DEBUG
+            if model.native == nil, let context=model.attachmentContext { attachments=AttachmentPresentation(context:context) }
+            #endif
           }
           Button("Skills",systemImage:"sparkles"){
             focused=false
-            if let context=model.native?.workspace.context{nativeSkills=context}else{skills=true}
+            if let context=model.native?.workspace.context{nativeSkills=context}
+            #if DEBUG
+            if model.native == nil { skills=true }
+            #endif
           }
         }label:{Image(systemName:"plus").font(.system(size:20)).frame(width:44,height:44)}
           .disabled(model.selectedSession == nil || model.sending).accessibilityLabel("Add to message").accessibilityIdentifier("composer-add")
@@ -99,18 +108,35 @@ struct ComposerView: View {
       }
     }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
       .frame(maxWidth: Theme.contentMaxWidth).frame(maxWidth: .infinity).background(Theme.background)
+      #if DEBUG
       .sheet(isPresented:$skills){NavigationStack{SkillListView().toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){skills=false}}}}}
+      #endif
       .sheet(item:$nativeSkills){context in
         if let store=model.native?.workspace{NavigationStack{NativeSkillListView(store:store,context:context,onSelection:{if nativeSkills==context{nativeSkills=nil}}).toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){nativeSkills=nil}.accessibilityIdentifier("native-skills-done")}}}}
       }
+      #if DEBUG
       .sheet(item:$attachments) { AttachmentPicker(context:$0.context) }
+      #endif
       .sheet(item:$nativeAttachments){context in
         if let store=model.native?.attachments{NativeAttachmentPicker(store:store,context:context)}
       }
+      #if DEBUG
       .task(id:model.attachmentRefreshID) { await model.refreshAttachments() }
+      #endif
   }
+  private func skillName(_ id: String) -> String {
+    if let name=model.native?.workspace.selectedSkills.first(where:{$0.id==id})?.name { return name }
+    #if DEBUG
+    if let name=model.skills.catalog?.items.first(where:{$0.id==id})?.name { return name }
+    #endif
+    return "Selected skill"
+  }
+
 }
+#if DEBUG
 private struct AttachmentPresentation: Identifiable {
   let id = UUID()
   let context: AttachmentContext
 }
+
+#endif

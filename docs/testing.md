@@ -18,6 +18,18 @@ Each suite declares its own file schema. Pairing codes expire and are single-use
 
 Some admission checks deliberately use `resume:false` so no model executes. Label those results accurately. They do not prove provider execution, real streaming, a complete approval lifecycle or a physical Photos/Files/share journey. Mac and Linux require their own actual results.
 
+## Shipping configuration
+
+The iOS Release app uses `NativeReleaseAppModel` and native-only screen adapters. Legacy bridge screens/client code are excluded from iOS Release. Their Mac/DEBUG regression coverage remains available; fourteen historical facade cases run in Debug, where their original facade exists. Local migration only reads/clears older records and byte copies through `LegacyLocalRecovery`, with no bridge client.
+
+Run the Release facade/reset checks as well as the ordinary package suite:
+
+```sh
+swift test -c release --filter 'NativeAppLaunchTests|NativeAppCoordinatorTests|NativeAppModelFacadeTests|OpenCodeResetTests|LegacyLocalRecoveryTests'
+```
+
+CI builds both Debug and Release without signing. After a Release build, `python3 scripts/verify-ios-release.py --app <built-app-path>` scans every bundled Mach-O image for retired wire/DEBUG markers and checks the universal orientation declarations. A Debug app may have its implementation in a separate `.debug.dylib`, so checking only its launcher is insufficient. This static check does not establish runtime behavior, signing, physical acceptance or distribution.
+
 ## Information and release
 
 The bundled information directory is canonical. An unapproved policy can be rendered only for private review with `--allow-draft`; normal publication generation intentionally refuses it. After approval, generate the site twice and verify no changes on the second run.

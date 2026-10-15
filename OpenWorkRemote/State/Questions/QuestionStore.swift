@@ -26,6 +26,7 @@ struct QuestionDraft: Codable, Sendable {
 }
 struct QuestionDiskState: Codable, Sendable { var drafts: [QuestionDraft] = [] }
 
+#if DEBUG || !os(iOS)
 @MainActor @Observable final class QuestionStore {
   private(set) var context: QuestionContext?
   private(set) var pending: [QuestionRequest] = []
@@ -202,3 +203,5 @@ struct QuestionDiskState: Codable, Sendable { var drafts: [QuestionDraft] = [] }
     }
   }
 }
+
+#endif

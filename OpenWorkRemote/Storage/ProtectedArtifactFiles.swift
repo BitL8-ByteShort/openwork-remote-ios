@@ -135,6 +135,7 @@ actor ProtectedArtifactFiles {
     guard bytes > 0, used <= quotaBytes, bytes <= quotaBytes - used else { throw RemoteError.oversized }
     if let free = try availableCapacity(directory), free >= 0, free < Int64(bytes) + 4_194_304 { throw RemoteError.unavailable }
   }
+  #if DEBUG || !os(iOS)
   func download(_ ref: ArtifactRef, client: BridgeClient, workspaceId: String,
                 progress: @escaping @Sendable (Int) async -> Void = {_ in}) async throws -> LocalArtifact {
     try ref.validate(); try cleanup(); try capacity(ref.bytes); try Task.checkCancellation()
@@ -168,6 +169,7 @@ actor ProtectedArtifactFiles {
       throw error
     }
   }
+  #endif
   func storeNative(_ download:OpenCodeResultDownload)throws->NativeLocalArtifact{
     try download.info.validate()
     guard download.data.count==download.info.bytes else{throw RemoteError.invalidResponse}

@@ -53,7 +53,13 @@ struct RenameChatView: View {
       if let native=model.native{
         guard let nativeReview else{throw RemoteError.unavailable}
         try await native.rename(nativeReview,title:title)
-      }else{try await model.rename(session, title: title, requestId: requestID)}
+      } else {
+        #if DEBUG
+        try await model.rename(session, title: title, requestId: requestID)
+        #else
+        throw RemoteError.unavailable
+        #endif
+      }
       dismiss()
     }
     catch RemoteError.conflict {

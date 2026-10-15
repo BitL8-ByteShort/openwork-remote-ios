@@ -29,6 +29,7 @@ public struct WorkspaceDefaults:Decodable,Sendable {
   models.contains{$0.providerId==selection.providerId && $0.modelId==selection.modelId && (selection.variant==nil || $0.variants.contains(selection.variant!))}
  }
 }
+#if DEBUG || !os(iOS)
 extension BridgeClient {
  private func defaultsPath(_ wid:String)throws->String {
   guard wid.range(of:"^[A-Za-z0-9_-]{1,200}$",options:.regularExpression) != nil else{throw RemoteError.invalidResponse}
@@ -45,3 +46,5 @@ extension BridgeClient {
   return receipt
  }
 }
+
+#endif

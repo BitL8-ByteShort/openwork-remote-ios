@@ -1,3 +1,4 @@
+#if DEBUG || !os(iOS)
 import Foundation
 
 public actor BridgeClient {
@@ -241,3 +242,5 @@ public actor BridgeClient {
     return try await transport.events(for: r)
   }
 }
+
+#endif

@@ -1,3 +1,4 @@
+#if DEBUG
 import OpenWorkRemoteCore
 import SwiftUI
 
@@ -190,3 +191,5 @@ struct ChatListView: View {
     model.sessions.filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) }
   }
 }
+
+#endif

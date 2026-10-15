@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 struct ModelSettingsView:View {
   @Environment(AppModel.self) private var model
@@ -119,3 +120,5 @@ struct ModelPickerView: View {
       .scrollContentBackground(.hidden).background(Theme.background)
   }
 }
+
+#endif

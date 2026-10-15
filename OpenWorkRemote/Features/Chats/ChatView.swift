@@ -10,8 +10,10 @@ struct ChatView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var sheet: ChatSheet?
+  #if DEBUG
   @State private var approval: Approval?
   @State private var question: QuestionPresentation?
+  #endif
   @State private var nearBottom = true
   @State private var newReplies = false
   @AppStorage("compactToolActivity") private var compactToolActivity = true
@@ -47,6 +49,7 @@ struct ChatView: View {
         }.padding(.leading, 24).foregroundStyle(Theme.muted)
       }
       if let native=model.native{NativeChatInputs(native:native,compact:compactControls)}
+      #if DEBUG
       if model.native==nil,let first = model.approvals.first {
         ApprovalBanner(approval: first) { approval = first }.padding(.horizontal, 24).padding(
           .top, 12)
@@ -67,6 +70,7 @@ struct ChatView: View {
         Label("The model could not finish. Check its setup in OpenWork on your computer.", systemImage: "exclamationmark.circle")
           .font(.callout).foregroundStyle(Theme.muted).padding(.horizontal, 24).padding(.vertical, 12)
       }
+      #endif
       if model.loading {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if model.selectedSession == nil {
@@ -75,18 +79,28 @@ struct ChatView: View {
         conversation
       }
       ComposerView()
-    }.background(Theme.background).foregroundStyle(Theme.ink).sheet(item: $sheet, onDismiss: { model.artifacts.closePreview();model.native?.results.closePreview() }) {
+    }.background(Theme.background).foregroundStyle(Theme.ink).sheet(item: $sheet, onDismiss: closePreview) {
       switch $0 {
       case .chats: ChatListView()
       case .settings: ConnectionView()
       case .model: ModelSettingsView()
       case .files: ArtifactListView()
       }
-    }.sheet(item: $approval) { ApprovalSheet(approval: $0) }
-      .sheet(item: $question) { QuestionSheet(presentation: $0) }.toolbar(.hidden, for: .navigationBar)
+    }
+    #if DEBUG
+    .sheet(item: $approval) { ApprovalSheet(approval: $0) }
+    .sheet(item: $question) { QuestionSheet(presentation: $0) }
+    #endif
+    .toolbar(.hidden, for: .navigationBar)
     .sheet(item:Binding(get:{sheet==nil ? model.native?.newChatLocationRequest:nil},set:{model.native?.newChatLocationRequest=$0})){request in
       if let native=model.native{NativeChatLocationView(native:native,request:request)}
     }.nativeSharingReview(model.native,operation:.message)
+  }
+  private func closePreview() {
+    model.native?.results.closePreview()
+    #if DEBUG
+    model.artifacts.closePreview()
+    #endif
   }
   private func header(compact:Bool)->some View {
     HStack {

@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 import Testing
 import OpenWorkRemoteCore
@@ -149,3 +150,5 @@ private actor ResetTransport: HTTPTransport {
     fresh.sceneActive(false)
   }
 }
+
+#endif
