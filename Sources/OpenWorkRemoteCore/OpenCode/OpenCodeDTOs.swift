@@ -17,14 +17,10 @@ public struct OpenCodeConnection: Codable, Sendable, Equatable {
   public var credentialReference: String { "opencode-v2." + id.rawValue.uuidString.lowercased() }
 
   public init(id: ConnectionID = ConnectionID(), origin: URL, displayName: String) throws {
-    _ = try PairingValidation.origin(origin.absoluteString)
-    guard var c = URLComponents(url: origin, resolvingAgainstBaseURL: false),
-      c.percentEncodedPath.isEmpty || c.percentEncodedPath == "/" else { throw RemoteError.invalidPairing }
+    let canonical = try OpenCodeOrigin.canonical(origin)
     let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !name.isEmpty, name.utf8.count <= 256,
       !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { throw RemoteError.invalidPairing }
-    c.path = ""; c.host = c.host?.lowercased()
-    guard let canonical = c.url else { throw RemoteError.invalidPairing }
     schemaVersion = 1; backend = .openCodeV2
     self.id = id; self.origin = canonical; self.displayName = name
   }
