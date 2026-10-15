@@ -12,10 +12,10 @@ Scoped native contract checks have passed against **OpenCode 2.0.29** on macOS a
 | --- | --- | --- |
 | Pair, re-pair and saved connection | Typed host checks; native default startup and storage/Keychain retry paths; Simulator Release startup | Final joined foreground/network-change and physical update qualification remain |
 | Projects, chats and paged history | Both host checks; Simulator flows; exact-folder selection recovery regressions | Final joined restoration and complete physical-device matrix remain |
-| Text, photos and PDF attachments | Both host transfer/admission checks; production text replies on Mac and NUC | Photo/PDF provider ingestion and physical Photos/Files qualification remain |
+| Text, photos and PDF attachments | Both host transfer/admission checks; production text replies on Mac/NUC; system Photos selection and model image response on NUC; system Files PDF selection/staging | Mac photo and PDF provider ingestion remain; physical Photos/Files qualification is separate |
 | Results, project files and sharing | Both host checks; Simulator preview/export | Explicit selection; contained files; 20 MiB download cap; physical sharing remains |
 | Models, variants and agents | Native per-chat controls and Simulator UI | Computer’s catalog; unavailable choices never silently substitute another model |
-| Chat rules, approvals and forms | Native components and scoped host checks | Ordinary-host approval-request lifecycle still needs joined provider qualification; clean isolated approval proof is separate |
+| Chat rules, approvals and forms | Native components and scoped host checks; NUC Release saves scoped rules and answers actual native API-created forms/approval requests | Agent-generated input and the remaining joined lifecycle matrix still need qualification; API-created requests do not prove tool execution |
 | Create, rename, fork and delete | Both host checks and Simulator UI | Lost create/fork acknowledgements stay uncertain; deletion covers the reviewed descendant tree and may include concurrent branches |
 | Search older chats | Native paged title search | Titles only; message bodies are not searched |
 | Groups | Protected device-local storage and Simulator UI | On this iPhone/iPad; no desktop synchronization; removing a group keeps chats |
@@ -56,6 +56,10 @@ On October 15, the normal iPad Simulator Release paired with the actual Mac Open
 These flows ran on source7313861. Source36a9b47 simplifies history memory accounting for CI's compiler; both hosted CI checks pass, and its production iPhone Release restores the real NUC connection/chat/reply. This is separate from physical acceptance and TestFlight availability.
 
 A model appearing in OpenCode's catalog does not guarantee that its provider will accept a request. The tested Muse Spark1.3 free model returned HTTP403 with a restriction to use within OpenCode. That attempt was recorded as a provider failure. The successful checks used already configured local providers, with no new paid account or service. Check the selected provider on your computer if a task ends with an error.
+
+The NUC phone Release subsequently selected a synthetic image through the system Photos picker and received a model description of its blue circle. The model missed the first letter of the sample text; this proves image delivery, not OCR accuracy. The system Files picker also imported a synthetic PDF, and its staged NUC bytes matched the original checksum. Gemma4:e2b then wrote a `read:` instruction as text instead of invoking the tool, so that run does not qualify PDF ingestion.
+
+Actual forms and approval requests created through the NUC's native API appeared in the normal app. A selected answer was read back as answered; Allow once removed its request without a saved grant. This is separate from a provider creating and completing a tool call. Source987d359 also fixes the attachment consent status: a file awaiting sharing review remains Selected with an explicit Retry instruction. Approval does not prepare or send it. That exact flow, local consent clearing and saved-pairing restoration pass in the updated Simulator Release; full Debug/Release package suites pass. No new native build has been uploaded to TestFlight yet.
 
 ## Legacy source separation
 
