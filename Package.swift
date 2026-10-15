@@ -9,7 +9,7 @@ let package = Package(
     .testTarget(name: "OpenWorkRemoteCoreTests", dependencies: ["OpenWorkRemoteCore"], resources: [.copy("Fixtures")]),
     .target(name: "OpenWorkRemoteAppState", dependencies: ["OpenWorkRemoteCore"],
       path: "OpenWorkRemote",
-      exclude: ["App/OpenWorkRemoteApp.swift", "App/ChatUITestFixture.swift", "App/NativeControlUITestFixture.swift", "App/SkillUITestFixture.swift", "Assets.xcassets", "Design", "Features",
+      exclude: ["App/OpenWorkRemoteApp.swift", "App/ChatUITestFixture.swift", "App/NativeControlUITestFixture.swift", "App/NativeFormUITestFixture.swift", "App/SkillUITestFixture.swift", "Assets.xcassets", "Design", "Features",
                 "Info.plist", "PrivacyInfo.xcprivacy", "Rendering"],
       sources: ["App/AppModel.swift", "State", "Storage", "Diagnostics"], resources: [.copy("Resources/Information")]),
     .testTarget(name: "OpenWorkRemoteAppTests", dependencies: ["OpenWorkRemoteAppState", "OpenWorkRemoteCore"],resources:[.copy("Fixtures")]),

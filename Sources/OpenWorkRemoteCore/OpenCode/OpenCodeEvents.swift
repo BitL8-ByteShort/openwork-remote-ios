@@ -3,6 +3,8 @@ import Foundation
 /// Native events are volatile hints. Authoritative reads repair gaps and overflow.
 public struct OpenCodeEvent:Decodable,Sendable {
   public struct Fields:Decodable,Sendable {
+    public struct FormIdentity:Decodable,Sendable{public let id:String;public let sessionID:String}
+    public let form:FormIdentity?
     public let sessionID:String?
     public let assistantMessageID:String?
     public let ordinal:Int?
@@ -23,7 +25,7 @@ public struct OpenCodeEvent:Decodable,Sendable {
     return result
   }
   public func affects(_ target:OpenCodeTarget)->Bool {
-    data.sessionID==target.sessionID || type=="server.connected" || type=="location.shutdown"
+    OpenCodeIdentity.matches(data.sessionID,target.sessionID) || OpenCodeIdentity.matches(data.form?.sessionID,target.sessionID) || type=="server.connected" || type=="location.shutdown"
   }
 }
 extension OpenCodeClient {
