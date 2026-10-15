@@ -1,5 +1,7 @@
 import Foundation
 
+enum OpenCodeResponseBudget:Int {case ordinary=8_388_608,materializedPrompt=58_720_256}
+
 /// Typed feature methods are the public surface. Raw routing stays inside this module.
 public actor OpenCodeClient {
   public let connection: OpenCodeConnection
@@ -65,20 +67,22 @@ public actor OpenCodeClient {
   }
 
   func data(segments: [String], query: [URLQueryItem] = [], method: String = "GET",
-            body: Data? = nil, contentType: String = "application/json") async throws -> Data {
+            body: Data? = nil, contentType: String = "application/json",
+            responseBudget: OpenCodeResponseBudget = .ordinary) async throws -> Data {
     try Task.checkCancellation()
     if method != "GET" { try await requireQualifiedWrites() }
-    let request = try makeRequest(segments: segments, query: query, method: method, body: body, contentType: contentType)
-    let (bytes, status) = try await transport.data(for: request)
     try Task.checkCancellation()
-    guard bytes.count <= 8_388_608 else { throw RemoteError.oversized }
+    let request = try makeRequest(segments: segments, query: query, method: method, body: body, contentType: contentType)
+    let (bytes, status) = try await transport.data(for: request, maximumBytes: responseBudget.rawValue)
+    try Task.checkCancellation()
+    guard bytes.count <= responseBudget.rawValue else { throw RemoteError.oversized }
     try checkStatus(status)
     return bytes
   }
 
   func decode<T: Decodable & Sendable>(_ type: T.Type, segments: [String],
-                                       query: [URLQueryItem] = []) async throws -> T {
-    let bytes = try await data(segments: segments, query: query)
+                                       query: [URLQueryItem] = [], responseBudget: OpenCodeResponseBudget = .ordinary) async throws -> T {
+    let bytes = try await data(segments: segments, query: query, responseBudget: responseBudget)
     do { return try JSONDecoder().decode(type, from: bytes) }
     catch { throw RemoteError.invalidResponse }
   }

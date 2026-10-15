@@ -40,6 +40,17 @@ private final class NativeHTTPFixture: @unchecked Sendable {
 }
 
 @Suite struct OpenCodeTransportTests {
+  @Test func materializedPromptJSONHasAnExplicitLargerBudgetWithoutBroadeningOrdinaryReads() async throws {
+    let body=Data(repeating:32,count:8_388_609)
+    let server=try NativeHTTPFixture(body:body,contentType:"application/json")
+    defer{server.stop()};let url=try await server.start(),request=URLRequest(url:url)
+    let native=SessionTransport(profile:.openCode)
+    await #expect(throws:RemoteError.oversized){_ = try await native.data(for:request)}
+    let (received,status)=try await native.data(for:request,maximumBytes:9*1_048_576)
+    #expect(status==200);#expect(received==body)
+    await #expect(throws:RemoteError.oversized){_ = try await SessionTransport().data(for:request,maximumBytes:9*1_048_576)}
+    await #expect(throws:RemoteError.oversized){_ = try await native.data(for:request,maximumBytes:56*1_048_576+1)}
+  }
   @Test func nativeFileReadsAcceptBounded200AndPartial206() async throws {
     for status in [200, 206] {
       let server = try NativeHTTPFixture(body: Data("native file".utf8), status: status)

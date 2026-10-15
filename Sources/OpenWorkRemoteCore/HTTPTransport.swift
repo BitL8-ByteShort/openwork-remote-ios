@@ -2,10 +2,17 @@ import Foundation
 
 public protocol HTTPTransport: Sendable {
   func data(for request: URLRequest) async throws -> (Data, Int)
+  func data(for request: URLRequest, maximumBytes: Int) async throws -> (Data, Int)
   func binary(for request: URLRequest, maximumBytes: Int) async throws -> BinaryHTTPResponse
   func events(for request: URLRequest) async throws -> AsyncThrowingStream<SSEFrame, any Error>
 }
 extension HTTPTransport {
+  public func data(for request: URLRequest, maximumBytes: Int) async throws -> (Data, Int) {
+    guard (1...56*1_048_576).contains(maximumBytes) else { throw RemoteError.oversized }
+    let result = try await data(for: request)
+    guard result.0.count <= maximumBytes else { throw RemoteError.oversized }
+    return result
+  }
   public func binary(for request: URLRequest, maximumBytes: Int) async throws -> BinaryHTTPResponse { throw RemoteError.incompatible }
   public func events(for request: URLRequest) async throws -> AsyncThrowingStream<
     SSEFrame, any Error
@@ -45,14 +52,19 @@ public actor SessionTransport: HTTPTransport {
     session = URLSession(configuration: c, delegate: RedirectBlocker(), delegateQueue: nil)
   }
   public func data(for request: URLRequest) async throws -> (Data, Int) {
+    try await data(for: request, maximumBytes: 8_388_608)
+  }
+  public func data(for request: URLRequest, maximumBytes: Int) async throws -> (Data, Int) {
+    let budget = profile == .openCode ? 56 * 1_048_576 : 8_388_608
+    guard (1...budget).contains(maximumBytes) else { throw RemoteError.oversized }
     let (bytes, response) = try await session.bytes(for: request)
     defer { bytes.task.cancel() }
     guard let http = response as? HTTPURLResponse else { throw RemoteError.invalidResponse }
-    guard response.expectedContentLength <= 8_388_608 else { throw RemoteError.oversized }
+    guard response.expectedContentLength <= maximumBytes else { throw RemoteError.oversized }
     var data = Data()
     for try await byte in bytes {
       data.append(byte)
-      if data.count > 8_388_608 { throw RemoteError.oversized }
+      if data.count > maximumBytes { throw RemoteError.oversized }
     }
     return (data, http.statusCode)
   }

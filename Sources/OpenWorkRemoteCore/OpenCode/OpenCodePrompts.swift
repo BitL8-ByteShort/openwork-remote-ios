@@ -92,10 +92,10 @@ extension OpenCodeClient {
       throw OpenCodePromptNotSubmitted(reason:reason)
     }
     let bytes:Data,status:Int
-    do{(bytes,status)=try await transport.data(for:request)}
+    do{(bytes,status)=try await transport.data(for:request,maximumBytes:OpenCodeResponseBudget.materializedPrompt.rawValue)}
     catch{throw RemoteError.outcomeUnknown}
     // A failed/oversized acknowledgement may follow successful durable admission.
-    guard bytes.count<=8_388_608 else{throw RemoteError.outcomeUnknown}
+    guard bytes.count<=OpenCodeResponseBudget.materializedPrompt.rawValue else{throw RemoteError.outcomeUnknown}
     try checkStatus(status)
     struct Response:Decodable{let data:OpenCodePromptAdmission}
     let result:OpenCodePromptAdmission
@@ -107,7 +107,7 @@ extension OpenCodeClient {
   public func inbox(target:OpenCodeTarget) async throws -> [OpenCodeInboxItem] {
     try validateTarget(target)
     struct Response:Decodable,Sendable{let data:[OpenCodeInboxItem]}
-    let result=try await decode(Response.self,segments:["api","session",target.sessionID,"inbox"]).data
+    let result=try await decode(Response.self,segments:["api","session",target.sessionID,"inbox"],responseBudget:.materializedPrompt).data
     guard result.count<=10_000,Set(result.map(\.id)).count==result.count,
       result.allSatisfy({$0.sessionID==target.sessionID && !$0.id.isEmpty}) else{throw RemoteError.invalidResponse}
     return result

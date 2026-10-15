@@ -68,9 +68,18 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
 public struct OpenCodeMessagePage: Decodable, Sendable { public let data:[OpenCodeMessage]; public let cursor:OpenCodeCursor }
 extension OpenCodeClient {
   public func messages(sessionID:String,cursor:String?) async throws -> OpenCodeMessagePage {
-    var query = [URLQueryItem(name:"limit",value:"100")]
-    query.append(URLQueryItem(name:cursor == nil ? "order" : "cursor",value:cursor ?? "desc"))
-    let page = try await decode(OpenCodeMessagePage.self,segments:["api","session",sessionID,"message"],query:query)
+    func read(limit:Int) async throws -> OpenCodeMessagePage {
+      var query=[URLQueryItem(name:"limit",value:String(limit))]
+      query.append(URLQueryItem(name:cursor==nil ? "order" : "cursor",value:cursor ?? "desc"))
+      return try await decode(OpenCodeMessagePage.self,segments:["api","session",sessionID,"message"],query:query,responseBudget:.materializedPrompt)
+    }
+    let page:OpenCodeMessagePage
+    do{page=try await read(limit:100)}catch{
+      guard cursor==nil,error as? RemoteError == .oversized else{throw error}
+      // Start a fresh bounded chain. Never edit an opaque continuation cursor,
+      // drop file bytes from a message or fabricate a continuation position.
+      page=try await read(limit:1)
+    }
     try page.cursor.validate()
     guard page.data.count <= 200, Set(page.data.map(\.id)).count == page.data.count else { throw RemoteError.invalidResponse }
     return page
