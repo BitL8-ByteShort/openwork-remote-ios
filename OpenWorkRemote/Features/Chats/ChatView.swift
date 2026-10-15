@@ -18,6 +18,9 @@ struct ChatView: View {
   @State private var question: QuestionPresentation?
   #endif
   @State private var nearBottom = true
+  @State private var viewportNearBottom = true
+  @State private var userScrolling = false
+  @State private var laidOutContentHeight:CGFloat = 0
   @State private var newReplies = false
   @AppStorage("compactToolActivity") private var compactToolActivity = true
   var body: some View {
@@ -206,14 +209,6 @@ struct ChatView: View {
               }
             }
           }
-            // The result entry and scroll target stay realized independently
-            // of the message stack's estimated heights for long replies.
-            if model.canBrowseFiles {
-              Button { sheet = .files } label: {
-                HStack(spacing:10){Image(systemName:"doc.on.doc").font(.system(size:20));Text("Files from this chat").font(.callout.weight(.medium)).fixedSize(horizontal:false,vertical:true)}
-                  .frame(minHeight:44)
-              }.accessibilityElement(children:.ignore).accessibilityLabel("Files from this chat")
-            }
             if model.isRunning
               && !model.messages.contains(where: { $0.state == "streaming" })
             {
@@ -231,11 +226,25 @@ struct ChatView: View {
         .onScrollGeometryChange(for: Bool.self) { g in
           g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 100
         } action: { _, value in
-          nearBottom = value
-          model.followLatest(value)
-          if value { newReplies = false }
+          viewportNearBottom = value
+          // Content growth and programmatic scrolling are not reader intent.
+          if userScrolling { setFollowing(value) }
+        }.onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, height in
+          // A new row or prepared Markdown can change height after onChange.
+          // Follow that laid-out height without treating it as a user scroll.
+          laidOutContentHeight=height
+        }.task(id:laidOutContentHeight){
+          // Wait for the current layout transaction, including initial history.
+          await Task.yield()
+          if !Task.isCancelled,nearBottom{proxy.scrollTo("bottom",anchor:.bottom)}
+        }.onScrollPhaseChange { _, newPhase in
+          let interacting = newPhase == .interacting || newPhase == .decelerating
+          if interacting || userScrolling { setFollowing(viewportNearBottom) }
+          userScrolling = interacting
         }.onAppear {
-          nearBottom = true
+          setFollowing(true)
+          viewportNearBottom = true
+          userScrolling = false
           newReplies = false
         }.onChange(of: model.messages) { _, _ in
           if nearBottom {
@@ -250,6 +259,7 @@ struct ChatView: View {
         }
         if newReplies || model.hasNewerReplies {
           Button {
+            setFollowing(true)
             model.jumpToLatest()
             proxy.scrollTo("bottom", anchor: .bottom)
             newReplies = false
@@ -262,5 +272,10 @@ struct ChatView: View {
         }
       }
     }.id(model.selectedSession?.id)
+  }
+  private func setFollowing(_ value:Bool){
+    nearBottom=value
+    model.followLatest(value)
+    if value{newReplies=false}
   }
 }

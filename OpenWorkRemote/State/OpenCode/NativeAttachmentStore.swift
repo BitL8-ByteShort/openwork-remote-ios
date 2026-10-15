@@ -16,15 +16,26 @@ struct NativeAttachmentContext:Hashable,Identifiable,Sendable {
   @ObservationIgnored private var mutationEpoch=UUID()
   @ObservationIgnored private var preparations:[UUID:(id:UUID,task:Task<OpenCodePromptFile,any Error>)]=[:]
   @ObservationIgnored private var cancelledPreparations=Set<UUID>()
+  @ObservationIgnored private var sharingPreparations:[UUID:NativeAttachmentContext]=[:]
   init(journal:NativeConversationJournal,files:ProtectedAttachmentFiles){self.journal=journal;self.files=files}
   var rows:[NativeSelectedAttachment]{context.map{journal.attachments(for:$0.target)} ?? []}
   var canChoose:Bool{context.map{journal.ready && !journal.storageIssue && journal.pending(for:$0.target)==nil && rows.count<4} ?? false}
   var canSend:Bool{!rows.isEmpty && rows.allSatisfy{$0.phase == .ready} && context.map{journal.pending(for:$0.target)==nil} == true}
   @discardableResult func activate(target:OpenCodeTarget,client:any OpenCodeFileServing)->NativeAttachmentContext{
     if connection != target.connectionID{mutationEpoch=UUID();connection=target.connectionID}
-    let context=NativeAttachmentContext(target:target,id:UUID());self.context=context;self.client=client;notice=nil;return context
+    let context=NativeAttachmentContext(target:target,id:UUID());self.context=context;self.client=client;notice=nil;sharingPreparations=[:];return context
   }
-  func clearSelection(){context=nil;client=nil;notice=nil}
+  func clearSelection(){context=nil;client=nil;notice=nil;sharingPreparations=[:]}
+  /// Continue only selections that explicitly paused for this review, never unknown uploads.
+  func resumeSharingPreparation(target:OpenCodeTarget) async{
+    guard let context,self.context==context,context.target==target else{return}
+    let ids=rows.filter{sharingPreparations[$0.id]==context && $0.phase == .selected}.map(\.id)
+    for id in ids{
+      sharingPreparations.removeValue(forKey:id)
+      await prepare(id,context:context)
+    }
+  }
+  func cancelSharingPreparation(target:OpenCodeTarget){sharingPreparations=sharingPreparations.filter{$0.value.target != target}}
   func deactivate(){
     mutationEpoch=UUID();connection=nil
     for preparation in preparations.values{preparation.task.cancel()}
@@ -46,6 +57,7 @@ struct NativeAttachmentContext:Hashable,Identifiable,Sendable {
     guard self.context==context,let client,journal.pending(for:context.target)==nil,
       var row=rows.first(where:{$0.id==id}),row.phase != .preparing,row.phase != .ready else{return}
     let epoch=mutationEpoch;row.phase = .preparing;row.prepared=nil
+    sharingPreparations.removeValue(forKey:id)
     notice=nil
     do{
       try await update(row,target:context.target)
@@ -69,17 +81,18 @@ struct NativeAttachmentContext:Hashable,Identifiable,Sendable {
     }catch{
       guard epoch==mutationEpoch else{return}
       let needsReview=error is NativeSharingReviewRequired
+      if needsReview,self.context==context{sharingPreparations[id]=context}
       row.prepared=nil;row.phase=needsReview ? .selected : error as? RemoteError == .outcomeUnknown ? .uploadUnknown : .failed
       do{try await update(row,target:context.target)}catch{}
       if self.context==context{
-        if needsReview{notice="Review sharing permission, then tap Retry to prepare this file."}
+        if needsReview{notice="Allow sharing to finish adding this file."}
         else{notice=row.phase == .uploadUnknown ? "The computer may have a temporary copy. Prepare a new copy only if you want to retry; it will use a different temporary path." : "This file could not be prepared. Check the connection and current model, then try again."}
       }
     }
   }
   func remove(_ id:UUID,context:NativeAttachmentContext) async{
     guard self.context==context,journal.pending(for:context.target)==nil,let row=rows.first(where:{$0.id==id}),row.phase != .preparing else{return}
-    do{try await journal.setAttachments(rows.filter{$0.id != id},for:context.target);try await files.remove(row.file)}
+    do{try await journal.setAttachments(rows.filter{$0.id != id},for:context.target);sharingPreparations.removeValue(forKey:id);try await files.remove(row.file)}
     catch{notice="The selected file or its local copy could not be removed. Unlock this device and try again."}
   }
   func promptFiles(context:NativeAttachmentContext) async throws->[OpenCodePromptFile]{

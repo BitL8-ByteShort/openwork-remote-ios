@@ -10,6 +10,7 @@ struct NativeModelSettingsView:View {
   @State private var review:NativeControlReview?
   @State private var draft:NativeModelDraft?
   @State private var agentID:String?
+  @State private var remoteChanged=false
   private var snapshot:NativeControlSnapshot?{store.context==context ? store.snapshot : nil}
   private var selected:OpenCodeModel?{snapshot?.models.first{$0.selectionKey==draft?.selectedKey}}
   var body:some View {
@@ -19,6 +20,10 @@ struct NativeModelSettingsView:View {
         if let onChanges{Section{Button(action:onChanges){Label("Working-copy changes",systemImage:"doc.text.magnifyingglass")}.accessibilityIdentifier("native-chat-changes-settings")}}
         if store.loading{ProgressView("Loading settings…")}
         NativeControlIssueView(store:store){Task{await reload()}}
+        if remoteChanged{Section{
+          Text("This chat’s settings changed on your computer. Your unfinished selection is kept here; reload before applying it.")
+          Button("Use current settings"){captureActual()}
+        }}
         if let snapshot,let review,let draft {
           Section {
             NavigationLink {
@@ -44,7 +49,7 @@ struct NativeModelSettingsView:View {
               guard let choice=draft.selection(in:snapshot.models) else{return}
               Task{_ = await store.setModel(choice,review:review);captureActual()}
             } label:{HStack{Text("Apply model to this chat");Spacer();if store.busy{ProgressView()}}}
-              .disabled(!store.canEdit(context) || draft.selection(in:snapshot.models)==nil || OpenCodeModelRef.sameSelection(draft.selection(in:snapshot.models),draft.current))
+              .disabled(remoteChanged || !store.canEdit(context) || draft.selection(in:snapshot.models)==nil || OpenCodeModelRef.sameSelection(draft.selection(in:snapshot.models),draft.current))
               .accessibilityIdentifier("native-model-apply")
           } footer:{Text("Models and variants come from OpenCode on your computer. This changes only this chat.")}
           Section {
@@ -59,7 +64,7 @@ struct NativeModelSettingsView:View {
             Button("Apply agent to this chat"){
               guard let agentID else{return}
               Task{_ = await store.setAgent(agentID,review:review);captureActual()}
-            }.disabled(!store.canEdit(context) || agentID==nil || agentID==review.session.agent)
+            }.disabled(remoteChanged || !store.canEdit(context) || agentID==nil || agentID==review.session.agent)
               .accessibilityIdentifier("native-agent-apply")
           } footer:{Text("Only agents available for direct conversations are listed. The computer confirms every change.")}
           Section{NavigationLink("Permissions"){NativePermissionsView(store:store,context:context)}}
@@ -68,12 +73,20 @@ struct NativeModelSettingsView:View {
         .navigationTitle("Model & settings").navigationBarTitleDisplayMode(.inline)
         .toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){dismiss()}.accessibilityIdentifier("native-settings-done")}}
     }.task(id:context){await reload()}
+      .onChange(of:snapshot?.session.model){_,_ in acceptExternalSelection()}
+      .onChange(of:snapshot?.session.agent){_,_ in acceptExternalSelection()}
   }
   private func reload() async {if await store.load(context){captureActual()}}
   private func captureActual(){
     guard let snapshot else{return}
     draft=NativeModelDraft(snapshot:snapshot);agentID=snapshot.session.agent
     if let captured=store.review(context){review=captured}
+    remoteChanged=false
+  }
+  private func acceptExternalSelection(){
+    guard !store.busy,let snapshot,let draft,let review else{return}
+    if OpenCodeModelRef.sameSelection(draft.selection(in:snapshot.models),draft.current),agentID==review.session.agent{captureActual()}
+    else{remoteChanged=true}
   }
 }
 struct NativeModelPicker:View {

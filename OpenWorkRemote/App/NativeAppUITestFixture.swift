@@ -15,7 +15,14 @@ private actor NativeAppUITestTransport:HTTPTransport {
   let codeReply:Bool
   let heldSend:Bool
   let providerError:Bool
-  init(slow:Bool,longReply:Bool=false,codeReply:Bool=false,heldSend:Bool=false,providerError:Bool=false){self.slow=slow;self.longReply=longReply;self.codeReply=codeReply;self.heldSend=heldSend;self.providerError=providerError}
+  let growingReplies:Bool
+  var replyNumber=20
+  var eventContinuation:AsyncThrowingStream<SSEFrame,any Error>.Continuation?
+  init(slow:Bool,longReply:Bool=false,codeReply:Bool=false,heldSend:Bool=false,providerError:Bool=false,growingReplies:Bool=false){self.slow=slow;self.longReply=longReply;self.codeReply=codeReply;self.heldSend=heldSend;self.providerError=providerError;self.growingReplies=growingReplies}
+  func appendFixtureReply(){
+    replyNumber+=1
+    eventContinuation?.yield(SSEFrame(event:"message",id:nil,data:"{\"id\":\"evt_reply_\(replyNumber)\",\"type\":\"session.message.created\",\"data\":{\"sessionID\":\"ses_owned\"}}"))
+  }
   private var record:[String:Any]{["id":"ses_owned","projectID":"project","title":title,"location":["directory":"/project"],"time":["created":1,"updated":2],"model":["providerID":"Synthetic provider","id":"native-model"],"agent":"build","permissions":[]]}
   private var form:[String:Any]{["id":"frm_owned","sessionID":"ses_owned","title":"Which option do you prefer?","fields":[["key":"answer","type":"string","required":true]],"state":["status":"pending"]]}
   private var model:[String:Any]{["providerID":"Synthetic provider","id":"native-model","modelID":"native-model","name":"Native model","enabled":true,"status":"active","variants":[],"capabilities":["tools":true,"input":["text","image","pdf"],"output":["text"]]]}
@@ -59,6 +66,11 @@ private actor NativeAppUITestTransport:HTTPTransport {
       }
       if providerError{
         history["data"]=[["id":"msg_provider_error","type":"assistant","time":["created":2,"completed":3],"content":[],"error":["type":"provider.auth","status":403,"message":"OpenCode's free tier can only be used from within OpenCode. SYNTHETIC_PRIVATE_ERROR_DETAIL"]]]
+      }
+      if growingReplies{
+        history["data"]=(1...replyNumber).reversed().map{number in
+          ["id":"msg_reply_\(number)","type":"assistant","time":["created":number],"content":[["type":"text","text":String(repeating:"A synthetic reply for checking automatic scrolling. This text takes several lines on the small phone.\n\n",count:3)+"End of reply \(number)."]]] as [String:Any]
+        }
       }
       if let admitted,let payload=admitted["payload"] as? [String:Any]{
         var rows=history["data"] as! [[String:Any]]
@@ -113,7 +125,9 @@ private actor NativeAppUITestTransport:HTTPTransport {
     return BinaryHTTPResponse(data:probe ? bytes.prefix(1):bytes,status:206,mime:"text/plain",
       contentRange:probe ? "bytes 0-0/\(bytes.count)":"bytes 0-\(bytes.count-1)/\(bytes.count)",entityTag:"W/\"fixture\"",length:probe ? 1:bytes.count)
   }
-  func events(for request:URLRequest) async throws -> AsyncThrowingStream<SSEFrame,any Error>{AsyncThrowingStream{_ in}}
+  func events(for request:URLRequest) async throws -> AsyncThrowingStream<SSEFrame,any Error>{
+    let pair=AsyncThrowingStream<SSEFrame,any Error>.makeStream();eventContinuation=pair.continuation;return pair.stream
+  }
 }
 @MainActor private final class NativeFixtureConnectionVault{
   var value:StoredOpenCodeConnection?
@@ -122,16 +136,26 @@ private actor NativeAppUITestTransport:HTTPTransport {
 }
 struct NativeAppUITestFixture:View {
   @State private var model:AppModel
+  @State private var fixtureReplyCount=20
+  @State private var transport:NativeAppUITestTransport
   @Environment(\.scenePhase) private var phase
   init(){
     if ProcessInfo.processInfo.arguments.contains("-native-fixture-no-animations"){UIView.setAnimationsEnabled(false)}
     let directory=FileManager.default.temporaryDirectory.appending(path:"native-shell-ui-"+UUID().uuidString)
     let saved=StoredOpenCodeConnection(connection:try! OpenCodeConnection(origin:URL(string:"https://synthetic.example")!,displayName:"Synthetic computer"),token:"synthetic-token")
-    let native=try! NativeAppCoordinator(directory:directory,connectionPersistence:NativeFixtureConnectionVault(saved).persistence,transport:NativeAppUITestTransport(slow:ProcessInfo.processInfo.arguments.contains("-slow-native-app-settings"),longReply:ProcessInfo.processInfo.arguments.contains("-native-fixture-long-reply"),codeReply:ProcessInfo.processInfo.arguments.contains("-native-fixture-code-reply"),heldSend:ProcessInfo.processInfo.arguments.contains("-native-fixture-held-send"),providerError:ProcessInfo.processInfo.arguments.contains("-native-fixture-provider-error")))
+    let transport=NativeAppUITestTransport(slow:ProcessInfo.processInfo.arguments.contains("-slow-native-app-settings"),longReply:ProcessInfo.processInfo.arguments.contains("-native-fixture-long-reply"),codeReply:ProcessInfo.processInfo.arguments.contains("-native-fixture-code-reply"),heldSend:ProcessInfo.processInfo.arguments.contains("-native-fixture-held-send"),providerError:ProcessInfo.processInfo.arguments.contains("-native-fixture-provider-error"),growingReplies:ProcessInfo.processInfo.arguments.contains("-native-fixture-growing-replies"))
+    _transport=State(initialValue:transport)
+    let native=try! NativeAppCoordinator(directory:directory,connectionPersistence:NativeFixtureConnectionVault(saved).persistence,transport:transport)
     _model=State(initialValue:AppModel(native:native,legacyDraftStore:try! DraftStore(directory:directory),pairingPersistence:PairingPersistence(load:{nil},save:{_ in},remove:{})))
   }
   var body:some View{NativeRootView().id(ObjectIdentifier(model)).environment(model).tint(Theme.accent).transaction{transaction in
     if ProcessInfo.processInfo.arguments.contains("-native-fixture-no-animations"){transaction.disablesAnimations=true;transaction.animation=nil}
+  }.overlay(alignment:.bottom){
+    if ProcessInfo.processInfo.arguments.contains("-native-fixture-growing-replies"){
+      Button("Next fixture reply"){Task{await transport.appendFixtureReply();fixtureReplyCount+=1}}
+        .buttonStyle(.borderedProminent).accessibilityIdentifier("native-fixture-next-reply")
+        .accessibilityValue(String(fixtureReplyCount)).padding(.bottom,4)
+    }
   }.task(id:ObjectIdentifier(model)){await model.start()}
     .onChange(of:phase){_,phase in model.sceneActive(phase == .active)}
     .onChange(of:model.resetReplacement?.id){_,_ in

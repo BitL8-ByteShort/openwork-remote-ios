@@ -46,7 +46,7 @@ struct NativeConnectionSettingsView:View {
     }
   }
 }
-private struct NativeProjectVisibilityView:View{
+struct NativeProjectVisibilityView:View{
   let native:NativeAppCoordinator
   var body:some View{
     Form{
@@ -54,6 +54,7 @@ private struct NativeProjectVisibilityView:View{
         Toggle("Show future projects",isOn:Binding(get:{native.visibility.policy.showNewProjects},set:{value in Task{try? await native.visibility.setShowNewProjects(value)}}))
         ForEach(native.navigation.projects){project in
           Toggle(project.name ?? project.canonical,isOn:Binding(get:{native.visibility.policy.shows(project.id)},set:{value in Task{try? await native.visibility.setShown(project.id,shown:value)}}))
+            .accessibilityIdentifier("native-project-visible-"+project.id)
         }
       }header:{Text("On this device")}footer:{Text("Hidden projects remain accessible through the paired server. This is a local display preference, not a permission boundary.")}
       if let error=native.visibility.lastError{Section{Text(error).foregroundStyle(.red)}}

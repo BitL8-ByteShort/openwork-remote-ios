@@ -103,6 +103,8 @@ private actor NativeFileService:OpenCodeFileServing {
     let context=store.activate(target:target,client:service)
     try await store.add(files.savePhotoPNG(png),context:context)
     #expect(store.rows.first?.phase == .uploadUnknown);#expect(!store.canSend)
+    await store.resumeSharingPreparation(target:target)
+    #expect(await service.count()==1) // consent continuation never retries an uncertain upload
     let restored=NativeConversationJournal(persistence:persistence);try await restored.restore()
     let recovered=NativeAttachmentStore(journal:restored,files:files)
     _=recovered.activate(target:target,client:service)

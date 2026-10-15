@@ -27,14 +27,12 @@ struct NativeChatListView:View {
   var body:some View{
     NavigationStack{
       List{
-        Section("Projects"){
-          ForEach(native.workspaces){project in
-            Button{Task{await native.changeWorkspace(project)}}label:{
-              HStack{Image(systemName:"folder");Text(project.name);Spacer();if project.id==native.navigation.selectedProjectID{Image(systemName:"checkmark").foregroundStyle(Theme.accent)}}
-                .foregroundStyle(Theme.ink)
-            }
+        Section{
+          ForEach(native.workspaces){project in projectRow(project)}
+          if native.navigation.projects.contains(where:{!native.visibility.policy.shows($0.id)}){
+            NavigationLink{NativeProjectVisibilityView(native:native)}label:{Label("Archived projects",systemImage:"archivebox")}
           }
-        }
+        }header:{Text("Projects")}footer:{Text("Swipe right to archive on this device. Your computer keeps the project and its chats.")}
         Section{
           Button{managing=true}label:{Label("Manage groups",systemImage:"folder.badge.gearshape")}.accessibilityIdentifier("groups-manage")
           if !native.groups.snapshot.groups.isEmpty{
@@ -92,6 +90,27 @@ struct NativeChatListView:View {
       (query.isEmpty || session.title.localizedCaseInsensitiveContains(query)) &&
       (filter.map{native.groups.snapshot.assignments[session.id]==$0} ?? (!onlyUngrouped || native.groups.snapshot.assignments[session.id]==nil))
     }
+  }
+  private func archive(_ id:String){
+    Task{
+      do{try await native.visibility.setShown(id,shown:false)}
+      catch{native.notice="This project could not be archived. Unlock the device and try again."}
+    }
+  }
+  private func projectRow(_ project:Workspace)->some View{
+    Button{Task{await native.changeWorkspace(project)}}label:{
+      HStack{
+        Image(systemName:"folder")
+        Text(project.name)
+        Spacer()
+        if project.id==native.navigation.selectedProjectID{Image(systemName:"checkmark").foregroundStyle(Theme.accent)}
+      }.foregroundStyle(Theme.ink)
+    }.swipeActions(edge:.leading,allowsFullSwipe:true){
+      Button("Archive",systemImage:"archivebox"){archive(project.id)}.tint(Theme.accent)
+    }.accessibilityAction(named:"Archive project"){archive(project.id)}
+      .contextMenu{Button("Archive project",systemImage:"archivebox"){archive(project.id)}}
+      .disabled(native.visibility.busy)
+      .accessibilityIdentifier("native-project-"+project.id)
   }
   private func filterButton(_ title:String,id:UUID?)->some View{
     Button(title){filter=id;onlyUngrouped=false}.padding(.horizontal,12).frame(minHeight:44)

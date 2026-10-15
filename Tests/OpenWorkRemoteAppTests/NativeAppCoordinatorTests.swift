@@ -22,6 +22,11 @@ actor NativeShellTransport:HTTPTransport {
   var infoStatus=200
   var sessionDirectory="/project"
   var privacyCatalog=false
+  var sessionModel:String?
+  func selectModelOnComputer(_ id:String){sessionModel=id}
+  var historyText="Native message"
+  var historyID="msg_owned"
+  func replaceHistory(text:String){historyText=text;historyID="msg_new"}
   var holdPrompt=false
   var heldPrompt:CheckedContinuation<Void,Never>?
   func holdNextPrompt(){holdPrompt=true}
@@ -34,17 +39,23 @@ actor NativeShellTransport:HTTPTransport {
   let session:[String:String]=["id":"ses_owned","projectID":"project","title":"Native chat"]
   func data(for request:URLRequest) async throws -> (Data,Int){
     let path=request.url!.path;paths.append(path)
-    let record:[String:Any]=["id":"ses_owned","projectID":"project","title":"Native chat","location":["directory":sessionDirectory],"time":["created":1,"updated":2]]
+    var record:[String:Any]=["id":"ses_owned","projectID":"project","title":"Native chat","location":["directory":sessionDirectory],"time":["created":1,"updated":2]]
+    if let sessionModel{record["model"]=["providerID":"Synthetic provider","id":sessionModel]}
     let value:Any
     switch path{
     case "/api/info":value=["version":"2.0.29","urls":[],"paths":["tmp":"/tmp/native"]]
     case "/api/project":value=[["id":"project","name":"Native project","canonical":"/project","sandboxes":[],"time":["created":1,"updated":2,"active":2]]]
     case "/api/session":value=["data":[record],"cursor":[:]]
     case "/api/session/ses_owned":value=["data":record]
+    case "/api/session/ses_owned/model":
+      let body=try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:[String:String]]
+      sessionModel=body["model"]!["id"]!;return(Data(),204)
+    case "/api/agent":value=["location":["directory":"/project"],"data":[]]
+    case "/api/permission/saved":value=["data":[]]
     case "/api/session/ses_owned/message":
       if initialEventRace{racedHistoryReads+=1;let read=racedHistoryReads;await withCheckedContinuation{raceHeld[read]=$0}}
       if holdFirstHistory{holdFirstHistory=false;await withCheckedContinuation{c in held=c;waiters.forEach{$0.resume()};waiters=[]}}
-      value=["data":[["id":"msg_owned","type":"user","text":"Native message","time":["created":1]]],"cursor":[:]]
+      value=["data":[["id":historyID,"type":"user","text":historyText,"time":["created":1]]],"cursor":[:]]
     case "/api/session/ses_owned/prompt":
       prompts+=1;let body=try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:Any]
       let payload:[String:Any]=["id":body["id"]!,"sessionID":"ses_owned","type":"user","payload":["text":body["text"]!]]
@@ -58,7 +69,7 @@ actor NativeShellTransport:HTTPTransport {
       catalogReads+=1;guard privacyCatalog else{throw RemoteError.unavailable}
       let model:[String:Any]=["providerID":"Synthetic provider","id":"model","modelID":"model","name":"Model","enabled":true,"status":"active","variants":[],"capabilities":["tools":true,"input":["text","image"],"output":["text"]]]
       if path.hasSuffix("default"){value=["location":["directory":"/project"],"data":model]}
-      else{value=["location":["directory":"/project"],"data":[model]]}
+      else{var other=model;other["id"]="other";other["modelID"]="other";other["name"]="Other model";value=["location":["directory":"/project"],"data":[model,other]]}
     default:throw RemoteError.invalidResponse
     }
     return(try JSONSerialization.data(withJSONObject:value),path=="/api/info" ? infoStatus:200)
@@ -71,6 +82,56 @@ actor NativeShellTransport:HTTPTransport {
   func sentPrompts()->Int{prompts}
 }
 @Suite @MainActor struct NativeAppCoordinatorTests {
+  @Test func publishedModelChangeRefreshesOpenSettingsWithoutSendingAMessage()async throws{
+    let directory=FileManager.default.temporaryDirectory.appending(path:"native-model-event-"+UUID().uuidString)
+    defer{try? FileManager.default.removeItem(at:directory)}
+    let saved=try nativeStored(),transport=NativeShellTransport();await transport.allowHistory();await transport.enablePrivacyCatalog();await transport.selectModelOnComputer("model")
+    let app=try NativeAppCoordinator(directory:directory,connectionPersistence:OpenCodePersistence(load:{saved},save:{_ in},remove:{}),transport:transport)
+    defer{app.deactivate()}
+    try await app.start();await app.open(try #require(app.navigation.sessions.first))
+    let context=try #require(app.controls.context);#expect(await app.controls.load(context))
+    await transport.selectModelOnComputer("other")
+    let event=try OpenCodeEvent.decode(SSEFrame(event:"message",id:nil,data:#"{"id":"evt_model","type":"session.model.selected","data":{"sessionID":"ses_owned","model":{"providerID":"Synthetic provider","id":"other"}}}"#))
+    app.conversation.receive(event)
+    let deadline=ContinuousClock.now.advanced(by:.seconds(2))
+    while app.controls.snapshot?.session.model?.id != "other",ContinuousClock.now<deadline{try await Task.sleep(for:.milliseconds(10))}
+    #expect(app.controls.snapshot?.session.model?.id=="other")
+    #expect(app.navigation.selectedSession?.model?.id=="other")
+    #expect(await transport.sentPrompts()==0)
+  }
+  @Test func phoneModelApplyUpdatesChatHeaderWithoutRequiringAnEventOrMessage()async throws{
+    let directory=FileManager.default.temporaryDirectory.appending(path:"native-model-apply-"+UUID().uuidString)
+    defer{try? FileManager.default.removeItem(at:directory)}
+    let saved=try nativeStored(),transport=NativeShellTransport();await transport.allowHistory();await transport.enablePrivacyCatalog();await transport.selectModelOnComputer("model")
+    let app=try NativeAppCoordinator(directory:directory,connectionPersistence:OpenCodePersistence(load:{saved},save:{_ in},remove:{}),transport:transport)
+    defer{app.deactivate()}
+    try await app.start();await app.open(try #require(app.navigation.sessions.first))
+    let context=try #require(app.controls.context);#expect(await app.controls.load(context))
+    let review=try #require(app.controls.review(context))
+    #expect(await app.controls.setModel(try OpenCodeModelRef(providerID:"Synthetic provider",id:"other"),review:review))
+    #expect(app.navigation.selectedSession?.model?.id=="other")
+    #expect(await transport.sentPrompts()==0)
+  }
+  @Test func returningToBottomResumesLatestSnapshotsAfterReadingOlderReplies()async throws{
+    let directory=FileManager.default.temporaryDirectory.appending(path:"native-follow-latest-"+UUID().uuidString)
+    defer{try? FileManager.default.removeItem(at:directory)}
+    let saved=try nativeStored(),transport=NativeShellTransport();await transport.allowHistory()
+    let app=try NativeAppCoordinator(directory:directory,connectionPersistence:OpenCodePersistence(load:{saved},save:{_ in},remove:{}),transport:transport)
+    defer{app.deactivate()}
+    try await app.start();await app.open(try #require(app.navigation.sessions.first))
+    app.followLatest(false)
+    await transport.replaceHistory(text:"New reply while reading above")
+    await app.conversation.refresh()
+    #expect(app.messages.first?.blocks.first?.text=="Native message")
+    #expect(app.navigation.hasNewReplies)
+    app.followLatest(true)
+    #expect(!app.preservingEarlierHistory)
+    #expect(!app.navigation.hasNewReplies)
+    #expect(app.messages.first?.blocks.first?.text=="New reply while reading above")
+    await transport.replaceHistory(text:"Next reply follows automatically")
+    await app.conversation.refresh()
+    #expect(app.messages.first?.blocks.first?.text=="Next reply follows automatically")
+  }
   @Test(.timeLimit(.minutes(1))) func composerDoesNotCallANormalPendingSendUncertain()async throws{
     let directory=FileManager.default.temporaryDirectory.appending(path:"native-send-progress-"+UUID().uuidString)
     defer{try? FileManager.default.removeItem(at:directory)}
@@ -110,7 +171,7 @@ actor NativeShellTransport:HTTPTransport {
     let file=try await app.attachments.files.savePhotoPNG(png)
     try await app.attachments.add(file,context:context)
     #expect(app.attachments.rows.first?.phase == .selected)
-    #expect(app.attachments.notice=="Review sharing permission, then tap Retry to prepare this file.")
+    #expect(app.attachments.notice=="Allow sharing to finish adding this file.")
     #expect(!app.attachments.canSend)
     let review=try #require(app.sharing.review),client=try #require(app.connection.client)
     #expect(review.operation == .attachment && review.classes.contains(.photos))
@@ -119,10 +180,30 @@ actor NativeShellTransport:HTTPTransport {
     #expect(!app.attachments.canSend)
     #expect(await transport.sentPrompts()==0)
     #expect(!(await transport.calledPaths()).contains("/api/experimental/fs/write"))
-    await app.attachments.prepare(file.id,context:context)
+    await app.attachments.resumeSharingPreparation(target:review.target)
     #expect(app.attachments.rows.first?.phase == .ready)
     #expect(app.attachments.notice==nil)
     #expect(app.attachments.canSend)
+    #expect(await transport.sentPrompts()==0)
+  }
+  @Test(arguments:[false,true]) func cancelledOrObsoletePhotoReviewDoesNotResumePreparation(reopen:Bool)async throws{
+    let directory=FileManager.default.temporaryDirectory.appending(path:"native-photo-review-cancel-"+UUID().uuidString)
+    defer{try? FileManager.default.removeItem(at:directory)}
+    let saved=try nativeStored(),transport=NativeShellTransport()
+    await transport.allowHistory();await transport.enablePrivacyCatalog()
+    let app=try NativeAppCoordinator(directory:directory,connectionPersistence:OpenCodePersistence(load:{saved},save:{_ in},remove:{}),transport:transport)
+    defer{app.deactivate()}
+    try await app.start();let chat=try #require(app.navigation.sessions.first);await app.open(chat)
+    let context=try #require(app.attachments.context)
+    let png=Data(base64Encoded:"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=")!
+    try await app.attachments.add(app.attachments.files.savePhotoPNG(png),context:context)
+    let review=try #require(app.sharing.review),client=try #require(app.connection.client)
+    if reopen{await app.open(chat)}else{app.attachments.cancelSharingPreparation(target:review.target)}
+    let approved=await app.sharing.approve(review,using:client,acknowledgesUnknownDestination:true)
+    #expect(approved == !reopen)
+    await app.attachments.resumeSharingPreparation(target:review.target)
+    #expect(app.attachments.rows.first?.phase == .selected)
+    #expect(!app.attachments.canSend)
     #expect(await transport.sentPrompts()==0)
   }
   @Test(.timeLimit(.minutes(1))) func initialConnectedEventDoesNotReportAChatLoadFailure()async throws{

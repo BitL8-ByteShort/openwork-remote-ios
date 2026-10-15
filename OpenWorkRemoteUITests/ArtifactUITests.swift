@@ -6,7 +6,8 @@ import XCTest
     let history=app.buttons["Open chat history"];XCTAssertTrue(history.waitForExistence(timeout:15));history.tap()
     let chat=app.buttons.matching(NSPredicate(format:"label CONTAINS %@","Sample chat")).firstMatch
     XCTAssertTrue(chat.waitForExistence(timeout:5));chat.tap()
-    let files=app.buttons["Files from this chat"];XCTAssertTrue(files.waitForExistence(timeout:5));files.tap()
+    app.buttons["Model and chat settings"].tap()
+    let files=app.buttons["chat-files-settings"];XCTAssertTrue(files.waitForExistence(timeout:5));files.tap()
     return app
   }
   func testTextPreviewRequiresSelectionAndProvidesExplicitShareAction() {
@@ -20,8 +21,12 @@ import XCTest
     let app=open(["-long-result-chat"])
     XCTAssertTrue(app.buttons["artifact-row-art_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"].waitForExistence(timeout:5))
     app.buttons["artifact-done"].tap()
-    XCTAssertTrue(app.staticTexts["The final result is ready."].waitForExistence(timeout:5))
-    XCTAssertTrue(app.buttons["Files from this chat"].exists)
+    app.buttons["Done"].tap()
+    // Files navigation stays in the fixed header even when long history is virtualized.
+    XCTAssertTrue(app.buttons["Model and chat settings"].isHittable)
+    XCTAssertFalse(app.buttons["Files from this chat"].exists)
+    app.buttons["Model and chat settings"].tap()
+    XCTAssertTrue(app.buttons["chat-files-settings"].exists)
   }
   func testNativeShareSheetSavesOneExplicitlySelectedCopyAndRetainsThePreview() {
     let app=open(["-artifact-test-save"])
@@ -38,6 +43,7 @@ import XCTest
     XCTAssertTrue(app.staticTexts["File access is not allowed for this phone. Allow file transfer in Remote access on your computer."].waitForExistence(timeout:5))
     XCTAssertFalse(app.buttons["artifact-row-art_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"].exists)
     app.buttons["artifact-done"].tap()
+    app.buttons["Done"].tap()
     XCTAssertTrue(app.textFields["composer"].waitForExistence(timeout:2))
   }
   func testChangedFileNeverOffersAnIncompleteShare() {
