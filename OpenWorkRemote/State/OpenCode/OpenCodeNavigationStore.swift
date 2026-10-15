@@ -16,6 +16,8 @@ enum NativeNavigationIssue { case unavailable,locationChanged,projectUnavailable
   private(set) var loadingOlder=false
   private(set) var issue:NativeNavigationIssue?
   private(set) var windowTruncated=false
+  private(set) var hasNewReplies=false
+  @ObservationIgnored private var lastNativeSnapshot:[OpenCodeMessage]=[]
   private(set) var sessionCursor:String?
   private(set) var olderCursor:String?
   private(set) var preserveScrollAnchor:String?
@@ -32,7 +34,34 @@ enum NativeNavigationIssue { case unavailable,locationChanged,projectUnavailable
     projects=[];sessions=[];messages=[];selectedProjectID=nil;selectedSession=nil;target=nil
     issue=nil;olderCursor=nil;sessionCursor=nil;seenHistoryCursors=[]
     loadingProjects=false;loadingSessions=false;loadingMessages=false;loadingOlder=false
-    windowTruncated=false;preserveScrollAnchor=nil
+    windowTruncated=false;preserveScrollAnchor=nil;hasNewReplies=false;lastNativeSnapshot=[]
+  }
+  /// The selected row appears immediately; writes still require authoritative verification.
+  func selectProvisional(_ session:OpenCodeSession)->OpenCodeTarget? {
+    guard let connection,session.projectID==selectedProjectID,session.time.archived==nil else{return nil}
+    selection=UUID();selectedSession=session;messages=[];olderCursor=nil;seenHistoryCursors=[]
+    loadingMessages=true;loadingOlder=false;issue=nil;windowTruncated=false;preserveScrollAnchor=nil
+    hasNewReplies=false;lastNativeSnapshot=[]
+    let value=OpenCodeTarget(connectionID:connection.id,projectID:session.projectID,sessionID:session.id,directory:session.location.directory)
+    target=value;return value
+  }
+  func acceptNativeSnapshot(target:OpenCodeTarget,session:OpenCodeSession,page:OpenCodeMessagePage,preserveWindow:Bool){
+    guard self.target==target,session.id==target.sessionID,session.projectID==target.projectID,
+      OpenCodeIdentity.matches(session.location.directory,target.directory),session.time.archived==nil else{return}
+    selectedSession=session;loadingMessages=false;issue=nil
+    if let index=sessions.firstIndex(where:{$0.id==session.id}){sessions[index]=session}
+    if preserveWindow,!messages.isEmpty {
+      hasNewReplies = hasNewReplies || page.data != lastNativeSnapshot
+      let updates=Dictionary(uniqueKeysWithValues:page.data.map{($0.id,$0)})
+      messages=messages.map{updates[$0.id] ?? $0}
+    }else{
+      messages=[];merge(page.data,older:false);olderCursor=page.cursor.next;seenHistoryCursors=[];hasNewReplies=false
+    }
+    lastNativeSnapshot=page.data
+  }
+  func finishNativeRead(target:OpenCodeTarget,failed:Bool){
+    guard self.target==target else{return};loadingMessages=false
+    if failed{issue = .unavailable}
   }
   func refreshProjects() async {
     guard let reader else { return }
@@ -55,7 +84,7 @@ enum NativeNavigationIssue { case unavailable,locationChanged,projectUnavailable
     guard let reader,projects.contains(where:{$0.id==id}) else{return}
     selection=UUID(); let picked=selection, current=generation
     selectedProjectID=id;selectedSession=nil;target=nil;messages=[];sessions=[]
-    sessionCursor=nil;olderCursor=nil;issue=nil;loadingSessions=true;loadingMessages=false;loadingOlder=false
+    sessionCursor=nil;olderCursor=nil;issue=nil;loadingSessions=true;loadingMessages=false;loadingOlder=false;hasNewReplies=false;lastNativeSnapshot=[]
     defer { if current==generation,picked==selection { loadingSessions=false } }
     do {
       let page=try await reader.sessions(projectID:id,cursor:nil,search:nil)

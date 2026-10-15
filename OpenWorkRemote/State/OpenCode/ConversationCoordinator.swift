@@ -25,6 +25,12 @@ enum NativeStreamState {case stopped,connecting,live,polling}
   @ObservationIgnored private var consumer:Task<Void,Never>?
   @ObservationIgnored private var recovery:Task<Void,Never>?
   @ObservationIgnored private var refreshTask:Task<Void,Never>?
+  @ObservationIgnored private var snapshotSink:((OpenCodeTarget,OpenCodeSession,OpenCodeMessagePage)->Void)?
+  @ObservationIgnored private var eventSink:((OpenCodeEvent)->Void)?
+  @ObservationIgnored private var resyncSink:(()->Void)?
+  func observe(snapshot:@escaping(OpenCodeTarget,OpenCodeSession,OpenCodeMessagePage)->Void,event:@escaping(OpenCodeEvent)->Void,resync:@escaping()->Void){
+    snapshotSink=snapshot;eventSink=event;resyncSink=resync
+  }
   @ObservationIgnored private var dirty=false
   @ObservationIgnored private var seenEvents:[String]=[]
   init(journal:NativeConversationJournal){self.journal=journal}
@@ -60,7 +66,7 @@ enum NativeStreamState {case stopped,connecting,live,polling}
       guard OpenCodeIdentity.matches(actual.id,target.sessionID),actual.projectID==target.projectID,OpenCodeIdentity.matches(actual.location.directory,target.directory),actual.time.archived==nil else{
         issue = .locationChanged;return
       }
-      currentSession=actual;latest=page.data;liveText.confirmed(by:page.data);isActive=running.contains(target.sessionID)
+      currentSession=actual;snapshotSink?(target,actual,page);latest=page.data;liveText.confirmed(by:page.data);isActive=running.contains(target.sessionID)
       if issue == .unavailable{issue=nil}
       try await reconcile(target:target,page:page,inbox:queued,service:service,current:current)
     }catch{
@@ -163,7 +169,7 @@ enum NativeStreamState {case stopped,connecting,live,polling}
     do{
       let source=try await service.events()
       guard current==generation,!Task.isCancelled else{return}
-      streamState = .live
+      streamState = .live;resyncSink?()
       consumer=Task{[weak self] in
         do{
           for try await event in source {
@@ -188,7 +194,7 @@ enum NativeStreamState {case stopped,connecting,live,polling}
     recovery?.cancel();streamState = .polling;liveText.reset()
     recovery=Task{[weak self] in
       guard let self else{return}
-      await self.refresh()
+      self.resyncSink?();await self.refresh()
       if !overflow,attempt<3 {
         do{try await Task.sleep(for:.seconds(1<<attempt))}catch{return}
         await self.subscribe(current:current,attempt:attempt)
@@ -197,14 +203,16 @@ enum NativeStreamState {case stopped,connecting,live,polling}
         // A repeat oversized event must not cause an endless reconnect loop.
         while current==self.generation,!Task.isCancelled,self.issue != .authenticationRequired {
           do{try await Task.sleep(for:.seconds(5))}catch{return}
-          await self.refresh()
+          self.resyncSink?();await self.refresh()
         }
       }
     }
   }
   func receive(_ event:OpenCodeEvent) {
-    guard let target,event.affects(target),!seenEvents.contains(event.id) else{return}
+    guard !seenEvents.contains(event.id) else{return}
     seenEvents.append(event.id);if seenEvents.count>512{seenEvents.removeFirst(seenEvents.count-512)}
+    eventSink?(event)
+    guard let target,event.affects(target) else{return}
     if let directory=event.location?.directory,event.data.sessionID==target.sessionID,!OpenCodeIdentity.matches(directory,target.directory){requestRefresh();return}
     let textUpdate=liveText.receive(event)
     if event.type=="session.text.delta",textUpdate == .updated{return}
