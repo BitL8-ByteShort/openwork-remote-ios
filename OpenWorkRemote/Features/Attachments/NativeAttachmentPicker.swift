@@ -69,7 +69,7 @@ struct NativeAttachmentPicker:View {
           }
           #endif
           Text("Photos become PNGs up to 2,000 pixels on the longest edge. Location and camera metadata are not copied. Your original stays unchanged.").font(.footnote).foregroundStyle(Theme.muted)
-          Text("OpenCode receives supported media when you send your message. Other files are uploaded now to a temporary location for the model’s tools. Removing a selection does not delete a temporary copy already on the computer.").font(.footnote).foregroundStyle(Theme.muted)
+          Text("Supported media is included when you send your message. Larger files are uploaded now so OpenCode can read them on your computer. Removing a selection does not delete a temporary copy already on the computer.").font(.footnote).foregroundStyle(Theme.muted)
           Text("Up to four files, 20 MiB per file and 40 MiB per message. The computer or model may allow less.").font(.footnote).foregroundStyle(Theme.muted)
           Button("Add to message"){dismiss()}.buttonStyle(PrimaryButtonStyle())
         }.padding(24).frame(maxWidth:620,alignment:.leading).frame(maxWidth:.infinity)
@@ -109,7 +109,7 @@ struct NativeAttachmentPicker:View {
     switch row.phase{
     case .selected:return "Selected"
     case .preparing:return "Preparing"
-    case .ready:return row.prepared?.placement == .inline ? "Ready · inline media":"Ready · computer file for tools"
+    case .ready:return row.prepared?.placement == .inline ? "Ready · inline media":"Ready · available on your computer"
     case .failed:return "Preparation failed; your selected file is kept"
     case .uploadUnknown:return "Upload unconfirmed; a temporary copy may exist on the computer"
     }

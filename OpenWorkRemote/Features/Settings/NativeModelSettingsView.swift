@@ -4,6 +4,7 @@ import OpenWorkRemoteCore
 struct NativeModelSettingsView:View {
   let store:NativeControlStore
   let context:NativeControlContext
+  var onFiles:(()->Void)? = nil
   @Environment(\.dismiss) private var dismiss
   @State private var review:NativeControlReview?
   @State private var draft:NativeModelDraft?
@@ -13,6 +14,7 @@ struct NativeModelSettingsView:View {
   var body:some View {
     NavigationStack {
       Form {
+        if let onFiles{Section("This chat"){Button(action:onFiles){Label("Files from this chat",systemImage:"doc.on.doc")}.accessibilityIdentifier("native-chat-files-settings")}}
         if store.loading{ProgressView("Loading settings…")}
         NativeControlIssueView(store:store){Task{await reload()}}
         if let snapshot,let review,let draft {

@@ -7,11 +7,13 @@ public struct OpenCodeToolFileReference:Sendable,Equatable {
   public static func ==(a:Self,b:Self)->Bool{OpenCodeIdentity.matches(a.uri,b.uri) && a.mime==b.mime}
 }
 public struct OpenCodeResultSource:Codable,Sendable,Equatable {
+  public enum Kind:String,Codable,Sendable{case selectedProjectFile,tool,snapshot}
+  public let kind:Kind
   public let messageID:String?
   public let contentIndex:Int?
   public let fileIndex:Int?
-  public init(messageID:String?=nil,contentIndex:Int?=nil,fileIndex:Int?=nil){self.messageID=messageID;self.contentIndex=contentIndex;self.fileIndex=fileIndex}
-  public static func ==(a:Self,b:Self)->Bool{OpenCodeIdentity.matches(a.messageID,b.messageID) && a.contentIndex==b.contentIndex && a.fileIndex==b.fileIndex}
+  public init(messageID:String?=nil,contentIndex:Int?=nil,fileIndex:Int?=nil,kind:Kind?=nil){self.messageID=messageID;self.contentIndex=contentIndex;self.fileIndex=fileIndex;self.kind=kind ?? (messageID==nil ? .selectedProjectFile:.tool)}
+  public static func ==(a:Self,b:Self)->Bool{a.kind==b.kind && OpenCodeIdentity.matches(a.messageID,b.messageID) && a.contentIndex==b.contentIndex && a.fileIndex==b.fileIndex}
 }
 public struct OpenCodeResultFile:Codable,Sendable,Identifiable,Equatable,Hashable {
   public let target:OpenCodeTarget
@@ -33,9 +35,13 @@ public struct OpenCodeResultFile:Codable,Sendable,Identifiable,Equatable,Hashabl
     let name=String(relativePath.split(separator:"/").last!)
     guard name.utf8.count<=200,!name.unicodeScalars.contains(where:{$0.value<32 || $0.value==127}) else{throw RemoteError.incompatible}
     if let message=source.messageID{
-      guard !message.isEmpty,message.utf8.count<=2_048,let content=source.contentIndex,(0..<4_096).contains(content),
-        let index=source.fileIndex,(0..<128).contains(index) else{throw RemoteError.invalidResponse}
-    }else{guard source.contentIndex==nil,source.fileIndex==nil else{throw RemoteError.invalidResponse}}
+      guard !message.isEmpty,message.utf8.count<=2_048,let index=source.fileIndex else{throw RemoteError.invalidResponse}
+      switch source.kind{
+      case .tool:guard let content=source.contentIndex,(0..<4_096).contains(content),(0..<128).contains(index) else{throw RemoteError.invalidResponse}
+      case .snapshot:guard source.contentIndex==nil,(0..<1_000).contains(index) else{throw RemoteError.invalidResponse}
+      case .selectedProjectFile:throw RemoteError.invalidResponse
+      }
+    }else{guard source.kind == .selectedProjectFile,source.contentIndex==nil,source.fileIndex==nil else{throw RemoteError.invalidResponse}}
     self.relativePath=relativePath;self.target=target;self.source=source;id=Self.identity(target:target,relativePath:relativePath)
   }
   public init(toolURI:String,target:OpenCodeTarget,source:OpenCodeResultSource=OpenCodeResultSource())throws{
@@ -60,7 +66,7 @@ public struct OpenCodeResultFile:Codable,Sendable,Identifiable,Equatable,Hashabl
       path.split(separator:"/",omittingEmptySubsequences:false).allSatisfy({!$0.isEmpty && $0 != "." && $0 != ".."}) else{throw RemoteError.invalidResponse}
   }
   public static func ==(a:Self,b:Self)->Bool{a.id==b.id && a.source==b.source}
-  public func hash(into hasher:inout Hasher){hasher.combine(id);hasher.combine(source.messageID.map(OpenCodeIdentity.key));hasher.combine(source.contentIndex);hasher.combine(source.fileIndex)}
+  public func hash(into hasher:inout Hasher){hasher.combine(id);hasher.combine(source.kind.rawValue);hasher.combine(source.messageID.map(OpenCodeIdentity.key));hasher.combine(source.contentIndex);hasher.combine(source.fileIndex)}
 }
 public struct OpenCodeResultCatalog:Sendable {
   public let files:[OpenCodeResultFile]
@@ -75,6 +81,12 @@ public struct OpenCodeResultCatalog:Sendable {
             source:OpenCodeResultSource(messageID:message.id,contentIndex:index,fileIndex:fileIndex)) else{unsupported+=1;continue}
           if seen.insert(file.id).inserted{files.append(file)}
         }
+      }
+      unsupported+=message.unsupportedSnapshotFiles
+      for (index,path) in message.snapshotFiles.enumerated(){
+        guard let file=try? OpenCodeResultFile(relativePath:path,target:target,
+          source:OpenCodeResultSource(messageID:message.id,fileIndex:index,kind:.snapshot)) else{unsupported+=1;continue}
+        if seen.insert(file.id).inserted{files.append(file)}
       }
     }
     self.files=files;unsupportedReferences=unsupported
@@ -92,6 +104,24 @@ public struct OpenCodeResultInfo:Sendable,Equatable {
   public let mime:String
   public let entityTag:String
   public let previewKind:OpenCodeFilePreviewKind
+  public func validate()throws{
+    guard (1...20*1_048_576).contains(bytes),entityTag.utf8.count<=256,
+      entityTag.range(of:#"^(W/)?"[!#-~]{1,128}"$"#,options:.regularExpression) != nil,
+      try Self.kind(name:file.name,mime:mime)==previewKind else{throw RemoteError.invalidResponse}
+  }
+  fileprivate static func kind(name:String,mime:String)throws->OpenCodeFilePreviewKind{
+    let ext=(name as NSString).pathExtension.lowercased()
+    switch mime{
+    case "text/plain","text/markdown","text/csv","application/json":
+      guard ["txt","md","csv","json","log"].contains(ext) else{throw RemoteError.incompatible};return .text
+    case "image/png":guard ext=="png" else{throw RemoteError.incompatible};return .image
+    case "image/jpeg":guard ["jpg","jpeg"].contains(ext) else{throw RemoteError.incompatible};return .image
+    case "application/pdf":guard ext=="pdf" else{throw RemoteError.incompatible};return .pdf
+    case "application/rtf","text/rtf":guard ext=="rtf" else{throw RemoteError.incompatible};return .shareOnly
+    default:throw RemoteError.incompatible
+    }
+  }
+
 }
 public struct OpenCodeResultDownload:Sendable,CustomStringConvertible,CustomDebugStringConvertible {
   public let info:OpenCodeResultInfo
@@ -136,7 +166,7 @@ extension OpenCodeClient:OpenCodeResultServing {
     guard count<=20*1_048_576 else{throw RemoteError.oversized}
     guard let mime=response.mime?.lowercased(),let tag=response.entityTag,tag.utf8.count<=256,
       tag.range(of:#"^(W/)?"[!#-~]{1,128}"$"#,options:.regularExpression) != nil else{throw RemoteError.invalidResponse}
-    return OpenCodeResultInfo(file:file,bytes:count,mime:mime,entityTag:tag,previewKind:try previewKind(name:file.name,mime:mime))
+    return OpenCodeResultInfo(file:file,bytes:count,mime:mime,entityTag:tag,previewKind:try OpenCodeResultInfo.kind(name:file.name,mime:mime))
   }
   public func downloadResult(_ info:OpenCodeResultInfo) async throws->OpenCodeResultDownload{
     guard try await probeResult(info.file)==info else{throw RemoteError.conflict}
@@ -154,17 +184,5 @@ extension OpenCodeClient:OpenCodeResultServing {
   private func resultRequest(_ file:OpenCodeResultFile)throws->URLRequest{
     try validateTarget(file.target)
     return try makeRequest(segments:["api","fs","read",file.relativePath],query:locationQuery(OpenCodeLocation(directory:file.target.directory)))
-  }
-  private func previewKind(name:String,mime:String)throws->OpenCodeFilePreviewKind{
-    let ext=(name as NSString).pathExtension.lowercased()
-    switch mime{
-    case "text/plain","text/markdown","text/csv","application/json":
-      guard ["txt","md","csv","json","log"].contains(ext) else{throw RemoteError.incompatible};return .text
-    case "image/png":guard ext=="png" else{throw RemoteError.incompatible};return .image
-    case "image/jpeg":guard ["jpg","jpeg"].contains(ext) else{throw RemoteError.incompatible};return .image
-    case "application/pdf":guard ext=="pdf" else{throw RemoteError.incompatible};return .pdf
-    case "application/rtf","text/rtf":guard ext=="rtf" else{throw RemoteError.incompatible};return .shareOnly
-    default:throw RemoteError.incompatible
-    }
   }
 }

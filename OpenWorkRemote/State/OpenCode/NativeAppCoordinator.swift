@@ -13,6 +13,7 @@ import OpenWorkRemoteCore
   let approvals=NativeApprovalStore()
   let forms:NativeFormStore
   let attachments:NativeAttachmentStore
+  let results:NativeResultStore
   let visibility:NativeProjectVisibilityStore
   private(set) var ready=false
   var notice:String?
@@ -30,15 +31,18 @@ import OpenWorkRemoteCore
     journal=NativeConversationJournal(persistence:try NativeConversationFile(directory:root))
     conversation=ConversationCoordinator(journal:journal)
     attachments=NativeAttachmentStore(journal:journal,files:ProtectedAttachmentFiles(directory:root.appending(path:"NativeAttachmentBytes")))
+    results=NativeResultStore(files:ProtectedArtifactFiles(directory:root.appending(path:"NativeDownloads")))
     forms=NativeFormStore(persistence:try NativeFormFile(directory:root))
     visibility=NativeProjectVisibilityStore(persistence:try NativeVisibilityFile(directory:root))
     conversation.observe(snapshot:{[weak self] target,session,page in
       guard let self else{return}
       self.navigation.acceptNativeSnapshot(target:target,session:session,page:page,preserveWindow:self.preservingEarlierHistory)
+      self.results.updateReferences(self.navigation.messages,target:target)
     },event:{[weak self] event in self?.receive(event)},resync:{[weak self] in self?.refreshInputs()})
   }
   func start() async throws {
     try await journal.restore();try await forms.restore();try await visibility.restore();ready=true
+    try? await results.files.cleanup()
     await connection.start();await connectionChanged()
   }
   func connectionChanged() async {
@@ -52,7 +56,7 @@ import OpenWorkRemoteCore
     guard connection.state == .ready,let client=activeClient else{return}
     let current=UUID();selection=current;cancelInputs();preservingEarlierHistory=false
     guard let target=navigation.selectProvisional(session) else{return}
-    attachments.activate(target:target,client:client)
+    attachments.activate(target:target,client:client);results.activate(target:target,client:client)
     controls.activate(target:target,client:client)
     approvals.activate(target:target,client:client);forms.activate(target:target,client:client)
     await conversation.activate(target:target,service:client)
@@ -63,7 +67,7 @@ import OpenWorkRemoteCore
   }
   func deactivate(){
     selection=UUID();cancelInputs()
-    conversation.deactivate();attachments.deactivate();controls.deactivate();approvals.deactivate();forms.deactivate();activeClient=nil
+    conversation.deactivate();attachments.deactivate();results.deactivate();controls.deactivate();approvals.deactivate();forms.deactivate();activeClient=nil
   }
   private func cancelInputs(){
     approvalTask?.cancel();formTask?.cancel();approvalTask=nil;formTask=nil;approvalsDirty=false;formsDirty=false
@@ -154,19 +158,19 @@ import OpenWorkRemoteCore
   func checkConversation() async {await conversation.refresh()}
   func changeWorkspace(_ workspace:Workspace) async {
     guard connection.state == .ready else{return}
-    selection=UUID();cancelInputs();conversation.clearSelection();attachments.clearSelection();controls.deactivate();approvals.deactivate();forms.clearSelection()
+    selection=UUID();cancelInputs();conversation.clearSelection();attachments.clearSelection();results.deactivate();controls.deactivate();approvals.deactivate();forms.clearSelection()
     await navigation.selectProject(workspace.id)
   }
   func reconnect() async {
     if connection.state == .authenticationRejected{connection.pairAgain();return}
     await connection.reconnect();await connectionChanged()
   }
-  func jumpToLatest(){preservingEarlierHistory=false;navigation.showLatestSnapshot()}
+  func jumpToLatest(){preservingEarlierHistory=false;navigation.showLatestSnapshot();if let target=navigation.target{results.updateReferences(navigation.messages,target:target)}}
   func followLatest(_ following:Bool){if !following{preservingEarlierHistory=true}}
   func forget(){
     deactivate();connection.forgetLocalConnection()
     if connection.state == .unpaired{navigation.deactivate()}
     else{notice="The saved connection could not be removed. Unlock this device and try again."}
   }
-  func olderMessages() async {preservingEarlierHistory=true;await navigation.loadOlder()}
+  func olderMessages() async {preservingEarlierHistory=true;await navigation.loadOlder();if let target=navigation.target{results.updateReferences(navigation.messages,target:target)}}
 }

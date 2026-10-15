@@ -48,10 +48,10 @@ private actor NativeResultTransport:HTTPTransport {
     #expect(a.id != b.id)
   }
   @Test func onlyStructuredToolOutputsBecomeResults() throws{
-    let page=try JSONDecoder().decode(OpenCodeMessagePage.self,from:Data(#"{"data":[{"id":"msg_assistant","type":"assistant","time":{"created":1},"content":[{"type":"text","text":"Download file:///project/not-a-result.txt"},{"type":"tool","name":"generate","state":{"status":"completed","content":[{"type":"file","uri":"file:///project/result.txt","mime":"text/plain"},{"type":"file","uri":"https://example.test/outside.txt","mime":"text/plain"},{"type":"file","uri":123,"mime":"text/plain"}]}}]}],"cursor":{}}"#.utf8))
+    let page=try JSONDecoder().decode(OpenCodeMessagePage.self,from:Data(#"{"data":[{"id":"msg_assistant","type":"assistant","time":{"created":1},"snapshot":{"files":["changed.md","../outside.md"]},"content":[{"type":"text","text":"Download file:///project/not-a-result.txt"},{"type":"tool","name":"generate","state":{"status":"completed","content":[{"type":"file","uri":"file:///project/result.txt","mime":"text/plain"},{"type":"file","uri":"https://example.test/outside.txt","mime":"text/plain"},{"type":"file","uri":123,"mime":"text/plain"}]}}]}],"cursor":{}}"#.utf8))
     let catalog=OpenCodeResultCatalog(messages:page.data,target:target)
-    #expect(catalog.files.map(\.relativePath)==["result.txt"])
-    #expect(catalog.unsupportedReferences==2)
+    #expect(catalog.files.map(\.relativePath)==["result.txt","changed.md"])
+    #expect(catalog.unsupportedReferences==3)
   }
   @Test func nativeRangeDownloadIsBoundToTargetAndValidator() async throws{
     let transport=NativeResultTransport(),t=target

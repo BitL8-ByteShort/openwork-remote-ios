@@ -1,7 +1,16 @@
 import SwiftUI
+struct ArtifactListView:View {
+  @Environment(AppModel.self) private var model
+  var body:some View{
+    if let native=model.native,let context=native.results.context{NativeArtifactListView(store:native.results,context:context)}
+    else if model.native != nil{ContentUnavailableView("Open a chat",systemImage:"doc.on.doc",description:Text("Choose a connected chat to browse its project files."))}
+    else{LegacyArtifactListView()}
+  }
+}
+import SwiftUI
 import OpenWorkRemoteCore
 
-struct ArtifactListView: View {
+struct LegacyArtifactListView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
   private var store: ArtifactStore { model.artifacts }

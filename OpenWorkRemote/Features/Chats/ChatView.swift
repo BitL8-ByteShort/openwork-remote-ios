@@ -70,7 +70,7 @@ struct ChatView: View {
         conversation
       }
       ComposerView()
-    }.background(Theme.background).foregroundStyle(Theme.ink).sheet(item: $sheet, onDismiss: { model.artifacts.closePreview() }) {
+    }.background(Theme.background).foregroundStyle(Theme.ink).sheet(item: $sheet, onDismiss: { model.artifacts.closePreview();model.native?.results.closePreview() }) {
       switch $0 {
       case .chats: ChatListView()
       case .settings: ConnectionView()
@@ -155,7 +155,7 @@ struct ChatView: View {
           }
             // The result entry and scroll target stay realized independently
             // of the message stack's estimated heights for long replies.
-            if model.host?.capabilities.artifacts == true {
+            if model.canBrowseFiles {
               Button { sheet = .files } label: {
                 Label("Files from this chat",systemImage:"doc.on.doc").font(.callout.weight(.medium))
                   .frame(minHeight:44)

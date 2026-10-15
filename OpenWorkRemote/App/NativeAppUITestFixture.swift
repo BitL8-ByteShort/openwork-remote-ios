@@ -18,7 +18,10 @@ private actor NativeAppUITestTransport:HTTPTransport {
     case "/api/project":value=[["id":"project","name":"Native project","canonical":"/project","sandboxes":[],"time":["created":1,"updated":2,"active":2]]]
     case "/api/session":value=["data":[record],"cursor":[:]]
     case "/api/session/ses_owned":value=["data":record]
-    case "/api/session/ses_owned/message":value=["data":[["id":"msg_owned","type":"user","text":"Native message","time":["created":1]]],"cursor":[:]]
+    case "/api/session/ses_owned/message":
+      value=["data":[["id":"msg_owned","type":"user","text":"Native message","time":["created":1]],
+        ["id":"msg_result","type":"assistant","time":["created":2],"content":[["type":"text","text":"Your result is ready."],["type":"tool","name":"generate","state":["status":"completed","content":[["type":"file","uri":"file:///project/result.txt","mime":"text/plain"]]]]]]],"cursor":[:]]
+    case "/api/fs/list":value=["location":["directory":"/project"],"data":[["path":"project-only.txt","type":"file"]]]
     case "/api/session/ses_owned/prompt":
       let body=try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:Any]
       let files=(body["files"] as? [[String:Any]] ?? []).map{file -> [String:Any] in
@@ -41,6 +44,12 @@ private actor NativeAppUITestTransport:HTTPTransport {
     default:throw RemoteError.invalidResponse
     }
     return(try JSONSerialization.data(withJSONObject:value),200)
+  }
+  func binary(for request:URLRequest,maximumBytes:Int) async throws -> BinaryHTTPResponse{
+    let text=request.url!.path.hasSuffix("project-only.txt") ? "Selected project file\n":"Synthetic generated result\n"
+    let bytes=Data(text.utf8),probe=request.value(forHTTPHeaderField:"Range")=="bytes=0-0"
+    return BinaryHTTPResponse(data:probe ? bytes.prefix(1):bytes,status:206,mime:"text/plain",
+      contentRange:probe ? "bytes 0-0/\(bytes.count)":"bytes 0-\(bytes.count-1)/\(bytes.count)",entityTag:"W/\"fixture\"",length:probe ? 1:bytes.count)
   }
   func events(for request:URLRequest) async throws -> AsyncThrowingStream<SSEFrame,any Error>{AsyncThrowingStream{_ in}}
 }

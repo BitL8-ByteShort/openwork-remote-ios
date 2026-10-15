@@ -49,6 +49,8 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
   public let hasError:Bool
   public let outcome:String?
   public let hasAttachments:Bool
+  public let snapshotFiles:[String]
+  public let unsupportedSnapshotFiles:Int
   private let promptPayload:OpenCodePromptAdmission.Payload?
   private let metadata:OpenCodeMessagePresentation?
   public var files:[OpenCodeMaterializedFile]{promptPayload?.files ?? []}
@@ -71,7 +73,7 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
     default:"This item is available on your computer."
     }
   }
-  private enum CodingKeys:String,CodingKey { case id,type,text,content,time,error,outcome,files,agents,skills,metadata }
+  private enum CodingKeys:String,CodingKey { case id,type,text,content,time,error,outcome,files,agents,skills,metadata,snapshot }
   private struct AttachmentPresence:Decodable {}
   public init(from decoder:any Decoder) throws {
     let c = try decoder.container(keyedBy:CodingKeys.self)
@@ -82,6 +84,14 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
     text = promptPayload?.text
     metadata = promptPayload == nil ? nil : try? c.decode(OpenCodeMessagePresentation.self,forKey:.metadata)
     content = type == "assistant" ? try c.decode([OpenCodeMessageContent].self,forKey:.content) : []
+    struct Snapshot:Decodable{let files:[String]?}
+    if type=="assistant",c.contains(.snapshot){
+      if let snapshot=try? c.decode(Snapshot.self,forKey:.snapshot){
+        let paths=snapshot.files ?? []
+        snapshotFiles=paths.prefix(1_000).filter{$0.utf8.count<=8_192}
+        unsupportedSnapshotFiles=paths.count-snapshotFiles.count
+      }else{snapshotFiles=[];unsupportedSnapshotFiles=1}
+    }else{snapshotFiles=[];unsupportedSnapshotFiles=0}
     hasError = try c.contains(.error) && !c.decodeNil(forKey:.error)
     outcome = type == "idle" ? try c.decodeIfPresent(String.self,forKey:.outcome) : nil
     hasAttachments = promptPayload?.hasAttachments==true || (metadata?.displayText(ifMatching:text ?? "") != nil && metadata?.attachments.isEmpty==false)
@@ -89,7 +99,7 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
   }
   public var storedTextBytes:Int {
     (text?.utf8.count ?? 0) + content.reduce(0){$0 + ($1.text?.utf8.count ?? 0) + ($1.toolSummary?.utf8.count ?? 0) + $1.toolFiles.reduce(0){$0+$1.uri.utf8.count+$1.mime.utf8.count}} +
-      files.reduce(0){$0 + ($1.name?.utf8.count ?? 0) + ($1.mime?.utf8.count ?? 0) + ($1.sourceURI?.utf8.count ?? 0) + 128} + (metadata?.storedBytes ?? 0)
+      snapshotFiles.reduce(0){$0+$1.utf8.count} + files.reduce(0){$0 + ($1.name?.utf8.count ?? 0) + ($1.mime?.utf8.count ?? 0) + ($1.sourceURI?.utf8.count ?? 0) + 128} + (metadata?.storedBytes ?? 0)
   }
 }
 public struct OpenCodeMessagePage: Decodable, Sendable { public let data:[OpenCodeMessage]; public let cursor:OpenCodeCursor }
