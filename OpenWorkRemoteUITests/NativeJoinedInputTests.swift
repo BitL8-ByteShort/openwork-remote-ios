@@ -61,8 +61,11 @@ final class NativeJoinedInputTests: XCTestCase {
     for _ in 0..<16{if project.exists && project.isHittable{break};app.windows.firstMatch.swipeUp()}
     XCTAssertTrue(project.exists);XCTAssertTrue(project.isHittable);project.tap()
     let chat=app.buttons.containing(.staticText,identifier:config.chatTitle).firstMatch
+    let list=app.collectionViews.firstMatch
+    XCTAssertTrue(list.waitForExistence(timeout:5))
+    // Recent chats follow the project list; lazy rows do not exist until scrolled in.
+    for _ in 0..<20{if chat.exists && chat.isHittable{break};list.swipeUp()}
     XCTAssertTrue(chat.waitForExistence(timeout:15))
-    for _ in 0..<12{if chat.isHittable{break};app.windows.firstMatch.swipeUp()}
     XCTAssertTrue(chat.isHittable);chat.tap()
     let composer=app.textFields["composer"]
     XCTAssertTrue(composer.waitForExistence(timeout:10));XCTAssertTrue(composer.isEnabled)

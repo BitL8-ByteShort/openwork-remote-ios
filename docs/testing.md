@@ -26,6 +26,8 @@ Some admission checks deliberately use `resume:false` so no model executes. Labe
 
 `NativeJoinedInputTests` is opt-in and launches the normal app without fixture flags. With `POCKETWORK_NATIVE_INPUT_PROJECT` set to the already selected, owned qualification project, it types text, checks Send eligibility, relaunches, verifies restoration and clears the text. It does not send a message. Never enable it against a personal chat. The driver must verify native history, local pending state and inbox before retrying any separate live send after an interrupted run.
 
+The October15 normal Release iPadOS27 check passes fresh native HTTPS pairing to the owned Mac2.0.29 service, then selects a synthetic image through the actual Apple Photos picker. It explicitly allows scoped sharing and requires a Ready chip in the draft with Send enabled and no extra Add screen. That case leaves the message unsent; it does not prove a provider reply or physical-device behavior. The history helper scrolls the virtualized Recent Chats list before requiring an offscreen row to exist. An earlier failed check and the corrected pass are retained in the private qualification record.
+
 The iOS Release app uses `NativeReleaseAppModel` and native-only screen adapters. Legacy bridge screens/client code are excluded from iOS Release. Their Mac/DEBUG regression coverage remains available; fourteen historical facade cases run in Debug, where their original facade exists. Local migration only reads/clears older records and byte copies through `LegacyLocalRecovery`, with no bridge client.
 
 Run the Release facade/reset checks as well as the ordinary package suite:
