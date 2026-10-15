@@ -2,6 +2,16 @@ import XCTest
 import CryptoKit
 
 final class NativeAppTests:XCTestCase {
+  @MainActor func testComposerRequiresASelectedChatInsteadOfDiscardingUnscopedText(){
+    let app=launch()
+    XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:5))
+    let composer=app.textFields["composer"]
+    XCTAssertTrue(composer.exists);XCTAssertFalse(composer.isEnabled)
+    app.buttons["Open chat history"].tap()
+    let row=app.buttons.containing(.staticText,identifier:"Native chat").firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout:4));row.tap()
+    XCTAssertTrue(composer.waitForExistence(timeout:4));XCTAssertTrue(composer.isEnabled)
+  }
   @MainActor private func launch(slow:Bool=false,share:Bool=false,noAnimations:Bool=false)->XCUIApplication{
     XCUIDevice.shared.orientation = .portrait
     let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app"]+(slow ? ["-slow-native-app-settings"]:[])+(share ? ["-artifact-test-save"]:[])+(noAnimations ? ["-native-fixture-no-animations"]:[]);app.launch();return app

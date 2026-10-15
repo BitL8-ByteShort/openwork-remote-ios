@@ -62,6 +62,8 @@ struct ComposerView: View {
           dynamicTypeSize.isAccessibilitySize ? "Message":"Message \(model.serviceName)", text: Binding(get: { model.draft }, set: { model.draft = $0 }),
           axis: .vertical
         ).font(.body).lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 3:6)).focused($focused).padding(.vertical, 14)
+          .disabled(model.selectedSession==nil)
+          .accessibilityHint(model.selectedSession==nil ? "Choose a chat or start a new one before typing.":"")
           .accessibilityLabel("Message \(model.serviceName)").accessibilityIdentifier("composer")
         if model.isRunning || model.stopRequested {
           Button {
