@@ -154,6 +154,10 @@ enum NativeStreamState {case stopped,connecting,live,polling}
                          service:any OpenCodeConversationServing,current:UUID) async throws {
     guard let pending=journal.pending(for:target) else{return}
     guard pending.target==target else{issue = .locationChanged;return}
+    // A live send owns its prepared intent until its response is handled. An
+    // event snapshot may arrive before admission or before the POST returns;
+    // neither absence nor an early match may race that confirmation.
+    if pending.state == .prepared,sendingTargets.contains(target){return}
     var matches:Bool?
     if let item=inbox.first(where:{$0.id==pending.prompt.id}) {
       matches=item.user?.matches(pending.prompt,sessionID:target.sessionID) ?? false

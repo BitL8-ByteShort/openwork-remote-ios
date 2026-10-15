@@ -74,7 +74,7 @@ public struct MessageBlock: Codable, Sendable, Equatable {
   public init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     let k = try c.decode(String.self, forKey: .kind)
-    guard ["text", "code", "tool", "omitted", "unsupported"].contains(k) else {
+    guard ["text", "code", "tool", "error", "omitted", "unsupported"].contains(k) else {
       kind = "unsupported"
       text = nil
       language = nil

@@ -63,9 +63,32 @@ final class NativeAppTests:XCTestCase {
     XCTAssertTrue(row.waitForExistence(timeout:4));row.tap()
     XCTAssertTrue(composer.waitForExistence(timeout:4));XCTAssertTrue(composer.isEnabled)
   }
-  @MainActor private func launch(slow:Bool=false,share:Bool=false,noAnimations:Bool=false)->XCUIApplication{
+  @MainActor private func launch(slow:Bool=false,share:Bool=false,noAnimations:Bool=false,extra:[String]=[])->XCUIApplication{
     XCUIDevice.shared.orientation = .portrait
-    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app"]+(slow ? ["-slow-native-app-settings"]:[])+(share ? ["-artifact-test-save"]:[])+(noAnimations ? ["-native-fixture-no-animations"]:[]);app.launchForNativeWindowQualification();return app
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app"]+(slow ? ["-slow-native-app-settings"]:[])+(share ? ["-artifact-test-save"]:[])+(noAnimations ? ["-native-fixture-no-animations"]:[])+extra;app.launchForNativeWindowQualification();return app
+  }
+  @MainActor func testNormalPendingSendDoesNotShowDeliveryUncertain(){
+    let app=launch(extra:["-native-fixture-held-send"])
+    openFixtureChat(app)
+    let composer=app.textFields["composer"]
+    composer.tap();composer.typeText("A normal pending send")
+    app.buttons["send-message"].tap();allowSharing(app)
+    app.buttons["send-message"].tap()
+    XCTAssertFalse(app.buttons["send-message"].isEnabled)
+    XCTAssertFalse(app.staticTexts["Delivery is uncertain"].waitForExistence(timeout:3))
+    let proof=XCTAttachment(screenshot:XCUIScreen.main.screenshot());proof.name="Normal send without false uncertainty";proof.lifetime = .keepAlways;add(proof)
+    expectation(for:NSPredicate(format:"value == %@","Message OpenCode"),evaluatedWith:composer)
+    waitForExpectations(timeout:12)
+    XCTAssertFalse(app.staticTexts["Delivery is uncertain"].exists)
+  }
+  @MainActor func testFreeModelRejectionShowsUsefulExplanationWithoutRawDetails(){
+    let app=launch(extra:["-native-fixture-provider-error"])
+    openFixtureChat(app)
+    let notice=app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","OpenCode’s free-model service rejected this request.")).firstMatch
+    XCTAssertTrue(notice.waitForExistence(timeout:5))
+    XCTAssertFalse(app.staticTexts["The task ended with an error. Check your computer for details."].exists)
+    XCTAssertFalse(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","SYNTHETIC_PRIVATE_ERROR_DETAIL")).firstMatch.exists)
+    let proof=XCTAttachment(screenshot:XCUIScreen.main.screenshot());proof.name="Safe actionable free-model failure";proof.lifetime = .keepAlways;add(proof)
   }
   @MainActor private func revealChatListControl(_ element:XCUIElement,in app:XCUIApplication){
     XCTAssertTrue(element.waitForExistence(timeout:5))

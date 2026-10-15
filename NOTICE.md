@@ -8,6 +8,8 @@ The app icon and new PocketWork repository banner are original project artwork u
 
 The app uses Apple system frameworks, system fonts and SF Symbols under Apple's applicable SDK/platform/symbol terms. There are no external Swift package dependencies or bundled third-party SDKs. Apple's software is not relicensed by this repository.
 
+New session identifiers follow OpenCode v2.0.29's native identifier format, documented by `packages/schema/src/identifier.ts` in that source tag. The Swift implementation retains the timestamp/counter prefix and random suffix so the server's provider routing accepts newly created chats. OpenCode's MIT copyright and permission notice below is also bundled in the app's offline notices; no provider headers or client identity are impersonated.
+
 OpenCode logo
 Official logo paths from anomalyco/opencode v2.0.29.
 https://opencode.ai/brand

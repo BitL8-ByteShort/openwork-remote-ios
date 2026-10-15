@@ -1,5 +1,31 @@
 import Foundation
 
+// Native identifier layout reference (OpenCode v2.0.29, MIT):
+// https://github.com/anomalyco/opencode/blob/v2.0.29/packages/schema/src/identifier.ts
+// The complete OpenCode copyright/permission notice is bundled in notices.txt.
+private final class NativeSessionIDGenerator: @unchecked Sendable {
+  static let shared = NativeSessionIDGenerator()
+  private let lock = NSLock()
+  private var lastTimestamp: UInt64?
+  private var counter: UInt64 = 0
+  private let alphabet = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+
+  func make() -> String {
+    lock.lock()
+    defer { lock.unlock() }
+    let timestamp = UInt64(max(0, Date().timeIntervalSince1970 * 1_000))
+    if timestamp != lastTimestamp {
+      lastTimestamp = timestamp
+      counter = 0
+    }
+    counter &+= 1
+    let time = ~((timestamp &* 4_096) &+ counter) & 0x0000_ffff_ffff_ffff
+    let prefix = String(format: "%012llx", time)
+    let random = String((0..<14).map { _ in alphabet.randomElement()! })
+    return "ses_" + prefix + random
+  }
+}
+
 public struct OpenCodeChatNotSubmitted:Error,Sendable,Equatable {
   public let reason:RemoteError
   public init(reason:RemoteError){self.reason=reason}
@@ -12,9 +38,9 @@ public struct OpenCodeNewChatIntent:Codable,Sendable,Equatable,Identifiable {
   public let directory:String
   public let model:OpenCodeModelRef?
   public let agent:String?
-  public init(id:String="ses_"+UUID().uuidString.replacingOccurrences(of:"-",with:"").lowercased(),
+  public init(id:String?=nil,
               connectionID:ConnectionID,projectID:String,directory:String,model:OpenCodeModelRef?=nil,agent:String?=nil)throws{
-    self.id=id;self.connectionID=connectionID;self.projectID=projectID;self.directory=directory;self.model=model;self.agent=agent
+    self.id=id ?? NativeSessionIDGenerator.shared.make();self.connectionID=connectionID;self.projectID=projectID;self.directory=directory;self.model=model;self.agent=agent
     try validate()
   }
   public func validate()throws{

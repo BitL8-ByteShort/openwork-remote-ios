@@ -71,6 +71,32 @@ actor NativeShellTransport:HTTPTransport {
   func sentPrompts()->Int{prompts}
 }
 @Suite @MainActor struct NativeAppCoordinatorTests {
+  @Test(.timeLimit(.minutes(1))) func composerDoesNotCallANormalPendingSendUncertain()async throws{
+    let directory=FileManager.default.temporaryDirectory.appending(path:"native-send-progress-"+UUID().uuidString)
+    defer{try? FileManager.default.removeItem(at:directory)}
+    let saved=try nativeStored(),transport=NativeShellTransport()
+    await transport.allowHistory();await transport.enablePrivacyCatalog()
+    let app=try NativeAppCoordinator(directory:directory,connectionPersistence:OpenCodePersistence(load:{saved},save:{_ in},remove:{}),transport:transport)
+    defer{app.deactivate()}
+    try await app.start();await app.open(try #require(app.navigation.sessions.first))
+    app.setDraft("Normal send progress")
+    await app.send()
+    let review=try #require(app.sharing.review),client=try #require(app.connection.client)
+    #expect(await app.sharing.approve(review,using:client,acknowledgesUnknownDestination:true))
+    await transport.holdNextPrompt()
+    let sending=Task{await app.send()}
+    let deadline=ContinuousClock.now.advanced(by:.seconds(3))
+    while !(await transport.promptIsHeld()),ContinuousClock.now<deadline{await Task.yield()}
+    let held=await transport.promptIsHeld()
+    let warningDuringSend=app.uncertain,canSendAgain=app.canSend
+    await transport.releasePrompt();await sending.value
+    #expect(held)
+    #expect(!warningDuringSend)
+    #expect(!canSendAgain)
+    #expect(!app.uncertain)
+    #expect(app.draft.isEmpty)
+    #expect(await transport.sentPrompts()==1)
+  }
   @Test func selectedPhotoWaitsForSharingReviewWithoutReportingAnUploadFailureOrRetrying()async throws{
     let directory=FileManager.default.temporaryDirectory.appending(path:"native-photo-review-"+UUID().uuidString)
     defer{try? FileManager.default.removeItem(at:directory)}

@@ -4,6 +4,49 @@ import OpenWorkRemoteCore
 @testable import OpenWorkRemoteAppState
 
 @Suite @MainActor struct OpenCodeLiveChatActionTests {
+  private struct NewChatFixture:Decodable{
+    let pairing:String;let projectID:String;let directory:String;let nonce:String
+    let disposable:Bool
+  }
+  @Test(.enabled(if:ProcessInfo.processInfo.environment["POCKETWORK_NATIVE_NEWCHAT_FIXTURE"] != nil),.timeLimit(.minutes(2)))
+  func newNativeChatAcceptsARealFreeModelReplyWithoutChangingToolRules()async throws{
+    let path=try #require(ProcessInfo.processInfo.environment["POCKETWORK_NATIVE_NEWCHAT_FIXTURE"])
+    let fixtureURL=URL(fileURLWithPath:path)
+    let f=try JSONDecoder().decode(NewChatFixture.self,from:Data(contentsOf:fixtureURL))
+    guard f.disposable,f.nonce.count==32,f.directory.contains("PocketWork Native") else{throw RemoteError.invalidResponse}
+    let pair=try OpenCodePairingPayload.parse(f.pairing),origin=try #require(pair.origins.first)
+    let token=try await OpenCodePairingClient().redeem(pair,origin:origin)
+    let connection=try OpenCodeConnection(origin:origin,displayName:"Owned new-chat qualification")
+    let client=try OpenCodeClient(connection:connection,token:token.token)
+    let model=try OpenCodeModelRef(providerID:"opencode",id:"space-bunny-free",variant:"high")
+    let intent=try OpenCodeNewChatIntent(connectionID:connection.id,projectID:f.projectID,directory:f.directory,model:model)
+    // Preserve the stable intent privately so interrupted qualification can clean up only its chat.
+    let intentURL=fixtureURL.appendingPathExtension("created-intent.json")
+    guard !FileManager.default.fileExists(atPath:intentURL.path),FileManager.default.createFile(atPath:intentURL.path,contents:try JSONEncoder().encode(intent),attributes:[.posixPermissions:0o600]) else{throw RemoteError.unavailable}
+    let created=try await client.createChat(intent)
+    #expect(created.id.range(of:"^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$",options:.regularExpression) != nil)
+    let target=OpenCodeTarget(connectionID:connection.id,projectID:f.projectID,sessionID:created.id,directory:f.directory)
+    let prompt=try OpenCodePrompt(text:"Synthetic connection qualification only. Do not use tools, read files or change anything. Reply exactly: POCKETWORK_NATIVE_NEW_CHAT_OK")
+    let admitted=try await client.send(target:target,input:prompt)
+    #expect(admitted.matches(prompt,sessionID:created.id))
+    let deadline=ContinuousClock.now.advanced(by:.seconds(50))
+    var answer:OpenCodeMessage?
+    while ContinuousClock.now<deadline{
+      let page=try await client.messages(sessionID:created.id,cursor:nil)
+      answer=page.data.first{$0.type=="assistant" && $0.time.completed != nil}
+      if answer != nil{break}
+      try await Task.sleep(for:.milliseconds(500))
+    }
+    let completed=try #require(answer)
+    #expect(!completed.hasError)
+    #expect(completed.content.contains{$0.type=="text" && ($0.text?.contains("POCKETWORK_NATIVE_NEW_CHAT_OK") ?? false)})
+    #expect(try await client.session(id:created.id).permissions==created.permissions)
+    let tree=try await client.sessionTree(target:target)
+    guard tree.sessions.count==1,tree.sessions.first?.id==created.id else{throw RemoteError.conflict}
+    try await client.deleteSessionTree(tree)
+    #expect(try await client.deletedSessionTree(tree))
+    print("Owned native new-chat qualification: fresh default ID, real free-model reply, unchanged tool rules and guarded cleanup passed")
+  }
   private struct Fixture:Decodable{
     let pairing:String;let projectID:String;let sessionID:String;let directory:String;let nonce:String
     let messageIDs:[String];let createID:String;let treeRootID:String

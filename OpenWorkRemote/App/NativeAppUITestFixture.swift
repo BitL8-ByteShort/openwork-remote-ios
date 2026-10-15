@@ -13,7 +13,9 @@ private actor NativeAppUITestTransport:HTTPTransport {
   let slow:Bool
   let longReply:Bool
   let codeReply:Bool
-  init(slow:Bool,longReply:Bool=false,codeReply:Bool=false){self.slow=slow;self.longReply=longReply;self.codeReply=codeReply}
+  let heldSend:Bool
+  let providerError:Bool
+  init(slow:Bool,longReply:Bool=false,codeReply:Bool=false,heldSend:Bool=false,providerError:Bool=false){self.slow=slow;self.longReply=longReply;self.codeReply=codeReply;self.heldSend=heldSend;self.providerError=providerError}
   private var record:[String:Any]{["id":"ses_owned","projectID":"project","title":title,"location":["directory":"/project"],"time":["created":1,"updated":2],"model":["providerID":"Synthetic provider","id":"native-model"],"agent":"build","permissions":[]]}
   private var form:[String:Any]{["id":"frm_owned","sessionID":"ses_owned","title":"Which option do you prefer?","fields":[["key":"answer","type":"string","required":true]],"state":["status":"pending"]]}
   private var model:[String:Any]{["providerID":"Synthetic provider","id":"native-model","modelID":"native-model","name":"Native model","enabled":true,"status":"active","variants":[],"capabilities":["tools":true,"input":["text","image","pdf"],"output":["text"]]]}
@@ -55,6 +57,9 @@ private actor NativeAppUITestTransport:HTTPTransport {
         let text="```swift\n"+(1...60).map{"let example\($0) = \($0)"}.joined(separator:"\n")+"\n// END OF CODE\n```"
         history["data"]=[["id":"msg_code","type":"assistant","time":["created":2],"content":[["type":"text","text":text]]]]
       }
+      if providerError{
+        history["data"]=[["id":"msg_provider_error","type":"assistant","time":["created":2,"completed":3],"content":[],"error":["type":"provider.auth","status":403,"message":"OpenCode's free tier can only be used from within OpenCode. SYNTHETIC_PRIVATE_ERROR_DETAIL"]]]
+      }
       if let admitted,let payload=admitted["payload"] as? [String:Any]{
         var rows=history["data"] as! [[String:Any]]
         rows.insert(["id":admitted["id"]!,"type":"user","text":payload["text"]!,"files":payload["files"] ?? [],"skills":payload["skills"] ?? [],"time":["created":3]],at:0)
@@ -73,6 +78,7 @@ private actor NativeAppUITestTransport:HTTPTransport {
         return ["name":file["name"]!,"mime":String(parts[0].dropFirst(5).split(separator:";")[0]),"data":String(parts[1]),"source":["type":"inline"]]
       }
       admitted=["id":body["id"]!,"sessionID":"ses_owned","type":"user","payload":["text":body["text"]!,"files":files,"skills":(body["skills"] as? [[String:String]] ?? []).map{["id":$0["id"]!,"name":"Review fixture","text":"Only review the fixture text."]}]]
+      if heldSend{try await Task.sleep(for:.seconds(8))}
       value=["data":admitted!]
     case "/api/session/ses_owned/inbox":value=["data":admitted.map{[$0]} ?? []]
     case "/api/session/active":value=["data":[:]]
@@ -121,7 +127,7 @@ struct NativeAppUITestFixture:View {
     if ProcessInfo.processInfo.arguments.contains("-native-fixture-no-animations"){UIView.setAnimationsEnabled(false)}
     let directory=FileManager.default.temporaryDirectory.appending(path:"native-shell-ui-"+UUID().uuidString)
     let saved=StoredOpenCodeConnection(connection:try! OpenCodeConnection(origin:URL(string:"https://synthetic.example")!,displayName:"Synthetic computer"),token:"synthetic-token")
-    let native=try! NativeAppCoordinator(directory:directory,connectionPersistence:NativeFixtureConnectionVault(saved).persistence,transport:NativeAppUITestTransport(slow:ProcessInfo.processInfo.arguments.contains("-slow-native-app-settings"),longReply:ProcessInfo.processInfo.arguments.contains("-native-fixture-long-reply"),codeReply:ProcessInfo.processInfo.arguments.contains("-native-fixture-code-reply")))
+    let native=try! NativeAppCoordinator(directory:directory,connectionPersistence:NativeFixtureConnectionVault(saved).persistence,transport:NativeAppUITestTransport(slow:ProcessInfo.processInfo.arguments.contains("-slow-native-app-settings"),longReply:ProcessInfo.processInfo.arguments.contains("-native-fixture-long-reply"),codeReply:ProcessInfo.processInfo.arguments.contains("-native-fixture-code-reply"),heldSend:ProcessInfo.processInfo.arguments.contains("-native-fixture-held-send"),providerError:ProcessInfo.processInfo.arguments.contains("-native-fixture-provider-error")))
     _model=State(initialValue:AppModel(native:native,legacyDraftStore:try! DraftStore(directory:directory),pairingPersistence:PairingPersistence(load:{nil},save:{_ in},remove:{})))
   }
   var body:some View{NativeRootView().id(ObjectIdentifier(model)).environment(model).tint(Theme.accent).transaction{transaction in

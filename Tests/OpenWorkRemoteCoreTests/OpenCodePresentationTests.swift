@@ -3,6 +3,33 @@ import Testing
 @testable import OpenWorkRemoteCore
 
 @Suite struct OpenCodePresentationTests {
+  @Test func freeModelRejectionExplainsProviderFailureWithoutRepeatingPrivateErrorDetails() throws {
+    let raw = #"{"id":"msg_free","type":"assistant","time":{"created":1,"completed":2},"content":[],"error":{"type":"provider.auth","status":403,"message":"OpenCode's free tier can only be used from within OpenCode. SYNTHETIC_PRIVATE_TOKEN https://private.invalid/path","response":{"body":"SYNTHETIC_PRIVATE_BODY"}}}"#
+    let native = try JSONDecoder().decode(OpenCodeMessage.self, from: Data(raw.utf8))
+    let shown = try #require(native.presentation(sessionID: "ses_owned", active: false))
+    #expect(shown.state == "error")
+    #expect(shown.blocks.filter { $0.kind == "error" }.map(\.text) == ["OpenCode’s free-model service rejected this request. Try a new chat, review the model and tool rules in OpenCode, or choose another configured model."])
+    let encoded = String(decoding: try JSONEncoder().encode(shown), as: UTF8.self)
+    #expect(!encoded.contains("SYNTHETIC_PRIVATE"))
+    #expect(!encoded.contains("private.invalid"))
+  }
+  @Test func unrelatedOrMalformedErrorsKeepTheGenericFailureWithoutInventingAFreeModelRestriction() throws {
+    let errors: [Any] = [
+      ["type": "provider.auth", "status": 403, "message": "SYNTHETIC_PRIVATE_AUTH_DETAIL"],
+      ["type": "other", "status": 403, "message": "OpenCode's free tier can only be used from within OpenCode."],
+      ["type": "provider.auth", "status": 401, "message": "OpenCode's free tier can only be used from within OpenCode."],
+      ["type": "provider.auth", "status": 403, "message": String(repeating: "x", count: 8_193)],
+      ["future": "SYNTHETIC_PRIVATE_FIELD"], ["unexpected", "error", "shape"]
+    ]
+    for error in errors {
+      let raw: [String: Any] = ["id": "msg_error", "type": "assistant", "time": ["created": 1], "content": [], "error": error]
+      let native = try JSONDecoder().decode(OpenCodeMessage.self, from: JSONSerialization.data(withJSONObject: raw))
+      let shown = try #require(native.presentation(sessionID: "ses_owned", active: false))
+      #expect(shown.state == "error")
+      #expect(!shown.blocks.contains { $0.kind == "error" })
+      #expect(!String(decoding: try JSONEncoder().encode(shown), as: UTF8.self).contains("SYNTHETIC_PRIVATE"))
+    }
+  }
   @Test func finalTextBesideToolsSurvivesPresentationAndLiveTextUsesTextOrdinal() throws {
     let native=try JSONDecoder().decode(OpenCodeMessage.self,from:Data(#"{"id":"msg_answer","type":"assistant","time":{"created":1},"content":[{"type":"text","text":"Before"},{"type":"tool","name":"read","state":{"status":"completed","content":[{"type":"text","text":"Synthetic output"}]}},{"type":"text","text":"Final"}]}"#.utf8))
     let item=try #require(native.presentation(sessionID:"ses_owned",active:true,liveText:{ordinal in ordinal==1 ? "Final streaming answer" : nil}))

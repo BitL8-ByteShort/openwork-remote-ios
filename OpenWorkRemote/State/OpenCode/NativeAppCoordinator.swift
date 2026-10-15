@@ -208,7 +208,10 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     session.presentation(active:conversation.isActive && session.id==navigation.target?.sessionID,modelLabel:session.model?.id)
   }
   var draft:String{navigation.target.map{journal.draft(for:$0)} ?? ""}
-  var uncertain:Bool{navigation.target.map{journal.pending(for:$0) != nil} ?? false}
+  var uncertain:Bool{
+    guard let target=navigation.target,let pending=journal.pending(for:target) else{return false}
+    return pending.state != .prepared || !conversation.sending
+  }
   var canSend:Bool{
     connection.state == .ready && ready && journal.ready && !journal.storageIssue && !uncertain &&
       !(navigation.target.map{chatActions.blocks($0)} ?? true) &&

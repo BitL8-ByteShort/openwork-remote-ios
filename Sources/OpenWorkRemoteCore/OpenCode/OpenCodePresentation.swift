@@ -16,7 +16,8 @@ extension OpenCodeSession {
 extension OpenCodeMessage {
   public func presentation(sessionID:String,active:Bool,
                            liveText:(Int)->String?={_ in nil})->ChatMessage? {
-    let role:String,blocks:[MessageBlock]
+    let role:String
+    var blocks:[MessageBlock]
     switch type {
     case "user","synthetic":
       role=type=="user" ? "user" : "system"
@@ -43,6 +44,7 @@ extension OpenCodeMessage {
       guard let notice=displayNotice else{return nil}
       role="system";blocks=[MessageBlock(kind:"text",text:notice)]
     }
+    if let failureNotice {blocks.append(MessageBlock(kind:"error",text:failureNotice))}
     return ChatMessage(id:id,sessionId:sessionID,role:role,
       createdAt:Date(timeIntervalSince1970:time.created/1_000).ISO8601Format(),blocks:blocks,
       state:hasError ? "error" : type=="assistant" && active && time.completed==nil ? "streaming" : "complete")

@@ -75,4 +75,17 @@ private actor NativeChatMutationTransport:HTTPTransport {
     #expect(try await client.createdChat(for:intent)?.id==intent.id)
     #expect(await transport.counts().0==1)
   }
+  @Test func newChatUsesTheNativeIdentifierContractRequiredByTheFreeProvider()throws{
+    let connection=ConnectionID()
+    var ids=Set<String>()
+    for _ in 0..<2_000{
+      let intent=try OpenCodeNewChatIntent(connectionID:connection,projectID:"project",directory:"/project")
+      #expect(intent.id.range(of:"^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$",options:.regularExpression) != nil)
+      ids.insert(intent.id)
+    }
+    #expect(ids.count==2_000)
+    let earlier=try OpenCodeNewChatIntent(id:"ses_earlier_stable_intent",connectionID:connection,projectID:"project",directory:"/project")
+    let restored=try JSONDecoder().decode(OpenCodeNewChatIntent.self,from:JSONEncoder().encode(earlier))
+    #expect(restored.id==earlier.id)
+  }
 }
