@@ -1,6 +1,13 @@
 import SwiftUI
+struct ConnectionView:View {
+  @Environment(AppModel.self) private var model
+  var body:some View {
+    if let native=model.native{NativeConnectionSettingsView(native:native)}else{LegacyConnectionView()}
+  }
+}
+import SwiftUI
 
-struct ConnectionView: View {
+struct LegacyConnectionView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
   @AppStorage("appearance") private var appearance = "system"

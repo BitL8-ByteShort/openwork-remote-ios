@@ -1,7 +1,18 @@
+import SwiftUI
+struct PermissionsView:View {
+  @Environment(AppModel.self) private var model
+  var body:some View {
+    if let native=model.native {
+      if let context=native.controls.context{NativePermissionsView(store:native.controls,context:context)}
+      else{Form{Section{Text("Open a chat to review its tool rules and saved permissions.")}
+        Section{Text("Native pairing grants server access. Hiding a project is a display preference on this device.")}}.navigationTitle("Permissions")}
+    }else{LegacyPermissionsView()}
+  }
+}
 import OpenWorkRemoteCore
 import SwiftUI
 
-struct PermissionsView: View {
+struct LegacyPermissionsView: View {
   @Environment(AppModel.self) private var model
   @State private var access: DeviceAccess?
   @State private var permissions: SavedPermissions?

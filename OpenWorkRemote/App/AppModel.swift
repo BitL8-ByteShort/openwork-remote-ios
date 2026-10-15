@@ -914,6 +914,7 @@ import OpenWorkRemoteCore
     if storedPairing == nil { connection = .unpaired }
   }
   func forget() async {
+    if let native{native.forget();return}
     saveDrafts()
     do { try pairingPersistence.remove() } catch {
       notice = "Pairing could not be removed from Keychain. Unlock this iPhone and try again."
@@ -1168,6 +1169,7 @@ extension AppModel {
       generation:generation,selection:selectionID)
   }
   func refreshAttachments() async {
+    guard native==nil else{return}
     guard let client, connection == .ready, let context = attachmentContext else { attachments.activate(nil); return }
     attachments.activate(context)
     await attachments.refreshAccess(client:client,context:context,supported:host?.capabilities.attachments == true)

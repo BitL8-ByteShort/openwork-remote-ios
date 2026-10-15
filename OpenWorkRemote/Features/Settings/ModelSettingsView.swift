@@ -1,7 +1,19 @@
+import SwiftUI
+struct ModelSettingsView:View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.dismiss) private var dismiss
+  var body:some View {
+    if let native=model.native {
+      if let context=native.controls.context{NativeModelSettingsView(store:native.controls,context:context)}
+      else{NavigationStack{ContentUnavailableView("Open a chat",systemImage:"bubble.left",description:Text("Choose a connected OpenCode chat to change its model and settings."))
+        .toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){dismiss()}}}}}
+    }else{LegacyModelSettingsView()}
+  }
+}
 import OpenWorkRemoteCore
 import SwiftUI
 
-struct ModelSettingsView: View {
+struct LegacyModelSettingsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
   @State private var settings: ModelSettings?

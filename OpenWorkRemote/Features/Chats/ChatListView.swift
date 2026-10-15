@@ -114,8 +114,7 @@ struct ChatListView: View {
           } label: {
             Image(systemName: "square.and.pencil")
           }.disabled(
-            model.connection != .ready || model.host?.capabilities.createSession != true
-              || model.loading || model.uncertainCreation
+            !model.canCreateChat
           ).accessibilityLabel("New chat")
         }
       }.sheet(isPresented: $showingSettings) { ConnectionView() }

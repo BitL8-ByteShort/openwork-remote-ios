@@ -40,11 +40,11 @@ struct ComposerView: View {
         }label:{Image(systemName:"plus").font(.title3).frame(width:44,height:44)}
           .disabled(model.selectedSession == nil || model.sending).accessibilityLabel("Add to message").accessibilityIdentifier("composer-add")
         TextField(
-          "Message OpenWork", text: Binding(get: { model.draft }, set: { model.draft = $0 }),
+          "Message \(model.serviceName)", text: Binding(get: { model.draft }, set: { model.draft = $0 }),
           axis: .vertical
         ).font(.body).lineLimit(1...6).focused($focused).padding(.vertical, 14)
           .accessibilityIdentifier("composer")
-        if model.status?.phase == "running" || model.stopRequested {
+        if model.isRunning || model.stopRequested {
           Button {
             Task { await model.stop() }
           } label: {
@@ -71,7 +71,7 @@ struct ComposerView: View {
         }
       }.padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 8).background(
         Theme.surface, in: RoundedRectangle(cornerRadius: 26))
-      Text(model.connection == .ready ? "Runs on your computer" : model.connection.label).font(
+      Text(model.connection == .ready ? "Runs on your computer" : model.connectionLabel).font(
         .caption
       ).foregroundStyle(Theme.muted).frame(maxWidth: .infinity)
     }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8).background(Theme.background)

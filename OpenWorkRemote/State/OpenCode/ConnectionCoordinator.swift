@@ -10,6 +10,7 @@ enum NativeConnectionIssue { case freshPairingCodeRequired, pairingOutcomeUnknow
   private(set) var connection: OpenCodeConnection?
   private(set) var client: OpenCodeClient?
   private(set) var isBusy = false
+  private(set) var serverVersion:String?
   @ObservationIgnored private let persistence: OpenCodePersistence
   @ObservationIgnored private let transport: any HTTPTransport
   @ObservationIgnored private var saved: StoredOpenCodeConnection?
@@ -52,6 +53,7 @@ enum NativeConnectionIssue { case freshPairingCodeRequired, pairingOutcomeUnknow
       do { try persistence.save(envelope) }
       catch { issue = .storageUnavailable; state = .storageUnavailable; return }
       saved = envelope; connection = candidate; client = candidateClient
+      serverVersion=info.version
       state = .ready; resumeState = .ready; issue = nil
     } catch {
       guard generation == current else { return }
@@ -76,7 +78,7 @@ enum NativeConnectionIssue { case freshPairingCodeRequired, pairingOutcomeUnknow
       let info = try await candidateClient.info()
       guard generation == current else { return }
       try Task.checkCancellation()
-      client = candidateClient
+      client = candidateClient;serverVersion=info.version
       state = OpenCodeCompatibility.evaluate(version: info.version) == .qualified ? .ready : .incompatible
       if state == .incompatible { issue = .incompatible }
       resumeState = state
@@ -107,7 +109,7 @@ enum NativeConnectionIssue { case freshPairingCodeRequired, pairingOutcomeUnknow
   func forgetLocalConnection() {
     do { try persistence.remove() }
     catch { issue = .storageUnavailable; return }
-    generation &+= 1; saved = nil; connection = nil; client = nil
+    generation &+= 1; saved = nil; connection = nil; client = nil;serverVersion=nil
     state = .unpaired; resumeState = state; issue = nil; isBusy = false
   }
 }

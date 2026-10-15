@@ -141,5 +141,12 @@ import OpenWorkRemoteCore
     if connection.state == .authenticationRejected{connection.pairAgain();return}
     await connection.reconnect();await connectionChanged()
   }
+  func jumpToLatest(){preservingEarlierHistory=false;navigation.showLatestSnapshot()}
+  func followLatest(_ following:Bool){if !following{preservingEarlierHistory=true}}
+  func forget(){
+    deactivate();connection.forgetLocalConnection()
+    if connection.state == .unpaired{navigation.deactivate()}
+    else{notice="The saved connection could not be removed. Unlock this device and try again."}
+  }
   func olderMessages() async {preservingEarlierHistory=true;await navigation.loadOlder()}
 }

@@ -23,7 +23,7 @@ struct ChatView: View {
           if model.connection == .reconnecting || model.connection == .connecting {
             ProgressView().controlSize(.small)
           }
-          Text(model.connection.label).font(.caption)
+          Text(model.connectionLabel).font(.caption)
           Spacer()
           Button(model.connection == .revoked ? "Pair again" : "Reconnect") { model.connect() }.font(.caption.weight(.semibold)).frame(
             minHeight: 44)
@@ -41,7 +41,8 @@ struct ChatView: View {
           }
         }.padding(.leading, 24).foregroundStyle(Theme.muted)
       }
-      if let first = model.approvals.first {
+      if let native=model.native{NativeChatInputs(native:native)}
+      if model.native==nil,let first = model.approvals.first {
         ApprovalBanner(approval: first) { approval = first }.padding(.horizontal, 24).padding(
           .top, 12)
       }
@@ -57,7 +58,7 @@ struct ChatView: View {
         Label("Questions could not be checked. Reconnect or continue on your computer.", systemImage: "questionmark.bubble")
           .font(.callout).foregroundStyle(Theme.muted).padding(.horizontal, 24).padding(.vertical, 12)
       }
-      if model.status?.phase == "error" {
+      if model.native==nil,model.status?.phase == "error" {
         Label("The model could not finish. Check its setup in OpenWork on your computer.", systemImage: "exclamationmark.circle")
           .font(.callout).foregroundStyle(Theme.muted).padding(.horizontal, 24).padding(.vertical, 12)
       }
@@ -92,11 +93,11 @@ struct ChatView: View {
       } label: {
         VStack(spacing: 3) {
           Text(
-            model.workspaces.first(where: { $0.id == model.selectedWorkspace })?.name ?? "OpenWork"
+            model.workspaces.first(where: { $0.id == model.selectedWorkspace })?.name ?? model.serviceName
           ).font(.headline).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
             .fixedSize(horizontal: false, vertical: true)
           Text(
-            [model.selectedSession?.modelLabel, model.host?.displayName].compactMap { $0 }.joined(
+            [model.selectedSession?.modelLabel, model.computerName].compactMap { $0 }.joined(
               separator: " · ")
           ).font(.caption).foregroundStyle(Theme.muted)
             .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
@@ -105,7 +106,7 @@ struct ChatView: View {
       }.frame(minHeight: 44).accessibilityLabel("Model and chat settings")
         .accessibilityValue([
           model.workspaces.first(where: { $0.id == model.selectedWorkspace })?.name,
-          model.selectedSession?.modelLabel, model.host?.displayName
+          model.selectedSession?.modelLabel, model.computerName
         ].compactMap { $0 }.joined(separator: ", "))
       Spacer(minLength: 6)
       Button {
@@ -113,8 +114,7 @@ struct ChatView: View {
       } label: {
         Image(systemName: "square.and.pencil").font(.title3).frame(width: 44, height: 44)
       }.disabled(
-        model.connection != .ready || model.host?.capabilities.createSession != true
-          || model.loading
+        !model.canCreateChat
       ).accessibilityLabel("New chat")
     }.padding(.horizontal, 16).padding(.vertical, 8)
   }
@@ -129,8 +129,7 @@ struct ChatView: View {
       Button("Start a new chat") { Task { await model.createChat() } }.buttonStyle(
         PrimaryButtonStyle()
       ).disabled(
-        model.host?.capabilities.createSession != true || model.connection != .ready
-          || model.loading
+        !model.canCreateChat
       ).padding(.horizontal, 48)
       Spacer()
     }.frame(maxWidth: .infinity)
@@ -162,7 +161,7 @@ struct ChatView: View {
                   .frame(minHeight:44)
               }.accessibilityLabel("Files from this chat")
             }
-            if model.status?.phase == "running"
+            if model.isRunning
               && !model.messages.contains(where: { $0.state == "streaming" })
             {
               Label("Working on your computer…", systemImage: "ellipsis").font(.callout)
@@ -175,6 +174,7 @@ struct ChatView: View {
           g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 100
         } action: { _, value in
           nearBottom = value
+          model.followLatest(value)
           if value { newReplies = false }
         }.onAppear {
           nearBottom = true
@@ -190,8 +190,9 @@ struct ChatView: View {
             newReplies = true
           }
         }
-        if newReplies {
+        if newReplies || model.hasNewerReplies {
           Button {
+            model.jumpToLatest()
             proxy.scrollTo("bottom", anchor: .bottom)
             newReplies = false
           } label: {
