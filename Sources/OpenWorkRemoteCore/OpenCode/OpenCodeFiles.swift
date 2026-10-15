@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 
 /// Durable identity is separate from inline bytes, which stay in protected file storage.
-public struct OpenCodePromptFile:Codable,Sendable,CustomStringConvertible,CustomDebugStringConvertible {
+public struct OpenCodePromptFile:Codable,Sendable,Equatable,CustomStringConvertible,CustomDebugStringConvertible {
   public enum Placement:String,Codable,Sendable{case inline,staged}
   public let id:UUID
   public let target:OpenCodeTarget
@@ -55,7 +55,7 @@ public struct OpenCodePromptFile:Codable,Sendable,CustomStringConvertible,Custom
   static func safeName(_ name:String,mime:String)throws->String{
     guard name.utf8.count<=4_096 else{throw RemoteError.oversized}
     let base=String(name.replacingOccurrences(of:"\\",with:"/").split(separator:"/").last ?? "attachment")
-    var clean=String(String.UnicodeScalarView(base.unicodeScalars.map{$0.value<32 || $0.value==127 ? UnicodeScalar(95)! : $0}))
+    var clean=String(String.UnicodeScalarView(base.unicodeScalars.map{$0.value<32 || $0.value==127 || $0.value==96 ? UnicodeScalar(95)! : $0}))
       .trimmingCharacters(in:.whitespacesAndNewlines)
     if clean.isEmpty || clean=="." || clean==".."{clean="attachment"}
     let suffix=mime=="image/png" ? ".png" : ".pdf"
@@ -82,11 +82,19 @@ public struct OpenCodePromptFile:Codable,Sendable,CustomStringConvertible,Custom
     let width=integer(16),height=integer(20)
     return width>0 && height>0 && width<=2_000 && height<=2_000 && ((bytes+2)/3)*4<=5*1_048_576
   }
+  func usesStagingRoot(_ root:String)throws->Bool{
+    guard placement == .staged else{return true}
+    return OpenCodeIdentity.matches(serverTmp,try Self.root(root))
+  }
+  public static func ==(a:Self,b:Self)->Bool{
+    a.id==b.id && a.target==b.target && OpenCodeIdentity.matches(a.name,b.name) && a.mime==b.mime && a.bytes==b.bytes &&
+      a.sha256==b.sha256 && a.placement==b.placement && OpenCodeIdentity.matches(a.serverTmp,b.serverTmp)
+  }
   public var description:String{"OpenCodePromptFile(<redacted>)"}
   public var debugDescription:String{description}
 }
 extension OpenCodeClient {
-  private func effectiveAttachmentModel(session:OpenCodeSession,target:OpenCodeTarget) async throws -> OpenCodeModel{
+  func effectiveAttachmentModel(session:OpenCodeSession,target:OpenCodeTarget) async throws -> OpenCodeModel{
     let location=OpenCodeLocation(directory:target.directory)
     var ref=session.model
     if ref==nil,let agent=session.agent{ref=try await agents(location:location).first{$0.id==agent}?.model}

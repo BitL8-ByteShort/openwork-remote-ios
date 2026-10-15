@@ -21,7 +21,7 @@ extension OpenCodeMessage {
     case "user","synthetic":
       role=type=="user" ? "user" : "system"
       var result:[MessageBlock]=[]
-      if let text,!text.isEmpty{result.append(MessageBlock(kind:"text",text:text))}
+      if let text=displayText,!text.isEmpty{result.append(MessageBlock(kind:"text",text:text))}
       if hasAttachments{result.append(MessageBlock(kind:"omitted",label:"Attachments are available on your computer."))}
       blocks=result
     case "assistant":

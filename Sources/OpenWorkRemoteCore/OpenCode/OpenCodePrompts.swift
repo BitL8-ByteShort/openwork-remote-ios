@@ -10,35 +10,78 @@ public struct OpenCodePrompt:Codable,Sendable,Equatable,CustomStringConvertible,
   public let id:String
   public let text:String
   public let resume:Bool
+  public let files:[OpenCodePromptFile]
+  public let skills:[String]
   public init(id:String="msg_"+UUID().uuidString.replacingOccurrences(of:"-",with:"").lowercased(),
-              text:String,resume:Bool=true) throws {
-    guard text.utf8.count<=32_768 else{throw RemoteError.oversized}
+              text:String,resume:Bool=true,files:[OpenCodePromptFile]=[],skills:[String]=[]) throws {
+    guard text.utf8.count<=32_768,files.count<=4 else{throw RemoteError.oversized}
+    for file in files{try file.validate()}
+    guard files.reduce(0,{$0+$1.bytes})<=40*1_048_576 else{throw RemoteError.oversized}
     guard id.hasPrefix("msg_"),id.utf8.count<=256,
       id.unicodeScalars.allSatisfy({CharacterSet.alphanumerics.contains($0) || $0 == "_" || $0 == "-"}),
-      !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{throw RemoteError.invalidResponse}
-    self.id=id;self.text=text;self.resume=resume
+      !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || !files.isEmpty || !skills.isEmpty,
+      Set(files.map(\.id)).count==files.count,skills.count<=50,Set(skills.map(OpenCodeIdentity.key)).count==skills.count,
+      skills.allSatisfy({!$0.isEmpty && $0.utf8.count<=2_048}) else{throw RemoteError.invalidResponse}
+    self.id=id;self.text=text;self.resume=resume;self.files=files;self.skills=skills
   }
-  private enum CodingKeys:String,CodingKey{case id,text,resume}
+  private enum CodingKeys:String,CodingKey{case id,text,resume,files,skills}
   public init(from decoder:any Decoder)throws {
     let c=try decoder.container(keyedBy:CodingKeys.self)
-    try self.init(id:c.decode(String.self,forKey:.id),text:c.decode(String.self,forKey:.text),resume:c.decode(Bool.self,forKey:.resume))
+    try self.init(id:c.decode(String.self,forKey:.id),text:c.decode(String.self,forKey:.text),resume:c.decode(Bool.self,forKey:.resume),
+      files:c.decodeIfPresent([OpenCodePromptFile].self,forKey:.files) ?? [],skills:c.decodeIfPresent([String].self,forKey:.skills) ?? [])
+  }
+  var wireText:String{
+    let original=text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty ? [] : [text]
+    return (original+files.compactMap(\.stagedPath).map{"Attached file: `"+$0+"`"}).joined(separator:"\n")
+  }
+  func wireBody()throws->Data{
+    struct File:Encodable{let uri:String;let name:String}
+    struct Skill:Encodable{let id:String}
+    struct Reference:Encodable{let name:String;let mime:String;let path:String}
+    struct Metadata:Encodable{let displayText:String;let comments:[String];let attachments:[Reference]}
+    struct Body:Encodable{let id:String;let text:String;let resume:Bool;let files:[File]?;let skills:[Skill]?;let metadata:Metadata?}
+    let inline=try files.filter{$0.placement == .inline}.map{try File(uri:$0.inlineURI(),name:$0.name)}
+    let staged=files.compactMap{file in file.stagedPath.map{Reference(name:file.name,mime:file.mime,path:$0)}}
+    let body=Body(id:id,text:wireText,resume:resume,files:inline.isEmpty ? nil : inline,skills:skills.isEmpty ? nil : skills.map{Skill(id:$0)},
+      metadata:staged.isEmpty ? nil : Metadata(displayText:text,comments:[],attachments:staged))
+    let encoder=JSONEncoder();encoder.outputFormatting=[.withoutEscapingSlashes]
+    let data=try encoder.encode(body)
+    guard data.count<=56*1_048_576 else{throw RemoteError.oversized};return data
+  }
+  public static func ==(a:Self,b:Self)->Bool{
+    OpenCodeIdentity.matches(a.id,b.id) && OpenCodeIdentity.matches(a.text,b.text) && a.resume==b.resume && a.files==b.files && OpenCodeIdentity.matches(a.skills,b.skills)
   }
   public var description:String{"OpenCodePrompt(<redacted>)"}
   public var debugDescription:String{description}
 }
 
 public struct OpenCodePromptAdmission:Decodable,Sendable,CustomStringConvertible {
-  public struct Payload:Decodable,Sendable {
+  public struct Payload:Decodable,Sendable,Equatable {
     public let text:String
     public let hasAttachments:Bool
+    public let files:[OpenCodeMaterializedFile]
+    public let skillIDs:[String?]
+    let agentCount:Int
     private enum CodingKeys:String,CodingKey{case text,files,agents,skills}
     private struct Item:Decodable,Sendable {}
     public init(from decoder:any Decoder)throws {
       let c=try decoder.container(keyedBy:CodingKeys.self)
       text=try c.decode(String.self,forKey:.text)
-      hasAttachments=try [.files,.agents,.skills].contains { key in
-        !(try c.decodeIfPresent([Item].self,forKey:key) ?? []).isEmpty
-      }
+      files=try c.decodeIfPresent([OpenCodeMaterializedFile].self,forKey:.files) ?? []
+      skillIDs=try (c.decodeIfPresent([OpenCodeSkillIdentity].self,forKey:.skills) ?? []).map(\.id)
+      agentCount=try (c.decodeIfPresent([Item].self,forKey:.agents) ?? []).count
+      guard files.count<=200,skillIDs.count<=200,agentCount<=200 else{throw RemoteError.invalidResponse}
+      hasAttachments = !files.isEmpty || !skillIDs.isEmpty || agentCount>0
+    }
+    func matches(_ prompt:OpenCodePrompt)->Bool{
+      let expected=prompt.files.filter{$0.placement == .inline}
+      return OpenCodeIdentity.matches(text,prompt.wireText) && agentCount==0 && files.count==expected.count &&
+        zip(files,expected).allSatisfy{$0.matches($1)} && skillIDs.count==prompt.skills.count &&
+        zip(skillIDs,prompt.skills).allSatisfy{OpenCodeIdentity.matches($0,$1)}
+    }
+    public static func ==(a:Self,b:Self)->Bool{
+      OpenCodeIdentity.matches(a.text,b.text) && a.files==b.files && a.agentCount==b.agentCount && a.skillIDs.count==b.skillIDs.count &&
+        zip(a.skillIDs,b.skillIDs).allSatisfy{OpenCodeIdentity.matches($0,$1)}
     }
   }
   public let id:String
@@ -47,7 +90,7 @@ public struct OpenCodePromptAdmission:Decodable,Sendable,CustomStringConvertible
   public let payload:Payload
   public func matches(_ prompt:OpenCodePrompt,sessionID:String)->Bool {
     OpenCodeIdentity.matches(id,prompt.id) && OpenCodeIdentity.matches(self.sessionID,sessionID) &&
-      type=="user" && OpenCodeIdentity.matches(payload.text,prompt.text) && !payload.hasAttachments
+      type=="user" && payload.matches(prompt)
   }
   public var description:String{"OpenCodePromptAdmission(<redacted>)"}
 }
@@ -84,9 +127,16 @@ extension OpenCodeClient {
   public func send(target:OpenCodeTarget,input:OpenCodePrompt) async throws -> OpenCodePromptAdmission {
     let request:URLRequest
     do{
-      try await verifyTarget(target)
-      try await requireQualifiedWrites()
-      request=try makeRequest(segments:["api","session",target.sessionID,"prompt"],method:"POST",body:JSONEncoder().encode(input))
+      for file in input.files{guard file.target==target else{throw RemoteError.conflict}}
+      let session=try await verifyTarget(target)
+      if input.files.contains(where:{$0.placement == .inline}){
+        let model=try await effectiveAttachmentModel(session:session,target:target)
+        guard input.files.filter({$0.placement == .inline}).allSatisfy({model.capabilities.input.contains($0.mime=="image/png" ? "image" : "pdf")}) else{throw RemoteError.conflict}
+      }
+      let info=try await requireQualifiedWrites()
+      for file in input.files{guard try file.usesStagingRoot(info.paths.tmp) else{throw RemoteError.conflict}}
+      let body=try input.wireBody();try Task.checkCancellation()
+      request=try makeRequest(segments:["api","session",target.sessionID,"prompt"],method:"POST",body:body)
     }catch{
       let reason=(error as? RemoteError) ?? (error is CancellationError ? .cancelled : .unavailable)
       throw OpenCodePromptNotSubmitted(reason:reason)

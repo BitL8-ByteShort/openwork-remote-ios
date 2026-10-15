@@ -87,9 +87,10 @@ public actor OpenCodeClient {
     catch { throw RemoteError.invalidResponse }
   }
 
-  func requireQualifiedWrites() async throws {
+  @discardableResult func requireQualifiedWrites() async throws -> OpenCodeServerInfo {
     // A desktop update can replace the service while the phone stays open.
-    _ = try await info()
+    let current=try await info()
     guard compatibilityStatus == .qualified else { throw RemoteError.incompatible }
+    return current
   }
 }

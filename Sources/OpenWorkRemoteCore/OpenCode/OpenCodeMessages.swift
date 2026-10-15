@@ -31,6 +31,14 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
   public let hasError:Bool
   public let outcome:String?
   public let hasAttachments:Bool
+  private let promptPayload:OpenCodePromptAdmission.Payload?
+  private let metadata:OpenCodeMessagePresentation?
+  public var files:[OpenCodeMaterializedFile]{promptPayload?.files ?? []}
+  public var displayText:String?{
+    guard let text else{return nil}
+    return metadata?.displayText(ifMatching:text) ?? text
+  }
+  public func matches(_ prompt:OpenCodePrompt)->Bool{type=="user" && promptPayload?.matches(prompt)==true}
   public var displayNotice:String? {
     switch type {
     case "user","synthetic","assistant":nil
@@ -45,24 +53,25 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
     default:"This item is available on your computer."
     }
   }
-  private enum CodingKeys:String,CodingKey { case id,type,text,content,time,error,outcome,files,agents,skills }
+  private enum CodingKeys:String,CodingKey { case id,type,text,content,time,error,outcome,files,agents,skills,metadata }
   private struct AttachmentPresence:Decodable {}
   public init(from decoder:any Decoder) throws {
     let c = try decoder.container(keyedBy:CodingKeys.self)
     id = try c.decode(String.self,forKey:.id); type = try c.decode(String.self,forKey:.type)
     time = try c.decode(Time.self,forKey:.time)
     guard !id.isEmpty, id.utf8.count <= 2_048, time.created.isFinite else { throw RemoteError.invalidResponse }
-    text = ["user","synthetic"].contains(type) ? try c.decode(String.self,forKey:.text) : nil
+    promptPayload = ["user","synthetic"].contains(type) ? try OpenCodePromptAdmission.Payload(from:decoder) : nil
+    text = promptPayload?.text
+    metadata = promptPayload == nil ? nil : try? c.decode(OpenCodeMessagePresentation.self,forKey:.metadata)
     content = type == "assistant" ? try c.decode([OpenCodeMessageContent].self,forKey:.content) : []
     hasError = try c.contains(.error) && !c.decodeNil(forKey:.error)
     outcome = type == "idle" ? try c.decodeIfPresent(String.self,forKey:.outcome) : nil
-    hasAttachments = try [.files,.agents,.skills].contains{ key in
-      !(try c.decodeIfPresent([AttachmentPresence].self,forKey:key) ?? []).isEmpty
-    }
+    hasAttachments = promptPayload?.hasAttachments==true || (metadata?.displayText(ifMatching:text ?? "") != nil && metadata?.attachments.isEmpty==false)
     guard content.count <= 4_096 else { throw RemoteError.invalidResponse }
   }
   public var storedTextBytes:Int {
-    (text?.utf8.count ?? 0) + content.reduce(0){$0 + ($1.text?.utf8.count ?? 0) + ($1.toolSummary?.utf8.count ?? 0)}
+    (text?.utf8.count ?? 0) + content.reduce(0){$0 + ($1.text?.utf8.count ?? 0) + ($1.toolSummary?.utf8.count ?? 0)} +
+      files.reduce(0){$0 + ($1.name?.utf8.count ?? 0) + ($1.mime?.utf8.count ?? 0) + ($1.sourceURI?.utf8.count ?? 0) + 128} + (metadata?.storedBytes ?? 0)
   }
 }
 public struct OpenCodeMessagePage: Decodable, Sendable { public let data:[OpenCodeMessage]; public let cursor:OpenCodeCursor }

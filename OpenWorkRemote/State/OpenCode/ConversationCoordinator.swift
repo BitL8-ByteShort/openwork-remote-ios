@@ -139,7 +139,7 @@ enum NativeStreamState {case stopped,connecting,live,polling}
       var read=page,cursors=Set<String>()
       for _ in 0..<20 {
         if let item=read.data.first(where:{$0.id==pending.prompt.id}) {
-          matches=item.type=="user" && item.text.map{OpenCodeIdentity.matches($0,pending.prompt.text)}==true && !item.hasAttachments;break
+          matches=item.matches(pending.prompt);break
         }
         guard let cursor=read.cursor.next,cursors.insert(cursor).inserted else{break}
         read=try await service.messages(sessionID:target.sessionID,cursor:cursor)
