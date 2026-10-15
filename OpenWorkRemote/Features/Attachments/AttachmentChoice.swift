@@ -11,4 +11,3 @@ struct AttachmentChoice: View {
       .overlay(RoundedRectangle(cornerRadius:18).stroke(Theme.line))
   }
 }
-
