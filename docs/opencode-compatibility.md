@@ -1,6 +1,6 @@
 # OpenCode compatibility
 
-The OpenCode migration is under development. No native-backend PocketWork build has been distributed yet. The released OpenWork beta is a separate, older connection path.
+The OpenCode migration is under development. No native-backend PocketWork build has been distributed yet. Earlier-beta recovery is described in the [migration guide](migrating-from-openwork.md).
 
 Scoped native contract checks have passed against **OpenCode 2.0.29** on macOS and Ubuntu Linux. This does not qualify the complete source candidate for release. Native pairing uses OpenCode’s built-in HTTPS remote access. The computer must keep OpenCode running. There is no PocketWork bridge, Tailscale requirement or general remote-shell API in this connection path.
 
@@ -12,7 +12,7 @@ Scoped native contract checks have passed against **OpenCode 2.0.29** on macOS a
 | --- | --- | --- |
 | Pair, re-pair and saved connection | Typed host checks; native default startup and storage/Keychain retry paths; Simulator Release startup | Final joined foreground/network-change and physical update qualification remain |
 | Projects, chats and paged history | Both host checks; Simulator flows; exact-folder selection recovery regressions | Final joined restoration and complete physical-device matrix remain |
-| Text, photos and PDF attachments | Native transfer/admission checks on both hosts | Provider execution and physical Photos/Files qualification remain |
+| Text, photos and PDF attachments | Both host transfer/admission checks; production text replies on Mac and NUC | Photo/PDF provider ingestion and physical Photos/Files qualification remain |
 | Results, project files and sharing | Both host checks; Simulator preview/export | Explicit selection; contained files; 20 MiB download cap; physical sharing remains |
 | Models, variants and agents | Native per-chat controls and Simulator UI | Computer’s catalog; unavailable choices never silently substitute another model |
 | Chat rules, approvals and forms | Native components and scoped host checks | Ordinary-host approval-request lifecycle still needs joined provider qualification; clean isolated approval proof is separate |
@@ -45,9 +45,17 @@ Working-copy review only calls the native VCS information, status and working-di
 
 October 15 checks cover actual Mac and NUC 2.0.29 native HTTPS, isolated disposable Git/plain directories, Unicode paths, rename/binary status, working diff, selected model/agent creation and synthetic skill materialization with execution disabled. Disposable chats and hash-verified fixture files were removed; existing session records were unchanged. Temporary Git project records are left to OpenCode’s own missing-directory archival; the tests do not edit its database.
 
-Native feature suites cover iPhone/iPad27, with additional SE3/iOS26.5 maximum-text, keyboard and reader checks. Default native startup and offline information, consent/reset and local recovery have their own state/UI checks. Some DEBUG fixture cases reduce animations after XCTest notification waits; these do not establish physical tap latency. Full accessibility/multitasking/hardware-keyboard coverage, joined provider execution, physical-device evidence and distribution remain separate gates. See [accessibility](accessibility-qualification.md) and [rendering measurements](rendering-and-responsiveness.md).
+Native feature suites cover iPhone/iPad27, with additional SE3/iOS26.5 maximum-text, keyboard and reader checks. Default native startup and offline information, consent/reset and local recovery have their own state/UI checks. Some DEBUG fixture cases reduce animations after XCTest notification waits; these do not establish physical tap latency. Full accessibility/multitasking/hardware-keyboard coverage, the remaining joined feature/lifecycle matrix, physical-device evidence and distribution remain separate gates. See [accessibility](accessibility-qualification.md) and [rendering measurements](rendering-and-responsiveness.md).
 
 Native interfaces: [VCS](https://github.com/anomalyco/opencode/blob/v2.0.29/packages/protocol/src/groups/vcs.ts), [skills](https://github.com/anomalyco/opencode/blob/v2.0.29/packages/protocol/src/groups/skill.ts), [skill materialization](https://github.com/anomalyco/opencode/blob/v2.0.29/packages/core/src/session/prompt.ts), [skill preparation](https://github.com/anomalyco/opencode/blob/v2.0.29/packages/core/src/skill.ts).
+
+## Production-app checkpoint
+
+On October 15, the normal iPad Simulator Release paired with the actual Mac OpenCode2.0.29 HTTPS endpoint, changed its disposable chat to an existing LM Studio Qwen3.5 9B model and returned a real reply. The normal iPhone Simulator Release did the same with the NUC and its existing Ollama Gemma4:e2b model. Both required deliberate sharing review, and both replies were confirmed in native history and the app. Mac project-file preview and the system iPad share sheet also passed. The NUC chat was renamed through long-press → Rename and confirmed on the computer.
+
+These flows ran on source7313861. Source36a9b47 simplifies history memory accounting for CI's compiler; both hosted CI checks pass, and its production iPhone Release restores the real NUC connection/chat/reply. This is separate from physical acceptance and TestFlight availability.
+
+A model appearing in OpenCode's catalog does not guarantee that its provider will accept a request. The tested Muse Spark1.3 free model returned HTTP403 with a restriction to use within OpenCode. That attempt was recorded as a provider failure. The successful checks used already configured local providers, with no new paid account or service. Check the selected provider on your computer if a task ends with an error.
 
 ## Legacy source separation
 
