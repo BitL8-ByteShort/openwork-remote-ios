@@ -14,6 +14,15 @@ public struct OpenCodeProject: Codable, Sendable, Identifiable, Equatable {
   public var displayName:String { name ?? URL(fileURLWithPath:canonical).lastPathComponent }
 }
 public struct OpenCodeLocation: Codable, Sendable, Equatable { public let directory:String }
+public struct OpenCodeLocationInfo: Decodable, Sendable, Equatable {
+  public struct Project: Decodable, Sendable, Equatable {
+    public let id:String
+    public let directory:String
+    public let canonical:String
+  }
+  public let directory:String
+  public let project:Project
+}
 public struct OpenCodeSession: Codable, Sendable, Identifiable, Equatable {
   public struct Time: Codable, Sendable, Equatable { public let created:Double; public let updated:Double; public let idle:Double?; public let archived:Double? }
   public let id:String
@@ -25,6 +34,17 @@ public struct OpenCodeSession: Codable, Sendable, Identifiable, Equatable {
 }
 public struct OpenCodeSessionPage: Decodable, Sendable { public let data:[OpenCodeSession]; public let cursor:OpenCodeCursor }
 extension OpenCodeClient {
+  public func location(directory:String?) async throws -> OpenCodeLocationInfo {
+    if let directory { try OpenCodeLocation.validate(directory) }
+    let query=directory.map{[URLQueryItem(name:"location[directory]",value:$0)]} ?? []
+    let result=try await decode(OpenCodeLocationInfo.self,segments:["api","location"],query:query)
+    try OpenCodeLocation.validate(result.directory)
+    try OpenCodeLocation.validate(result.project.directory)
+    try OpenCodeLocation.validate(result.project.canonical)
+    guard !result.project.id.isEmpty,result.project.id.utf8.count<=2_048 else{throw RemoteError.invalidResponse}
+    if let directory,directory != result.directory {throw RemoteError.conflict}
+    return result
+  }
   public func projects() async throws -> [OpenCodeProject] {
     let result = try await decode([OpenCodeProject].self,segments:["api","project"])
     guard result.count <= 10_000, Set(result.map(\.id)).count == result.count,
@@ -54,6 +74,13 @@ extension OpenCodeClient {
     guard result.id == id, !result.projectID.isEmpty,
       result.location.directory.hasPrefix("/"), !result.location.directory.contains("\0") else { throw RemoteError.invalidResponse }
     return result
+  }
+}
+extension OpenCodeLocation {
+  static func validate(_ directory:String) throws {
+    guard directory.hasPrefix("/"),directory.utf8.count<=8_192,!directory.contains("\0") else {
+      throw RemoteError.invalidResponse
+    }
   }
 }
 extension OpenCodeCursor {

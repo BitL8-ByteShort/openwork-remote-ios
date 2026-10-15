@@ -30,6 +30,7 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
   public let time:Time
   public let hasError:Bool
   public let outcome:String?
+  public let hasAttachments:Bool
   public var displayNotice:String? {
     switch type {
     case "user","synthetic","assistant":nil
@@ -44,7 +45,8 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
     default:"This item is available on your computer."
     }
   }
-  private enum CodingKeys:String,CodingKey { case id,type,text,content,time,error,outcome }
+  private enum CodingKeys:String,CodingKey { case id,type,text,content,time,error,outcome,files,agents,skills }
+  private struct AttachmentPresence:Decodable {}
   public init(from decoder:any Decoder) throws {
     let c = try decoder.container(keyedBy:CodingKeys.self)
     id = try c.decode(String.self,forKey:.id); type = try c.decode(String.self,forKey:.type)
@@ -54,6 +56,9 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
     content = type == "assistant" ? try c.decode([OpenCodeMessageContent].self,forKey:.content) : []
     hasError = try c.contains(.error) && !c.decodeNil(forKey:.error)
     outcome = type == "idle" ? try c.decodeIfPresent(String.self,forKey:.outcome) : nil
+    hasAttachments = try [.files,.agents,.skills].contains{ key in
+      !(try c.decodeIfPresent([AttachmentPresence].self,forKey:key) ?? []).isEmpty
+    }
     guard content.count <= 4_096 else { throw RemoteError.invalidResponse }
   }
   public var storedTextBytes:Int {

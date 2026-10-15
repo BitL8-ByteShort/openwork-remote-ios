@@ -70,4 +70,23 @@ actor NativeHistoryTransport: HTTPTransport {
     let bad=#"{"data":[{"id":"msg_broken","type":"user","time":{"created":1}}],"cursor":{}}"#
     await #expect(throws:RemoteError.invalidResponse) { _ = try await client(NativeResponseTransport(bad)).messages(sessionID:"ses_test",cursor:nil) }
   }
+  @Test func locationPreservesProjectAndWorktreeRatherThanGuessingCanonicalDirectory() async throws {
+    let body=#"{"directory":"/projects/C++/worktree","project":{"id":"project","directory":"/projects/C++/worktree","canonical":"/projects/C++"}}"#
+    let transport=NativeResponseTransport(body), client=try client(transport)
+    let location=try await client.location(directory:"/projects/C++/worktree")
+    #expect(location.directory == "/projects/C++/worktree")
+    #expect(location.project.canonical == "/projects/C++")
+    let request=try #require(await transport.firstRequest())
+    let url=try #require(request.url)
+    #expect(URLComponents(url:url,resolvingAgainstBaseURL:false)?.percentEncodedQuery?.contains("%2B%2B") == true)
+  }
+  @Test func defaultLocationIsExplicitAndMismatchedResolutionIsRejected() async throws {
+    let body=#"{"directory":"/home/test/notes","project":{"id":"global","directory":"/home/test/notes","canonical":"/"}}"#
+    let transport=NativeResponseTransport(body), client=try client(transport)
+    let location=try await client.location(directory:nil)
+    #expect(location.directory == "/home/test/notes")
+    #expect(location.project.canonical == "/")
+    #expect(await transport.firstRequest()?.url?.query == nil)
+    await #expect(throws:RemoteError.conflict) { _ = try await client.location(directory:"/different") }
+  }
 }
