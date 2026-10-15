@@ -32,6 +32,7 @@ enum NativeStreamState {case stopped,connecting,live,polling}
     snapshotSink=snapshot;eventSink=event;resyncSink=resync
   }
   @ObservationIgnored private var dirty=false
+  @ObservationIgnored private var openingSnapshot=false
   @ObservationIgnored private var seenEvents:[String]=[]
   init(journal:NativeConversationJournal){self.journal=journal}
   func activate(target:OpenCodeTarget,service:any OpenCodeConversationServing) async {
@@ -40,18 +41,29 @@ enum NativeStreamState {case stopped,connecting,live,polling}
     if mutationService != identity{mutationEpoch=UUID();mutationService=identity}
     self.target=target;self.service=service
     let current=generation
+    openingSnapshot=true
+    defer{
+      if current==generation{openingSnapshot=false;if dirty{requestRefresh()}}
+    }
     await subscribe(current:current,attempt:0)
     guard current==generation else{return}
-    await refresh()
+    await readSnapshot()
   }
   func deactivate(){mutationEpoch=UUID();mutationService=nil;clearSelection()}
   /// Navigation can stop old reads without abandoning an authorized, captured send.
   func clearSelection() {
     generation=UUID();consumer?.cancel();recovery?.cancel();refreshTask?.cancel()
     consumer=nil;recovery=nil;refreshTask=nil;service=nil;target=nil;latest=[];seenEvents=[]
-    dirty=false;isActive=false;currentSession=nil;stopping=false;loading=false;issue=nil;streamState = .stopped;liveText.reset()
+    dirty=false;openingSnapshot=false;isActive=false;currentSession=nil;stopping=false;loading=false;issue=nil;streamState = .stopped;liveText.reset()
   }
   func refresh() async {
+    // Keep the first authoritative read owned by activate(). An initial
+    // server.connected event can otherwise supersede it and return an empty
+    // selection to the shell while its replacement read is still running.
+    guard !openingSnapshot else{dirty=true;return}
+    await readSnapshot()
+  }
+  private func readSnapshot() async {
     guard let service,let target else{return}
     let current=generation;snapshotSequence &+= 1;let sequence=snapshotSequence
     loading=true
@@ -224,7 +236,7 @@ enum NativeStreamState {case stopped,connecting,live,polling}
     requestRefresh()
   }
   private func requestRefresh() {
-    dirty=true;guard refreshTask==nil else{return}
+    dirty=true;guard !openingSnapshot,refreshTask==nil else{return}
     let current=generation
     refreshTask=Task{[weak self] in
       guard let self else{return}

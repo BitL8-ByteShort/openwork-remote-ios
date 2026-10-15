@@ -9,6 +9,14 @@ actor NativeShellTransport:HTTPTransport {
   var waiters:[CheckedContinuation<Void,Never>]=[]
   var catalogReads=0
   var holdFirstHistory=true
+  var initialEventRace=false
+  var racedHistoryReads=0
+  var raceHeld:[Int:CheckedContinuation<Void,Never>]=[:]
+  var eventContinuation:AsyncThrowingStream<SSEFrame,any Error>.Continuation?
+  func enableInitialEventRace(){initialEventRace=true;holdFirstHistory=false}
+  func releaseRaceRead(_ number:Int){raceHeld.removeValue(forKey:number)?.resume()}
+  func raceReadCount()->Int{racedHistoryReads}
+  func emitConnected(){eventContinuation?.yield(SSEFrame(event:"message",id:nil,data:#"{"id":"evt_connected","type":"server.connected","data":{}}"#))}
   var admitted:[String:Any]?
   var prompts=0
   var infoStatus=200
@@ -34,6 +42,7 @@ actor NativeShellTransport:HTTPTransport {
     case "/api/session":value=["data":[record],"cursor":[:]]
     case "/api/session/ses_owned":value=["data":record]
     case "/api/session/ses_owned/message":
+      if initialEventRace{racedHistoryReads+=1;let read=racedHistoryReads;await withCheckedContinuation{raceHeld[read]=$0}}
       if holdFirstHistory{holdFirstHistory=false;await withCheckedContinuation{c in held=c;waiters.forEach{$0.resume()};waiters=[]}}
       value=["data":[["id":"msg_owned","type":"user","text":"Native message","time":["created":1]]],"cursor":[:]]
     case "/api/session/ses_owned/prompt":
@@ -54,7 +63,7 @@ actor NativeShellTransport:HTTPTransport {
     }
     return(try JSONSerialization.data(withJSONObject:value),path=="/api/info" ? infoStatus:200)
   }
-  func events(for request:URLRequest) async throws -> AsyncThrowingStream<SSEFrame,any Error>{paths.append(request.url!.path);return AsyncThrowingStream{_ in}}
+  func events(for request:URLRequest) async throws -> AsyncThrowingStream<SSEFrame,any Error>{paths.append(request.url!.path);let pair=AsyncThrowingStream<SSEFrame,any Error>.makeStream();eventContinuation=pair.continuation;return pair.stream}
   func waitForHeldHistory() async{if held != nil{return};await withCheckedContinuation{waiters.append($0)}}
   func releaseHistory(){held?.resume();held=nil}
   func calledPaths()->[String]{paths}
@@ -62,6 +71,36 @@ actor NativeShellTransport:HTTPTransport {
   func sentPrompts()->Int{prompts}
 }
 @Suite @MainActor struct NativeAppCoordinatorTests {
+  @Test(.timeLimit(.minutes(1))) func initialConnectedEventDoesNotReportAChatLoadFailure()async throws{
+    let directory=FileManager.default.temporaryDirectory.appending(path:"native-first-snapshot-"+UUID().uuidString)
+    defer{try? FileManager.default.removeItem(at:directory)}
+    let saved=try nativeStored(),transport=NativeShellTransport();await transport.enableInitialEventRace()
+    let app=try NativeAppCoordinator(directory:directory,connectionPersistence:OpenCodePersistence(load:{saved},save:{_ in},remove:{}),transport:transport)
+    defer{app.deactivate()}
+    try await app.start()
+    let chat=try #require(app.navigation.sessions.first)
+    let opening=Task{await app.open(chat)}
+    let deadline=ContinuousClock.now.advanced(by:.seconds(5))
+    while await transport.raceReadCount()<1,ContinuousClock.now<deadline{try await Task.sleep(for:.milliseconds(10))}
+    #expect(await transport.raceReadCount()==1)
+    await transport.emitConnected()
+    // Hold the authoritative first read long enough for the connected-event debounce.
+    try await Task.sleep(for:.milliseconds(400))
+    await transport.releaseRaceRead(1)
+    await opening.value
+    let loadedAtReturn=app.conversation.currentSession?.id
+    let noticeAtReturn=app.notice
+    // Finish any queued resnapshot before asserting, including on the unfixed code.
+    let resyncDeadline=ContinuousClock.now.advanced(by:.seconds(3))
+    while await transport.raceReadCount()<2,ContinuousClock.now<resyncDeadline{try await Task.sleep(for:.milliseconds(10))}
+    await transport.releaseRaceRead(2)
+    let finalDeadline=ContinuousClock.now.advanced(by:.seconds(3))
+    while app.conversation.loading,ContinuousClock.now<finalDeadline{try await Task.sleep(for:.milliseconds(10))}
+    #expect(loadedAtReturn=="ses_owned")
+    #expect(noticeAtReturn==nil)
+    #expect(app.messages.first?.blocks.first?.text=="Native message")
+    #expect(app.notice==nil)
+  }
   @Test func authenticationFailureImmediatelyDeactivatesChildStores()async throws{
     let directory=FileManager.default.temporaryDirectory.appending(path:"native-auth-retirement-"+UUID().uuidString)
     defer{try? FileManager.default.removeItem(at:directory)}
