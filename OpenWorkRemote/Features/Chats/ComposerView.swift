@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ComposerView: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(AppModel.self) private var model
   @FocusState private var focused: Bool
   @State private var attachments: AttachmentPresentation?
@@ -55,13 +56,13 @@ struct ComposerView: View {
             focused=false
             if let context=model.native?.workspace.context{nativeSkills=context}else{skills=true}
           }
-        }label:{Image(systemName:"plus").font(.title3).frame(width:44,height:44)}
+        }label:{Image(systemName:"plus").font(.system(size:20)).frame(width:44,height:44)}
           .disabled(model.selectedSession == nil || model.sending).accessibilityLabel("Add to message").accessibilityIdentifier("composer-add")
         TextField(
-          "Message \(model.serviceName)", text: Binding(get: { model.draft }, set: { model.draft = $0 }),
+          dynamicTypeSize.isAccessibilitySize ? "Message":"Message \(model.serviceName)", text: Binding(get: { model.draft }, set: { model.draft = $0 }),
           axis: .vertical
-        ).font(.body).lineLimit(1...6).focused($focused).padding(.vertical, 14)
-          .accessibilityIdentifier("composer")
+        ).font(.body).lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 3:6)).focused($focused).padding(.vertical, 14)
+          .accessibilityLabel("Message \(model.serviceName)").accessibilityIdentifier("composer")
         if model.isRunning || model.stopRequested {
           Button {
             Task { await model.stop() }
@@ -69,7 +70,7 @@ struct ComposerView: View {
             if model.stopRequested {
               ProgressView().tint(Theme.onAccent)
             } else {
-              Image(systemName: "stop.fill").font(.body.weight(.semibold))
+              Image(systemName: "stop.fill").font(.system(size:18,weight:.semibold))
             }
           }.frame(width: 44, height: 44).background(Theme.accent, in: Circle()).foregroundStyle(
             Theme.onAccent
@@ -80,7 +81,7 @@ struct ComposerView: View {
             focused = false
             Task { await model.send() }
           } label: {
-            if model.native?.preparingSend==true{ProgressView().frame(width:44,height:44)}else{Image(systemName: "arrow.up").font(.title3.weight(.semibold)).frame(
+            if model.native?.preparingSend==true{ProgressView().frame(width:44,height:44)}else{Image(systemName: "arrow.up").font(.system(size:20,weight:.semibold)).frame(
               width: 44, height: 44)}
           }.background(model.canSend ? Theme.accent : Theme.line, in: Circle()).foregroundStyle(
             model.canSend ? Theme.onAccent : Theme.muted
@@ -89,9 +90,11 @@ struct ComposerView: View {
         }
       }.padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 8).background(
         Theme.surface, in: RoundedRectangle(cornerRadius: 26))
+      if !dynamicTypeSize.isAccessibilitySize || model.connection != .ready{
       Text(model.connection == .ready ? "Runs on your computer" : model.connectionLabel).font(
         .caption
-      ).foregroundStyle(Theme.muted).frame(maxWidth: .infinity)
+      ).foregroundStyle(Theme.muted).multilineTextAlignment(.center).fixedSize(horizontal:false,vertical:true).frame(maxWidth: .infinity)
+      }
     }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
       .frame(maxWidth: Theme.contentMaxWidth).frame(maxWidth: .infinity).background(Theme.background)
       .sheet(isPresented:$skills){NavigationStack{SkillListView().toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){skills=false}}}}}

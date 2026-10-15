@@ -125,7 +125,7 @@ struct SetupIllustration: View {
         ).overlay(alignment:.topLeading) { OpenCodeBrandMark().frame(width:8,height:10).padding(.leading,11).padding(.top,26) }
         .overlay(RoundedRectangle(cornerRadius: 21).stroke(Theme.ink, lineWidth: 7)).offset(
           x: 32, y: 48)
-        Image(systemName: "link").font(.title2).foregroundStyle(Theme.accent).padding(13)
+        Image(systemName: "link").font(.system(size:22)).foregroundStyle(Theme.accent).padding(13)
           .background(Theme.background, in: Circle()).offset(x: -58, y: 24)
       }
     }.frame(height: 264).accessibilityHidden(true)

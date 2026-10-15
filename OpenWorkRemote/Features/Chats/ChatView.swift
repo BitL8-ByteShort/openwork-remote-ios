@@ -16,8 +16,13 @@ struct ChatView: View {
   @State private var newReplies = false
   @AppStorage("compactToolActivity") private var compactToolActivity = true
   var body: some View {
+    GeometryReader{geometry in
+      layout(compactControls:dynamicTypeSize.isAccessibilitySize && geometry.size.height<500)
+    }
+  }
+  private func layout(compactControls:Bool)->some View{
     VStack(spacing: 0) {
-      header
+      header(compact:compactControls)
       if model.connection != .ready {
         HStack {
           if model.connection == .reconnecting || model.connection == .connecting {
@@ -41,7 +46,7 @@ struct ChatView: View {
           }
         }.padding(.leading, 24).foregroundStyle(Theme.muted)
       }
-      if let native=model.native{NativeChatInputs(native:native)}
+      if let native=model.native{NativeChatInputs(native:native,compact:compactControls)}
       if model.native==nil,let first = model.approvals.first {
         ApprovalBanner(approval: first) { approval = first }.padding(.horizontal, 24).padding(
           .top, 12)
@@ -83,28 +88,32 @@ struct ChatView: View {
       if let native=model.native{NativeChatLocationView(native:native,request:request)}
     }.nativeSharingReview(model.native,operation:.message)
   }
-  private var header: some View {
+  private func header(compact:Bool)->some View {
     HStack {
       Button {
         InteractionMetrics.measure("Open history handler") { sheet = .chats }
       } label: {
-        Image(systemName: "line.3.horizontal").font(.title3).frame(width: 44, height: 44)
+        Image(systemName: "line.3.horizontal").font(.system(size:22)).frame(width: 44, height: 44)
       }.accessibilityLabel("Open chat history")
       Spacer(minLength: 6)
       Button {
         sheet = .model
       } label: {
         VStack(spacing: 3) {
+          if compact{Image(systemName:"slider.horizontal.3").font(.system(size:22)).frame(width:44,height:44)}else{
           Text(
             model.workspaces.first(where: { $0.id == model.selectedWorkspace })?.name ?? model.serviceName
-          ).font(.headline).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+          ).font(.headline).lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             .fixedSize(horizontal: false, vertical: true)
+          if !dynamicTypeSize.isAccessibilitySize{
           Text(
             [model.selectedSession?.modelLabel, model.computerName].compactMap { $0 }.joined(
               separator: " · ")
           ).font(.caption).foregroundStyle(Theme.muted)
             .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
             .fixedSize(horizontal: false, vertical: true)
+          }
+          }
         }
       }.frame(minHeight: 44).accessibilityLabel("Model and chat settings")
         .accessibilityValue([
@@ -115,11 +124,11 @@ struct ChatView: View {
       Button {
         Task { await model.createChat() }
       } label: {
-        Image(systemName: "square.and.pencil").font(.title3).frame(width: 44, height: 44)
+        Image(systemName: "square.and.pencil").font(.system(size:22)).frame(width: 44, height: 44)
       }.disabled(
         !model.canCreateChat
       ).accessibilityLabel("New chat")
-    }.padding(.horizontal, 16).padding(.vertical, 8)
+    }.padding(.horizontal, 16).padding(.vertical, 8).fixedSize(horizontal:false,vertical:true)
   }
   private var empty: some View {
     VStack(spacing: 20) {
@@ -160,9 +169,9 @@ struct ChatView: View {
             // of the message stack's estimated heights for long replies.
             if model.canBrowseFiles {
               Button { sheet = .files } label: {
-                Label("Files from this chat",systemImage:"doc.on.doc").font(.callout.weight(.medium))
+                HStack(spacing:10){Image(systemName:"doc.on.doc").font(.system(size:20));Text("Files from this chat").font(.callout.weight(.medium)).fixedSize(horizontal:false,vertical:true)}
                   .frame(minHeight:44)
-              }.accessibilityLabel("Files from this chat")
+              }.accessibilityElement(children:.ignore).accessibilityLabel("Files from this chat")
             }
             if model.isRunning
               && !model.messages.contains(where: { $0.state == "streaming" })
@@ -173,7 +182,7 @@ struct ChatView: View {
             Color.clear.frame(height: 1).id("bottom")
           }.padding(.horizontal, 24).padding(.bottom, 16)
             .frame(maxWidth: Theme.contentMaxWidth).frame(maxWidth: .infinity)
-        }.defaultScrollAnchor(.bottom, for:.initialOffset)
+        }.accessibilityIdentifier("chat-conversation").defaultScrollAnchor(.bottom, for:.initialOffset)
         .onScrollGeometryChange(for: Bool.self) { g in
           g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 100
         } action: { _, value in
