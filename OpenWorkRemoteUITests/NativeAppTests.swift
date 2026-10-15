@@ -369,14 +369,29 @@ final class NativeAppTests:XCTestCase {
     XCTAssertFalse(app.buttons["New replies"].exists)
   }
   @MainActor func testNativePhotoSelectionAndFileOnlySend(){
+    let systemPicker=ProcessInfo.processInfo.environment["POCKETWORK_USE_SYSTEM_PHOTO_PICKER"]=="1"
+    if systemPicker{
+      guard let expected=ProcessInfo.processInfo.environment["POCKETWORK_PHOTO_SIMULATOR_ID"],
+        ProcessInfo.processInfo.environment["SIMULATOR_UDID"]==expected else{
+        XCTFail("System photo selection requires the explicitly seeded qualification Simulator");return
+      }
+    }
     let app=launch()
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:4))
     app.buttons["Open chat history"].tap()
     app.buttons.containing(.staticText,identifier:"Native chat").firstMatch.tap()
     XCTAssertTrue(app.buttons["composer-add"].waitForExistence(timeout:4))
     app.buttons["composer-add"].tap()
-    let sample=app.buttons["native-fixture-photo"]
-    XCTAssertTrue(sample.waitForExistence(timeout:4));sample.tap()
+    if systemPicker{
+      app.buttons["Photos"].tap()
+      let buttons=app.buttons.matching(NSPredicate(format:"label BEGINSWITH %@","Photo,"))
+      let images=app.images.matching(NSPredicate(format:"label BEGINSWITH %@","Photo,"))
+      let photo=buttons.firstMatch.waitForExistence(timeout:10) ? buttons.firstMatch:images.firstMatch
+      XCTAssertTrue(photo.waitForExistence(timeout:10));photo.tap()
+    }else{
+      let sample=app.buttons["native-fixture-photo"]
+      XCTAssertTrue(sample.waitForExistence(timeout:4));sample.tap()
+    }
     allowSharing(app)
     let chips=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","native-attachment-chip-"))
     let ready=expectation(for:NSPredicate{_,_ in chips.count==1 && chips.firstMatch.value as? String == "Ready"},evaluatedWith:nil)
