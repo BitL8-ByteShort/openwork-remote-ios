@@ -9,6 +9,14 @@ public struct OpenCodeModelRef:Codable,Sendable,Equatable,Hashable {
       variant.map({!$0.isEmpty && $0.utf8.count<=256}) ?? true else{throw RemoteError.invalidResponse}
     self.providerID=providerID;self.id=id;self.variant=variant
   }
+  /// OpenCode 2.0.29 switchModel treats nil and the literal default as the same selection.
+  /// Preserve raw wire equality separately for identities and persistence.
+  public var isDefaultVariant:Bool{variant==nil || OpenCodeIdentity.matches(variant,"default")}
+  public static func sameSelection(_ a:Self?,_ b:Self?)->Bool{
+    guard let a,let b else{return a==nil && b==nil}
+    return OpenCodeIdentity.matches(a.providerID,b.providerID) && OpenCodeIdentity.matches(a.id,b.id) &&
+      ((a.isDefaultVariant && b.isDefaultVariant) || OpenCodeIdentity.matches(a.variant,b.variant))
+  }
   private enum CodingKeys:String,CodingKey{case providerID,id,variant}
   public init(from decoder:any Decoder)throws {
     let c=try decoder.container(keyedBy:CodingKeys.self)
@@ -40,7 +48,7 @@ public struct OpenCodeModel:Decodable,Sendable,Equatable {
   public var selectable:Bool{enabled && ["alpha","beta","deprecated","active"].contains(status)}
   func accepts(_ ref:OpenCodeModelRef)->Bool {
     selectable && OpenCodeIdentity.matches(ref.providerID,providerID) && OpenCodeIdentity.matches(ref.id,id) &&
-      (ref.variant.map{variant in variants.contains{OpenCodeIdentity.matches($0.id,variant)}} ?? true)
+      (ref.isDefaultVariant || (ref.variant.map{variant in variants.contains{OpenCodeIdentity.matches($0.id,variant)}} ?? false))
   }
 }
 public enum OpenCodePermissionEffect:String,Codable,Sendable{case allow,deny,ask}
@@ -120,13 +128,13 @@ extension OpenCodeClient {
   }
   public func setModel(target:OpenCodeTarget,model:OpenCodeModelRef,expectedModel:OpenCodeModelRef?) async throws -> OpenCodeSession {
     let before=try await verifyTarget(target)
-    guard before.model==expectedModel else{throw RemoteError.conflict}
+    guard OpenCodeModelRef.sameSelection(before.model,expectedModel) else{throw RemoteError.conflict}
     let catalog=try await models(location:OpenCodeLocation(directory:target.directory))
     guard catalog.contains(where:{$0.accepts(model)}) else{throw RemoteError.invalidResponse}
     struct Body:Encodable{let model:OpenCodeModelRef}
     _ = try await data(segments:["api","session",target.sessionID,"model"],method:"POST",body:JSONEncoder().encode(Body(model:model)))
     let actual=try await session(id:target.sessionID)
-    guard actual.model==model,actual.projectID==target.projectID,OpenCodeIdentity.matches(actual.location.directory,target.directory) else{throw RemoteError.conflict}
+    guard OpenCodeModelRef.sameSelection(actual.model,model),actual.projectID==target.projectID,OpenCodeIdentity.matches(actual.location.directory,target.directory) else{throw RemoteError.conflict}
     return actual
   }
   public func setAgent(target:OpenCodeTarget,agentID:String,expectedAgent:String?) async throws -> OpenCodeSession {

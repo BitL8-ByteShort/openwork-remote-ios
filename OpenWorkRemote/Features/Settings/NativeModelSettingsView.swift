@@ -40,7 +40,7 @@ struct NativeModelSettingsView:View {
               guard let choice=draft.selection(in:snapshot.models) else{return}
               Task{_ = await store.setModel(choice,review:review);captureActual()}
             } label:{HStack{Text("Apply model to this chat");Spacer();if store.busy{ProgressView()}}}
-              .disabled(!store.canEdit(context) || draft.selection(in:snapshot.models)==nil || draft.selection(in:snapshot.models)==draft.current)
+              .disabled(!store.canEdit(context) || draft.selection(in:snapshot.models)==nil || OpenCodeModelRef.sameSelection(draft.selection(in:snapshot.models),draft.current))
               .accessibilityIdentifier("native-model-apply")
           } footer:{Text("Models and variants come from OpenCode on your computer. This changes only this chat.")}
           Section {

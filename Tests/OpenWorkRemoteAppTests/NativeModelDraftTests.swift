@@ -12,6 +12,14 @@ import OpenWorkRemoteCore
     if let model{value["model"]=try! JSONSerialization.jsonObject(with:JSONEncoder().encode(model))}
     return try! JSONDecoder().decode(OpenCodeSession.self,from:JSONSerialization.data(withJSONObject:value))
   }
+  @Test func literalDefaultVariantDisplaysTheNativeDefaultWithoutAnUnavailableChoice() throws {
+    let current=try OpenCodeModelRef(providerID:"provider",id:"model",variant:"default")
+    let snapshot=NativeControlSnapshot(session:session(current),models:[model(variants:[])],agents:[],serverDefault:nil,requests:[],saved:[])
+    let draft=NativeModelDraft(snapshot:snapshot)
+    #expect(draft.variant.isEmpty)
+    #expect(draft.selection(in:snapshot.models)?.variant==nil)
+    #expect(draft.selection(in:snapshot.models) != nil)
+  }
   @Test func missingDesktopSelectionNeverFallsBackToTheFirstCatalogEntry() throws {
     let removed=try OpenCodeModelRef(providerID:"old",id:"removed",variant:"custom")
     let snapshot=NativeControlSnapshot(session:session(removed),models:[model()],agents:[],serverDefault:model(),requests:[],saved:[])

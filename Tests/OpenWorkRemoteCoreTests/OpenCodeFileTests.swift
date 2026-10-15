@@ -7,6 +7,7 @@ actor NativeFileTransport:HTTPTransport {
   var selected="model"
   var requests:[URLRequest]=[]
   var lost=false
+  var defaultVariant=false
   init(pdf:Bool){self.pdf=pdf}
   func data(for request:URLRequest) async throws -> (Data,Int){
     requests.append(request);let path=request.url!.path
@@ -17,9 +18,10 @@ actor NativeFileTransport:HTTPTransport {
       let destination=URLComponents(url:request.url!,resolvingAgainstBaseURL:false)!.queryItems!.first{$0.name=="path"}!.value!
       return(try JSONSerialization.data(withJSONObject:["location":["directory":"/project"],"data":["path":destination]]),200)
     }
-    return(try JSONSerialization.data(withJSONObject:["data":["id":"ses_owned","projectID":"project","model":["providerID":"provider","id":selected],"location":["directory":"/project"],"time":["created":1,"updated":2]]]),200)
+    return(try JSONSerialization.data(withJSONObject:["data":["id":"ses_owned","projectID":"project","model":defaultVariant ? ["providerID":"provider","id":selected,"variant":"default"] : ["providerID":"provider","id":selected],"location":["directory":"/project"],"time":["created":1,"updated":2]]]),200)
   }
   func loseUpload(){lost=true}
+  func useDefaultVariant(){defaultVariant=true}
   func changeModel(){selected="another"}
   func allRequests()->[URLRequest]{requests}
 }
@@ -28,6 +30,15 @@ actor NativeFileTransport:HTTPTransport {
   func setup(_ transport:NativeFileTransport)throws->(OpenCodeClient,OpenCodeTarget){
     let c=try OpenCodeConnection(origin:URL(string:"https://synthetic.example")!,displayName:"Computer")
     return(try OpenCodeClient(connection:c,token:"synthetic",transport:transport),OpenCodeTarget(connectionID:c.id,projectID:"project",sessionID:"ses_owned",directory:"/project"))
+  }
+  @Test func nativeDefaultVariantAliasIsAConfirmedNoOpAndAValidEffectiveModel() async throws {
+    let transport=NativeFileTransport(pdf:true),(client,target)=try setup(transport)
+    await transport.useDefaultVariant()
+    let before=try await client.session(id:target.sessionID)
+    let requested=try OpenCodeModelRef(providerID:"provider",id:"model")
+    let actual=try await client.setModel(target:target,model:requested,expectedModel:before.model)
+    #expect(actual.model?.variant=="default")
+    #expect(try await client.attachmentModel(target:target).id=="model")
   }
   @Test func supportedMediaStaysInlineAndItsSavedDescriptorContainsNoRawBytes() async throws {
     let transport=NativeFileTransport(pdf:true),(client,target)=try setup(transport)

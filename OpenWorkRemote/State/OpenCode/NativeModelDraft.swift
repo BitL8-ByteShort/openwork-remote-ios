@@ -15,7 +15,7 @@ struct NativeModelDraft {
     selectedKey=snapshot.models.first{model in resolved.map{
       OpenCodeIdentity.matches(model.id,$0.id) && OpenCodeIdentity.matches(model.providerID,$0.providerID)
     } ?? false}?.selectionKey
-    variant=resolved?.variant ?? ""
+    variant=resolved?.isDefaultVariant==true ? "" : resolved?.variant ?? ""
   }
   mutating func choose(_ model:OpenCodeModel){selectedKey=model.selectionKey;variant=""}
   func selection(in models:[OpenCodeModel])->OpenCodeModelRef? {
