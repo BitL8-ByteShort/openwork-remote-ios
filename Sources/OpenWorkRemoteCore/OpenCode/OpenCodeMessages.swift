@@ -106,9 +106,28 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
     guard content.count <= 4_096 else { throw RemoteError.invalidResponse }
   }
   public var storedTextBytes:Int {
-    (text?.utf8.count ?? 0) + (promptPayload?.skillIDs.compactMap{$0}.reduce(0){$0+$1.utf8.count} ?? 0) +
-      (promptPayload?.skillNames.compactMap{$0}.reduce(0){$0+$1.utf8.count} ?? 0) + content.reduce(0){$0 + ($1.text?.utf8.count ?? 0) + ($1.toolSummary?.utf8.count ?? 0) + $1.toolFiles.reduce(0){$0+$1.uri.utf8.count+$1.mime.utf8.count}} +
-      snapshotFiles.reduce(0){$0+$1.utf8.count} + files.reduce(0){$0 + ($1.name?.utf8.count ?? 0) + ($1.mime?.utf8.count ?? 0) + ($1.sourceURI?.utf8.count ?? 0) + 128} + (metadata?.storedBytes ?? 0)
+    var bytes = text?.utf8.count ?? 0
+    if let payload=promptPayload{
+      for id in payload.skillIDs{bytes += id?.utf8.count ?? 0}
+      for name in payload.skillNames{bytes += name?.utf8.count ?? 0}
+    }
+    for part in content{
+      bytes += part.text?.utf8.count ?? 0
+      bytes += part.toolSummary?.utf8.count ?? 0
+      for file in part.toolFiles{
+        bytes += file.uri.utf8.count
+        bytes += file.mime.utf8.count
+      }
+    }
+    for path in snapshotFiles{bytes += path.utf8.count}
+    for file in files{
+      bytes += file.name?.utf8.count ?? 0
+      bytes += file.mime?.utf8.count ?? 0
+      bytes += file.sourceURI?.utf8.count ?? 0
+      bytes += 128
+    }
+    bytes += metadata?.storedBytes ?? 0
+    return bytes
   }
 }
 public struct OpenCodeMessagePage: Decodable, Sendable { public let data:[OpenCodeMessage]; public let cursor:OpenCodeCursor }
