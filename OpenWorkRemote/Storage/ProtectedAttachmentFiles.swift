@@ -51,6 +51,7 @@ actor ProtectedAttachmentFiles {
     var resource = URLResourceValues(); resource.isExcludedFromBackup = true
     var target = directory; try target.setResourceValues(resource)
   }
+  func retire(){retired=true}
   func invalidateAndRemove() throws {
     retired = true
     try prepare(allowRetired: true)

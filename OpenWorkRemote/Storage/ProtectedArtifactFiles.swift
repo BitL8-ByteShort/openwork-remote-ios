@@ -106,6 +106,7 @@ actor ProtectedArtifactFiles {
     for url in try FileManager.default.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil) where owned(url) { try FileManager.default.removeItem(at:url) }
     previews.removeAll()
   }
+  func retire(){retired=true}
   func invalidateAndRemove() throws {
     retired = true
     try prepare(allowRetired: true)

@@ -50,5 +50,6 @@ actor NativeActionFile:NativeActionPersistence {
     try value.validate();guard try JSONEncoder().encode(value).count<=4_194_304 else{throw RemoteError.oversized}
     try await snapshots.save(value,revision:revision)
   }
+  func retireWriter()async{await snapshots.retire()}
   func invalidateAndRemove()async throws{try await snapshots.invalidateAndRemove()}
 }

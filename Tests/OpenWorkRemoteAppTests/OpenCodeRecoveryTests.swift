@@ -14,6 +14,17 @@ actor MemoryNativeConversationFile:NativeConversationPersistence {
   func seed(_ disk:NativeConversationDisk){value=disk}
 }
 @Suite @MainActor struct OpenCodeRecoveryTests {
+  @Test func clearingUnsentTextKeepsUncertainDeliveryEvidence()async throws{
+    let persistence=MemoryNativeConversationFile(),journal=NativeConversationJournal(persistence:persistence),target=target()
+    try await journal.restore();try await journal.saveDraft("Possibly admitted",for:target)
+    let pending=try await journal.prepare(target:target)
+    try await journal.clearUnsentDrafts()
+    #expect(journal.draft(for:target).isEmpty && journal.recoverableDrafts.isEmpty)
+    #expect(journal.pending(for:target)?.prompt.text=="Possibly admitted")
+    #expect(journal.pending(for:target)?.prompt.id==pending.prompt.id)
+    let restored=NativeConversationJournal(persistence:persistence);try await restored.restore()
+    #expect(restored.draft(for:target).isEmpty && restored.pending(for:target) != nil)
+  }
   @Test func unscopedPreviewDraftsRequireExplicitTextRecoveryWhilePendingKeepsItsTarget()async throws{
     struct PreviewDisk:Encodable{
       let schemaVersion=1

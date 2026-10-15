@@ -38,6 +38,7 @@ actor NativeFormFile:NativeFormPersistence {
     let value=try await snapshots.load() ?? NativeFormDisk();try value.validate();return value
   }
   func save(_ value:NativeFormDisk,revision:UInt64) async throws{try value.validate();try await snapshots.save(value,revision:revision)}
+  func retireWriter()async{await snapshots.retire()}
   func invalidateAndRemove() async throws{try await snapshots.invalidateAndRemove()}
 }
 struct NativeFormContext:Hashable,Sendable{let target:OpenCodeTarget;fileprivate let generation:UUID}
@@ -74,6 +75,11 @@ enum NativeFormIssue{case unavailable,storage,changed,replyUnconfirmed,authentic
   func deactivate(){connectionEpoch=UUID();boundConnection=nil;clearSelection()}
   func clearSelection(){context=nil;client=nil;form=nil;pending=[];loading=false;submitting=false;readID=UUID()}
   func retire(){retired=true;ready=false;deactivate()}
+  func clearUnsentDrafts()async throws{
+    guard ready,!retired else{throw RemoteError.unavailable}
+    disk.records=disk.records.filter{$0.value.pending}
+    validation=nil;try await flush()
+  }
   func close(){form=nil;validation=nil;readID=UUID();loading=false}
   private var key:NativeFormKey?{guard let target=context?.target,let form else{return nil};return NativeFormKey(target:target,formID:form.id,fingerprint:form.definitionFingerprint)}
   var answers:[String:OpenCodeFormValue]{key.flatMap{disk.records[$0]?.answers} ?? [:]}

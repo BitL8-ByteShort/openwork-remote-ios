@@ -14,7 +14,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
   let approvals=NativeApprovalStore()
   let forms:NativeFormStore
   let attachments:NativeAttachmentStore
-  let results:NativeResultStore
+  private(set) var results:NativeResultStore
   let visibility:NativeProjectVisibilityStore
   let creation:NativeCreateStore
   var newChatLocationRequest:NativeChatLocationRequest?
@@ -30,6 +30,11 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
   private(set) var ready=false
   private(set) var startupState:NativeStartupState = .loading
   @ObservationIgnored private var starting=false
+  @ObservationIgnored private var retired=false
+  @ObservationIgnored private let storageDirectory:URL
+  @ObservationIgnored private let savedConnectionPersistence:OpenCodePersistence
+  @ObservationIgnored private let savedTransport:any HTTPTransport
+  @ObservationIgnored private let localFiles:NativeLocalDataFiles
   var notice:String?
   private(set) var preservingEarlierHistory=false
   @ObservationIgnored private var activeClient:OpenCodeClient?
@@ -42,20 +47,22 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
   init(directory:URL,connectionPersistence:OpenCodePersistence = .keychain,
        transport:any HTTPTransport=SessionTransport(profile:.openCode))throws {
     let root=try DraftStore(directory:directory).directory
+    storageDirectory=root;savedConnectionPersistence=connectionPersistence;savedTransport=transport
+    let localFiles=try NativeLocalDataFiles(directory:root);self.localFiles=localFiles
     connection=ConnectionCoordinator(persistence:connectionPersistence,transport:transport)
-    journal=NativeConversationJournal(persistence:try NativeConversationFile(directory:root))
+    journal=NativeConversationJournal(persistence:localFiles.conversations)
     conversation=ConversationCoordinator(journal:journal)
     workspace=NativeWorkspaceStore(journal:journal)
-    defaults=LocalChatDefaultsStore(persistence:try LocalChatDefaultsFile(directory:root))
-    lastSelection=NativeSelectionStore(directory:root)
-    sharing=ProviderDisclosureStore(persistence:ProviderDisclosureFile(directory:root))
+    defaults=LocalChatDefaultsStore(persistence:localFiles.defaults)
+    lastSelection=NativeSelectionStore(file:localFiles.selection)
+    sharing=ProviderDisclosureStore(persistence:localFiles.sharing)
     attachments=NativeAttachmentStore(journal:journal,files:ProtectedAttachmentFiles(directory:root.appending(path:"NativeAttachmentBytes")))
     results=NativeResultStore(files:ProtectedArtifactFiles(directory:root.appending(path:"NativeDownloads")))
-    forms=NativeFormStore(persistence:try NativeFormFile(directory:root))
-    visibility=NativeProjectVisibilityStore(persistence:try NativeVisibilityFile(directory:root))
-    creation=NativeCreateStore(persistence:try NativeCreationFile(directory:root))
-    chatActions=NativeChatActionStore(persistence:try NativeActionFile(directory:root))
-    groups=LocalChatGroupStore(persistence:try LocalChatGroupFile(directory:root))
+    forms=NativeFormStore(persistence:localFiles.forms)
+    visibility=NativeProjectVisibilityStore(persistence:localFiles.visibility)
+    creation=NativeCreateStore(persistence:localFiles.creation)
+    chatActions=NativeChatActionStore(persistence:localFiles.actions)
+    groups=LocalChatGroupStore(persistence:localFiles.groups)
     connection.observeChanges{[weak self] in
       guard let self else{return}
       // Stop child work immediately, independent of a SwiftUI observation turn.
@@ -68,7 +75,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     },event:{[weak self] event in self?.receive(event)},resync:{[weak self] in self?.refreshInputs()})
   }
   func start() async throws {
-    guard !starting,!ready else{return};starting=true;startupState = .loading
+    guard !retired,!starting,!ready else{return};starting=true;startupState = .loading
     defer{starting=false}
     do{
       try await journal.restore();try await forms.restore();try await visibility.restore();try await creation.restore();try await chatActions.restore();try await groups.restore();try await defaults.restore();try await lastSelection.restore();try await sharing.restore()
@@ -78,7 +85,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     await connection.start();await connectionChanged()
   }
   func connectionChanged() async {
-    guard connection.state == .ready,let client=connection.client,let saved=connection.connection else{return}
+    guard ready,!retired,connection.state == .ready,let client=connection.client,let saved=connection.connection else{return}
     guard activeClient !== client else{return}
     deactivate();activeClient=client
     await client.observeSharingAuthorization{[weak self,weak client] target,classes,operation in
@@ -272,6 +279,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     await connectionChanged()
   }
   func reconnect() async {
+    guard ready,!retired else{return}
     if connection.state == .authenticationRejected{connection.pairAgain();return}
     await connection.reconnect();await connectionChanged()
   }
@@ -281,6 +289,36 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     deactivate();connection.forgetLocalConnection()
     if connection.state == .unpaired{navigation.deactivate()}
     else{notice="The saved connection could not be removed. Unlock this device and try again."}
+  }
+  func stopLocalWork(){deactivate();connection.retireRequests()}
+  func resetLocalFiles()async->[String]{
+    retired=true;ready=false;stopLocalWork();journal.retire();forms.retire()
+    // All snapshot writers and both byte stores retire before the first removal.
+    await localFiles.retireWriters();await attachments.files.retire();await results.files.retire()
+    var failures=await localFiles.removeAll()
+    do{try await attachments.files.invalidateAndRemove()}catch{failures.append("OpenCode selected attachment copies")}
+    do{try await results.files.invalidateAndRemove()}catch{failures.append("OpenCode downloaded and preview copies")}
+    navigation.deactivate();return failures
+  }
+  func clearDownloadedCopies()async throws{
+    guard !retired else{throw RemoteError.cancelled}
+    let old=results;old.deactivate()
+    do{try await old.files.invalidateAndRemove()}
+    catch{
+      results=NativeResultStore(files:ProtectedArtifactFiles(directory:storageDirectory.appending(path:"NativeDownloads")))
+      restoreResultContext();throw error
+    }
+    results=NativeResultStore(files:ProtectedArtifactFiles(directory:storageDirectory.appending(path:"NativeDownloads")))
+    restoreResultContext()
+  }
+  private func restoreResultContext(){
+    if let target=navigation.target,let client=activeClient,connection.state == .ready{
+      results.activate(target:target,client:client);results.updateReferences(navigation.messages,target:target)
+    }
+  }
+  func freshAfterReset()throws->NativeAppCoordinator{
+    guard retired else{throw RemoteError.invalidResponse}
+    return try NativeAppCoordinator(directory:storageDirectory,connectionPersistence:savedConnectionPersistence,transport:savedTransport)
   }
   func olderMessages() async {preservingEarlierHistory=true;await navigation.loadOlder();if let target=navigation.target{results.updateReferences(navigation.messages,target:target)}}
 }

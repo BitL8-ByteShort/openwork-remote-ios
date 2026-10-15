@@ -34,6 +34,9 @@ private actor DisclosureReader:OpenCodeSharingReading{
     #expect(await reopened.authorize(target:target,reader:reader,classes:classes))
     #expect(!(await reopened.authorize(target:target,reader:reader,classes:classes.union([.photos]))))
     #expect(reopened.review?.classes.contains(.photos)==true)
+    try await reopened.clearConsents()
+    let cleared=ProviderDisclosureStore(persistence:file);try await cleared.restore();cleared.activate(target)
+    #expect(!(await cleared.authorize(target:target,reader:reader,classes:classes)))
   }
   @Test func changedConfigurationAndFailedPersistenceCannotEnableSharing()async throws{
     let destination=try destination(),file=MemoryDisclosureFile(),store=ProviderDisclosureStore(persistence:file)

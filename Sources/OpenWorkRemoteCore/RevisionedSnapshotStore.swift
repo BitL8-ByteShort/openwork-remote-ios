@@ -8,6 +8,7 @@ public actor RevisionedSnapshotStore<State: Codable & Sendable> {
   private var savedRevision: UInt64 = 0
   private var invalidated = false
   public init(url: URL) { self.url = url }
+  public func retire(){invalidated=true}
   public func load() throws -> State? {
     guard !invalidated else { throw SnapshotStoreError.invalidated }
     guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -21,6 +22,12 @@ public actor RevisionedSnapshotStore<State: Codable & Sendable> {
     try directory.setResourceValues(values)
     try JSONEncoder().encode(state).write(to: url, options: [.atomic, .completeFileProtection])
     savedRevision = revision
+  }
+  /// A local data-control update reads and advances the same writer atomically.
+  @discardableResult public func update(_ change:@Sendable(State?)->State)throws->State{
+    let current=try load(),next=change(current)
+    guard savedRevision<UInt64.max else{throw SnapshotStoreError.invalidated}
+    try save(next,revision:savedRevision+1);return next
   }
   /// Retire this writer before removal, including when removal fails. A fresh
   /// app state owns a new store; old queued tasks can never recreate its data.

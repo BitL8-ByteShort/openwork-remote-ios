@@ -27,6 +27,26 @@ private actor NativeFileService:OpenCodeFileServing {
 }
 @Suite @MainActor struct NativeAttachmentStoreTests {
   private let png=Data(base64Encoded:"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=")!
+  @Test(.timeLimit(.minutes(1))) func resetDuringPreparationCannotRecreateSelectedBytesOrJournal()async throws{
+    let root=FileManager.default.temporaryDirectory.appending(path:"native-reset-preparation-"+UUID().uuidString)
+    defer{try? FileManager.default.removeItem(at:root)}
+    let persistence=try NativeConversationFile(directory:root),journal=NativeConversationJournal(persistence:persistence)
+    try await journal.restore()
+    let bytes=root.appending(path:"bytes"),files=ProtectedAttachmentFiles(directory:bytes),service=NativeFileService()
+    let store=NativeAttachmentStore(journal:journal,files:files)
+    let target=OpenCodeTarget(connectionID:ConnectionID(),projectID:"project",sessionID:"ses_owned",directory:"/project")
+    let context=store.activate(target:target,client:service),file=try await files.savePhotoPNG(png)
+    await service.holdPreparation();let preparing=Task{try await store.add(file,context:context)}
+    await service.waitUntilHeld();store.deactivate();journal.retire()
+    await persistence.retireWriter();await files.retire()
+    try await persistence.invalidateAndRemove();try await files.invalidateAndRemove()
+    await service.release();try await preparing.value
+    #expect(!FileManager.default.fileExists(atPath:root.appending(path:"native-conversations.json").path))
+    #expect(try FileManager.default.contentsOfDirectory(atPath:bytes.path).isEmpty)
+    let fresh=NativeConversationJournal(persistence:try NativeConversationFile(directory:root));try await fresh.restore()
+    #expect(fresh.attachments(for:target).isEmpty)
+    #expect(await service.count()==1)
+  }
   @Test func selectedBytesSurviveRelaunchAndOnlyConfirmedFilesClear() async throws{
     let root=FileManager.default.temporaryDirectory.appending(path:"native-files-"+UUID().uuidString)
     defer{try? FileManager.default.removeItem(at:root)}

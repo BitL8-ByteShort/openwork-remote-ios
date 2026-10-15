@@ -7,6 +7,8 @@ struct OpenCodeConnectionFlow:View {
   let coordinator:ConnectionCoordinator
   var migration:ConnectionMigration?
   var onConnected:() -> Void = {}
+  var onDataControls:(()->Void)? = nil
+  var beginsWithPairing=false
   @State private var step:Step = .welcome
   @State private var sheet:Sheet?
   @State private var reviewed:OpenCodePairingPayload?
@@ -36,6 +38,7 @@ struct OpenCodeConnectionFlow:View {
         .navigationTitle(step == .setup ? "Computer setup" : step == .welcome ? "" : "Pair your computer")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+          if let onDataControls{ToolbarItem(placement:.topBarTrailing){Button(action:onDataControls){Label("Data Controls",systemImage:"info.circle")}.accessibilityIdentifier("native-local-data-open")}}
           if step != .welcome && !coordinator.isBusy {
             ToolbarItem(placement:.topBarLeading) {
               Button { back() } label:{Label("Back",systemImage:"chevron.left")}
@@ -56,6 +59,7 @@ struct OpenCodeConnectionFlow:View {
           }
         }
         .onDisappear {pairingTask?.cancel()}
+        .onAppear{if beginsWithPairing,step == .welcome{step = .pair}}
     }
   }
   private var welcome:some View {

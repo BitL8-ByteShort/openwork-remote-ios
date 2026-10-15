@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import OpenWorkRemoteCore
 
-enum NativeConnectionState { case unpaired, pairing, connecting, ready, offline, authenticationRejected, incompatible, storageUnavailable }
+enum NativeConnectionState:Equatable { case unpaired, pairing, connecting, ready, offline, authenticationRejected, incompatible, storageUnavailable }
 enum NativeConnectionIssue { case freshPairingCodeRequired, pairingOutcomeUnknown, networkUnavailable, storageUnavailable, incompatible }
 @MainActor @Observable final class ConnectionCoordinator {
   private(set) var state: NativeConnectionState = .unpaired{didSet{if state != oldValue{changeObserver?()}}}

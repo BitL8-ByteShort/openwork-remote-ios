@@ -53,6 +53,7 @@ actor LocalChatGroupFile:LocalChatGroupPersistence {
     try value.validate();guard try JSONEncoder().encode(value).count<=4_194_304 else{throw RemoteError.oversized}
     try await snapshots.save(value,revision:revision)
   }
+  func retireWriter()async{await snapshots.retire()}
   func invalidateAndRemove()async throws{try await snapshots.invalidateAndRemove()}
 }
 enum LocalGroupAction {case create(String),rename(UUID,String),remove(UUID),assign(sessionID:String,groupID:UUID?),reorder([UUID])}

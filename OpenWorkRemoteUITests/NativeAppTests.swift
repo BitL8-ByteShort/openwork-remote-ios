@@ -14,6 +14,41 @@ final class NativeAppTests:XCTestCase {
     expectation(for:NSPredicate(format:"exists == false"),evaluatedWith:allow)
     waitForExpectations(timeout:5)
   }
+  @MainActor private func openDataControls(_ app:XCUIApplication){
+    app.buttons["Open chat history"].tap();app.buttons["Settings"].tap()
+    let data=app.buttons["native-local-data-open"]
+    for _ in 0..<4{if data.exists && data.isHittable{break};app.swipeUp()}
+    XCTAssertTrue(data.waitForExistence(timeout:4));data.tap()
+    XCTAssertTrue(app.navigationBars["Data on this device"].waitForExistence(timeout:3))
+  }
+  @MainActor func testNativeResetReturnsToPairingAndExplainsServerAccessIsNotRevoked(){
+    let app=launch(noAnimations:true)
+    XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:4));openDataControls(app)
+    let reset=app.buttons["local-data-reset"]
+    for _ in 0..<4{if reset.isHittable{break};app.swipeUp()}
+    XCTAssertTrue(reset.isHittable);reset.tap();app.alerts.buttons["Reset local data"].tap()
+    XCTAssertTrue(app.buttons["native-get-started"].waitForExistence(timeout:8))
+    XCTAssertFalse(app.buttons["Model and chat settings"].exists)
+    app.buttons["native-local-data-open"].tap()
+    XCTAssertTrue(app.staticTexts["local-reset-report"].waitForExistence(timeout:4))
+    XCTAssertTrue(app.staticTexts["local-reset-report"].label.contains("not revoked"))
+  }
+  @MainActor func testNativeClearSharingRequiresReviewAgainWithoutDiscardingDraft(){
+    let app=launch(noAnimations:true)
+    app.buttons["Open chat history"].tap();app.buttons.containing(.staticText,identifier:"Native chat").firstMatch.tap()
+    let composer=app.textFields["composer"];XCTAssertTrue(composer.waitForExistence(timeout:4));composer.tap();composer.typeText("Keep after clearing sharing")
+    app.buttons["send-message"].tap();allowSharing(app)
+    openDataControls(app)
+    let sharing=app.buttons["local-data-sharing"]
+    for _ in 0..<4{if sharing.isHittable{break};app.swipeUp()}
+    sharing.tap();app.alerts.buttons["Clear sharing permissions"].tap()
+    app.navigationBars["Data on this device"].buttons.firstMatch.tap()
+    app.buttons["native-connection-done"].tap();app.buttons["native-chatlist-done"].tap()
+    XCTAssertEqual(composer.value as? String,"Keep after clearing sharing")
+    XCTAssertTrue(app.buttons["send-message"].waitForExistence(timeout:5));app.buttons["send-message"].tap()
+    XCTAssertTrue(app.buttons["sharing-review-cancel"].waitForExistence(timeout:5));app.buttons["sharing-review-cancel"].tap()
+    XCTAssertEqual(composer.value as? String,"Keep after clearing sharing")
+  }
   @MainActor func testNativeSharingReviewCancelKeepsDraftAndApprovalDoesNotAutoSend(){
     let app=launch(noAnimations:true)
     app.buttons["Open chat history"].tap();app.buttons.containing(.staticText,identifier:"Native chat").firstMatch.tap()

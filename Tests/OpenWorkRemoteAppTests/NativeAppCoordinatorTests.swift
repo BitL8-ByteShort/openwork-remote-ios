@@ -14,6 +14,11 @@ actor NativeShellTransport:HTTPTransport {
   var infoStatus=200
   var sessionDirectory="/project"
   var privacyCatalog=false
+  var holdPrompt=false
+  var heldPrompt:CheckedContinuation<Void,Never>?
+  func holdNextPrompt(){holdPrompt=true}
+  func promptIsHeld()->Bool{heldPrompt != nil}
+  func releasePrompt(){heldPrompt?.resume();heldPrompt=nil}
   func enablePrivacyCatalog(){privacyCatalog=true}
   func moveSession(to directory:String){sessionDirectory=directory}
   func setInfoStatus(_ status:Int){infoStatus=status}
@@ -35,6 +40,7 @@ actor NativeShellTransport:HTTPTransport {
       prompts+=1;let body=try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:Any]
       let payload:[String:Any]=["id":body["id"]!,"sessionID":"ses_owned","type":"user","payload":["text":body["text"]!]]
       admitted=payload;value=["data":payload]
+      if holdPrompt{holdPrompt=false;await withCheckedContinuation{heldPrompt=$0}}
     case "/api/session/ses_owned/inbox":value=["data":admitted.map{[$0]} ?? []]
     case "/api/session/active":value=["data":[:]]
     case "/api/session/ses_owned/permission":value=["data":[["id":"per_owned","sessionID":"ses_owned","action":"read","resources":["notes.txt"]]]]

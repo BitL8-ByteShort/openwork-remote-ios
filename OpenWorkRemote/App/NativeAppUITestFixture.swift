@@ -100,17 +100,29 @@ private actor NativeAppUITestTransport:HTTPTransport {
   }
   func events(for request:URLRequest) async throws -> AsyncThrowingStream<SSEFrame,any Error>{AsyncThrowingStream{_ in}}
 }
+@MainActor private final class NativeFixtureConnectionVault{
+  var value:StoredOpenCodeConnection?
+  init(_ value:StoredOpenCodeConnection){self.value=value}
+  var persistence:OpenCodePersistence{OpenCodePersistence(load:{self.value},save:{self.value=$0},remove:{self.value=nil})}
+}
 struct NativeAppUITestFixture:View {
   @State private var model:AppModel
+  @Environment(\.scenePhase) private var phase
   init(){
     if ProcessInfo.processInfo.arguments.contains("-native-fixture-no-animations"){UIView.setAnimationsEnabled(false)}
     let directory=FileManager.default.temporaryDirectory.appending(path:"native-shell-ui-"+UUID().uuidString)
     let saved=StoredOpenCodeConnection(connection:try! OpenCodeConnection(origin:URL(string:"https://synthetic.example")!,displayName:"Synthetic computer"),token:"synthetic-token")
-    let native=try! NativeAppCoordinator(directory:directory,connectionPersistence:OpenCodePersistence(load:{saved},save:{_ in},remove:{}),transport:NativeAppUITestTransport(slow:ProcessInfo.processInfo.arguments.contains("-slow-native-app-settings")))
+    let native=try! NativeAppCoordinator(directory:directory,connectionPersistence:NativeFixtureConnectionVault(saved).persistence,transport:NativeAppUITestTransport(slow:ProcessInfo.processInfo.arguments.contains("-slow-native-app-settings")))
     _model=State(initialValue:AppModel(native:native,legacyDraftStore:try! DraftStore(directory:directory),pairingPersistence:PairingPersistence(load:{nil},save:{_ in},remove:{})))
   }
-  var body:some View{NavigationStack{ChatView()}.environment(model).tint(Theme.accent).transaction{transaction in
+  var body:some View{NativeRootView().id(ObjectIdentifier(model)).environment(model).tint(Theme.accent).transaction{transaction in
     if ProcessInfo.processInfo.arguments.contains("-native-fixture-no-animations"){transaction.disablesAnimations=true;transaction.animation=nil}
-  }.task{await model.start()}}
+  }.task(id:ObjectIdentifier(model)){await model.start()}
+    .onChange(of:phase){_,phase in model.sceneActive(phase == .active)}
+    .onChange(of:model.resetReplacement?.id){_,_ in
+      guard let report=model.resetReplacement else{return}
+      do{model=try model.freshAfterReset(report)}catch{model.notice="Local reset finished, but storage could not be reopened. Unlock this device and reopen PocketWork."}
+    }
+  }
 }
 #endif

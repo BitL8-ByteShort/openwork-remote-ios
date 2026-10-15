@@ -55,6 +55,8 @@ actor NativeVisibilityFile:NativeVisibilityPersistence {
     guard try JSONEncoder().encode(value).count<=4_194_304 else {throw RemoteError.oversized}
     try await snapshots.save(value,revision:revision)
   }
+  func retireWriter()async{await snapshots.retire()}
+  func invalidateAndRemove()async throws{try await snapshots.invalidateAndRemove()}
 }
 @MainActor @Observable final class NativeProjectVisibilityStore {
   private(set) var ready=false

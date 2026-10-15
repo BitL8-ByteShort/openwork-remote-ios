@@ -35,6 +35,7 @@ actor NativeSelectionFile{
     try value.validate();guard try JSONEncoder().encode(value).count<=1_048_576 else{throw RemoteError.oversized}
     try await snapshots.save(value,revision:revision)
   }
+  func retireWriter()async{await snapshots.retire()}
   func invalidateAndRemove()async throws{try await snapshots.invalidateAndRemove()}
 }
 @MainActor @Observable final class NativeSelectionStore{
@@ -42,7 +43,7 @@ actor NativeSelectionFile{
   private var disk=NativeSelectionDisk()
   @ObservationIgnored private var revision:UInt64=0
   @ObservationIgnored private let file:NativeSelectionFile
-  init(directory:URL){file=NativeSelectionFile(directory:directory)}
+  init(file:NativeSelectionFile){self.file=file}
   func restore()async throws{guard !ready else{return};disk=try await file.load();ready=true}
   func value(for id:ConnectionID)->NativeLastSelection?{disk.connections[id]}
   func remember(connection:ConnectionID,projectID:String,chat:OpenCodeTarget?)async throws{

@@ -29,6 +29,20 @@ actor NativeFormService:OpenCodeFormServing {
   func writeCount()->Int{writes}
 }
 @Suite @MainActor struct NativeFormStoreTests {
+  @Test func clearingUnsentAnswersKeepsUnconfirmedReplyEvidence()async throws{
+    let memory=NativeFormMemory(),service=NativeFormService(),store=NativeFormStore(persistence:memory)
+    try await store.restore();let context=store.activate(target:target(),client:service)
+    await store.open(id:"frm_owned",context:context);store.setAnswer(.string("a"),for:"choice");try await store.flush()
+    try await store.clearUnsentDrafts()
+    #expect(store.answers.isEmpty)
+    #expect(try await memory.load().records.isEmpty)
+    store.setAnswer(.string("a"),for:"choice");await service.loseReply()
+    #expect(!(await store.submit(context:context)))
+    try await store.clearUnsentDrafts()
+    #expect(store.hasUncertainOperation && store.answers["choice"] == .string("a"))
+    #expect(try await memory.load().records.count==1)
+    #expect(await service.writeCount()==1)
+  }
   func target()->OpenCodeTarget{OpenCodeTarget(connectionID:ConnectionID(),projectID:"project",sessionID:"ses_owned",directory:"/project")}
   @Test func unsupportedHiddenDefaultsAreNeverCopiedIntoSavedAnswerDrafts() async throws {
     let memory=NativeFormMemory(),service=NativeFormService(),store=NativeFormStore(persistence:memory)

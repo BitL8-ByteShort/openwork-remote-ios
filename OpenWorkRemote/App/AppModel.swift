@@ -153,7 +153,7 @@ import OpenWorkRemoteCore
     if let native{
       do{if let draftStore{nativeMigration=ConnectionMigration(legacy:try pairingPersistence.load(),disk:try await draftStore.load())}}
       catch{native.notice="Earlier OpenWork drafts remain on this device, but their recovery text could not be opened."}
-      do{try await native.start()}catch{native.notice="Saved PocketWork data could not be opened. Unlock the device and restart the app."}
+      do{try await native.start();localStorageReady=native.ready}catch{localStorageReady=false;native.notice="Saved PocketWork data could not be opened. Unlock the device and retry."}
       return
     }
     #if DEBUG
@@ -944,6 +944,17 @@ import OpenWorkRemoteCore
     guard !isRetired, localStorageReady, !localDataBusy else { return false }
     localDataBusy = true
     defer { localDataBusy = false }
+    if let native{
+      var failures=false
+      do{try await native.journal.clearUnsentDrafts()}catch{failures=true}
+      do{try await native.forms.clearUnsentDrafts()}catch{failures=true}
+      do{if let draftStore{disk=try await draftStore.clearUnsentDrafts();nativeMigration=nil}}catch{failures=true}
+      do{try await questions.restore();try await questions.clearUnsentDrafts()}catch{failures=true}
+      do{try await skills.restore();try await skills.clearUnsentDrafts()}catch{failures=true}
+      if failures{notice="Some drafts could not be cleared. Unlock this device and try again. Unconfirmed action details and selected files are kept."}
+      else{nativeMigration=nil}
+      return !failures
+    }
     disk.conversation.clearDraftText()
     var failures = false
     do { try await persist() } catch { failures = true }
@@ -952,10 +963,28 @@ import OpenWorkRemoteCore
     if failures { notice = "Some drafts could not be cleared. Unlock the phone and try again. Unconfirmed action details are kept." }
     return !failures
   }
+  func clearSharingPermissions()async->Bool{
+    guard let native,!isRetired,!localDataBusy,native.ready else{return false}
+    localDataBusy=true;defer{localDataBusy=false}
+    nativeSceneTask?.cancel();native.stopLocalWork()
+    do{
+      try await native.sharing.clearConsents()
+      nativeSceneTask=Task{await native.reconnect()}
+      return true
+    }catch{notice="Sharing permissions could not be cleared. The connection is paused. Unlock this device and try again.";return false}
+  }
   func clearDownloadedFiles() async -> Bool {
     guard !isRetired, !localDataBusy else { return false }
     localDataBusy = true
     defer { localDataBusy = false }
+    if let native{
+      var success=true
+      do{try await native.clearDownloadedCopies()}catch{success=false}
+      do{try await artifacts.resetLocalData()}catch{success=false}
+      artifacts=ArtifactStore(directory:injectedStorageDirectory)
+      if !success{notice="Some downloaded copies could not be removed. Unlock this device and try again."}
+      return success
+    }
     let old = artifacts
     var success = true
     do { try await old.resetLocalData() } catch { success = false }
@@ -969,6 +998,7 @@ import OpenWorkRemoteCore
   /// device revocation endpoint is used; host conversations/files stay intact.
   func resetLocalData() async -> DataResetReport? {
     guard !isRetired, !localDataBusy else { return nil }
+    if let native{return await resetNativeLocalData(native)}
     do { try pairingPersistence.remove() } catch {
       notice = "Pairing could not be removed from Keychain. Unlock this iPhone and try again. Your local data has not been deleted."
       return nil
@@ -997,8 +1027,39 @@ import OpenWorkRemoteCore
     resetReplacement = report
     return report
   }
+  private func resetNativeLocalData(_ native:NativeAppCoordinator)async->DataResetReport{
+    localDataBusy=true;nativeSceneTask?.cancel();native.stopLocalWork()
+    // If either credential cannot be removed, preserve files for recovery and
+    // leave a retryable, stopped connection instead of claiming a full reset.
+    var credentialFailures:[String]=[]
+    do{try pairingPersistence.remove()}catch{credentialFailures.append("Earlier OpenWork credential")}
+    native.connection.forgetLocalConnection()
+    if native.connection.state != .unpaired{credentialFailures.append("OpenCode credential")}
+    if !credentialFailures.isEmpty{
+      let report=DataResetReport(localFailures:credentialFailures,hostRevocation:.nativeNotRevoked,credentialsRemoved:false)
+      lastResetReport=report;notice=report.summary;localDataBusy=false;return report
+    }
+    isRetired=true;localStorageReady=false
+    var failures=await native.resetLocalFiles()
+    do{try await draftStore?.invalidateAndRemove()}catch{failures.append("Earlier chat drafts and action records")}
+    do{try await questions.resetLocalData()}catch{failures.append("Earlier question drafts")}
+    do{try await skills.resetLocalData()}catch{failures.append("Earlier skill drafts")}
+    do{try await chatActions.resetLocalData()}catch{failures.append("Earlier chat action records")}
+    do{try await groups.resetLocalData()}catch{failures.append("Earlier group action records")}
+    do{try await workspaceDefaults.resetLocalData()}catch{failures.append("Earlier default-model action records")}
+    do{try await attachments.resetLocalData()}catch{failures.append("Earlier selected attachments")}
+    do{try await artifacts.resetLocalData()}catch{failures.append("Earlier downloaded file copies")}
+    clearPreferences()
+    let report=DataResetReport(localFailures:failures,hostRevocation:.nativeNotRevoked)
+    resetReplacement=report;return report
+  }
   func freshAfterReset(_ report: DataResetReport) throws -> AppModel {
     guard isRetired else { throw RemoteError.invalidResponse }
+    if let native{
+      guard let root=injectedStorageDirectory else{throw RemoteError.unavailable}
+      let fresh=AppModel(native:try native.freshAfterReset(),legacyDraftStore:try DraftStore(directory:root),pairingPersistence:pairingPersistence,transport:transport)
+      fresh.lastResetReport=report;return fresh
+    }
     let store = try injectedStorageDirectory.map { try DraftStore(directory: $0) }
     let fresh = AppModel(pairingPersistence: pairingPersistence, transport: transport, draftStore: store,
       clearPreferences: clearPreferences)

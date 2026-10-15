@@ -99,6 +99,7 @@ actor NativeConversationFile:NativeConversationPersistence {
     guard try JSONEncoder().encode(value).count<=8_388_608 else{throw RemoteError.oversized}
     try await snapshots.save(value,revision:revision)
   }
+  func retireWriter()async{await snapshots.retire()}
   func invalidateAndRemove() async throws{try await snapshots.invalidateAndRemove()}
 }
 
@@ -209,6 +210,12 @@ actor NativeConversationFile:NativeConversationPersistence {
     try await persist()
   }
   func retryPersistence() async throws {try await persist()}
+  func clearUnsentDrafts()async throws{
+    guard ready,!retired else{throw RemoteError.unavailable}
+    disk.drafts.removeAll();disk.recoveredDrafts.removeAll()
+    disk.selectedSkills=disk.selectedSkills.filter{disk.pending[$0.key] != nil}
+    try await persist()
+  }
   func retire(){retired=true;ready=false}
   private func persist() async throws {
     guard ready,!retired else{throw RemoteError.unavailable}

@@ -38,6 +38,7 @@ actor ProviderDisclosureFile:ProviderDisclosurePersistence{
     try value.validate();guard try JSONEncoder().encode(value).count<=2_097_152 else{throw RemoteError.oversized}
     try await snapshots.save(value,revision:revision)
   }
+  func retireWriter()async{await snapshots.retire()}
   func invalidateAndRemove()async throws{try await snapshots.invalidateAndRemove()}
 }
 struct ProviderDisclosureReview:Identifiable,Sendable{
@@ -54,12 +55,14 @@ struct ProviderDisclosureReview:Identifiable,Sendable{
   private(set) var ready=false
   private(set) var review:ProviderDisclosureReview?
   private(set) var saving=false
+  private(set) var storageIssue=false
   var notice:String?
   private var disk=ProviderDisclosureDisk()
   @ObservationIgnored private let persistence:any ProviderDisclosurePersistence
   @ObservationIgnored private var target:OpenCodeTarget?
   @ObservationIgnored private var generation=UUID()
   @ObservationIgnored private var revision:UInt64=0
+  @ObservationIgnored private var clearing=false
   init(persistence:any ProviderDisclosurePersistence){self.persistence=persistence}
   func restore()async throws{guard !ready else{return};let value=try await persistence.load();try value.validate();disk=value;ready=true}
   func activate(_ target:OpenCodeTarget?){generation=UUID();self.target=target;review=nil;notice=nil;saving=false}
@@ -67,7 +70,8 @@ struct ProviderDisclosureReview:Identifiable,Sendable{
     !disk.consents.contains{$0.destination.id==destination.id && $0.policyVersion==policyVersion && $0.classes.isSuperset(of:classes)}
   }
   func authorize(target:OpenCodeTarget,reader:any OpenCodeSharingReading,classes:Set<OpenCodeSharedData>,operation:OpenCodeSharingOperation = .message)async->Bool{
-    guard ready,!saving,self.target==target,!classes.isEmpty,!Task.isCancelled else{return false}
+    if storageIssue{notice="Sharing permissions could not be cleared. Unlock this device and clear them again in Data Controls.";return false}
+    guard ready,!saving,!clearing,self.target==target,!classes.isEmpty,!Task.isCancelled else{return false}
     let current=generation
     do{
       let destination=try await reader.sharingDestination(target:target)
@@ -82,7 +86,7 @@ struct ProviderDisclosureReview:Identifiable,Sendable{
     return false
   }
   func approve(_ request:ProviderDisclosureReview,using reader:any OpenCodeSharingReading,acknowledgesUnknownDestination:Bool)async->Bool{
-    guard ready,!saving,review?.id==request.id,target==request.target,
+    guard ready,!saving,!clearing,!storageIssue,review?.id==request.id,target==request.target,
       request.policyVersion==Self.policyVersion,
       request.destination.finalEndpointVerified || acknowledgesUnknownDestination else{return false}
     let current=generation;saving=true;defer{if generation==current{saving=false}}
@@ -103,4 +107,11 @@ struct ProviderDisclosureReview:Identifiable,Sendable{
     }catch{if generation==current{notice="Sharing permission could not be saved. Unlock this device and try again."};return false}
   }
   func cancelReview(){generation=UUID();review=nil;saving=false;notice=nil}
+  func clearConsents()async throws{
+    guard ready,!clearing else{throw RemoteError.unavailable}
+    clearing=true;defer{clearing=false}
+    cancelReview();disk=ProviderDisclosureDisk();storageIssue=true;revision &+= 1
+    do{try await persistence.save(disk,revision:revision);storageIssue=false}
+    catch{notice="Sharing permissions could not be cleared. Unlock this device and try again.";throw error}
+  }
 }
