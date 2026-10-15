@@ -127,7 +127,7 @@ enum NativeConnectionIssue { case freshPairingCodeRequired, pairingOutcomeUnknow
       if state == .pairing && isBusy { issue = .pairingOutcomeUnknown }
       if state == .connecting { state = .offline; resumeState = state }
       isBusy = false
-    } else if state == .offline { await reconnect() }
+    } else if state == .offline || state == .ready { await reconnect() }
   }
   func forgetLocalConnection() {
     retireRequests()

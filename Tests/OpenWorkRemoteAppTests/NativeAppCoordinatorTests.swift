@@ -12,12 +12,14 @@ actor NativeShellTransport:HTTPTransport {
   var admitted:[String:Any]?
   var prompts=0
   var infoStatus=200
+  var sessionDirectory="/project"
+  func moveSession(to directory:String){sessionDirectory=directory}
   func setInfoStatus(_ status:Int){infoStatus=status}
   func allowHistory(){holdFirstHistory=false}
   let session:[String:String]=["id":"ses_owned","projectID":"project","title":"Native chat"]
   func data(for request:URLRequest) async throws -> (Data,Int){
     let path=request.url!.path;paths.append(path)
-    let record:[String:Any]=["id":"ses_owned","projectID":"project","title":"Native chat","location":["directory":"/project"],"time":["created":1,"updated":2]]
+    let record:[String:Any]=["id":"ses_owned","projectID":"project","title":"Native chat","location":["directory":sessionDirectory],"time":["created":1,"updated":2]]
     let value:Any
     switch path{
     case "/api/info":value=["version":"2.0.29","urls":[],"paths":["tmp":"/tmp/native"]]

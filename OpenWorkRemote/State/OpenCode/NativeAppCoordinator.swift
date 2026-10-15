@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import OpenWorkRemoteCore
 
+enum NativeStartupState{case loading,ready,storageUnavailable}
 /// Composition for the existing app shell. Wire DTOs and credentials stay in
 /// native services; the shell consumes the same pure conversation presentation.
 @MainActor @Observable final class NativeAppCoordinator {
@@ -22,9 +23,12 @@ import OpenWorkRemoteCore
   let search=NativeChatSearchStore()
   let workspace:NativeWorkspaceStore
   let defaults:LocalChatDefaultsStore
+  let lastSelection:NativeSelectionStore
   private(set) var preparingSend=false
   @ObservationIgnored private var sendPreparation=UUID()
   private(set) var ready=false
+  private(set) var startupState:NativeStartupState = .loading
+  @ObservationIgnored private var starting=false
   var notice:String?
   private(set) var preservingEarlierHistory=false
   @ObservationIgnored private var activeClient:OpenCodeClient?
@@ -42,6 +46,7 @@ import OpenWorkRemoteCore
     conversation=ConversationCoordinator(journal:journal)
     workspace=NativeWorkspaceStore(journal:journal)
     defaults=LocalChatDefaultsStore(persistence:try LocalChatDefaultsFile(directory:root))
+    lastSelection=NativeSelectionStore(directory:root)
     attachments=NativeAttachmentStore(journal:journal,files:ProtectedAttachmentFiles(directory:root.appending(path:"NativeAttachmentBytes")))
     results=NativeResultStore(files:ProtectedArtifactFiles(directory:root.appending(path:"NativeDownloads")))
     forms=NativeFormStore(persistence:try NativeFormFile(directory:root))
@@ -61,7 +66,12 @@ import OpenWorkRemoteCore
     },event:{[weak self] event in self?.receive(event)},resync:{[weak self] in self?.refreshInputs()})
   }
   func start() async throws {
-    try await journal.restore();try await forms.restore();try await visibility.restore();try await creation.restore();try await chatActions.restore();try await groups.restore();try await defaults.restore();ready=true
+    guard !starting,!ready else{return};starting=true;startupState = .loading
+    defer{starting=false}
+    do{
+      try await journal.restore();try await forms.restore();try await visibility.restore();try await creation.restore();try await chatActions.restore();try await groups.restore();try await defaults.restore();try await lastSelection.restore()
+    }catch{ready=false;startupState = .storageUnavailable;throw error}
+    ready=true;startupState = .ready
     try? await results.files.cleanup()
     await connection.start();await connectionChanged()
   }
@@ -70,9 +80,13 @@ import OpenWorkRemoteCore
     guard activeClient !== client else{return}
     deactivate();activeClient=client;visibility.activate(saved.id);navigation.activate(saved,reader:client)
     creation.activate(connectionID:saved.id,client:client)
-    await navigation.refreshProjects();activateProjectStores()
+    let picked=selection
+    await navigation.refreshProjects()
     guard activeClient === client,connection.state == .ready else{return}
+    activateProjectStores()
     do{try await visibility.observe(Set(navigation.projects.map(\.id)))}catch{notice="Project display preferences could not be saved."}
+    guard selection==picked,activeClient === client,connection.state == .ready else{return}
+    await restoreSelection(client:client,connection:saved,picked:picked)
   }
   func open(_ session:OpenCodeSession) async {
     guard connection.state == .ready,let client=activeClient else{return}
@@ -87,6 +101,34 @@ import OpenWorkRemoteCore
     navigation.finishNativeRead(target:target,failed:conversation.currentSession==nil)
     if conversation.issue == .locationChanged{notice="This chat moved. Reopen it from Your Chats."}
     else if conversation.currentSession==nil{notice="This chat could not be loaded. Reconnect or try opening it again."}
+    else{await rememberSelection(chat:target)}
+  }
+  private func restoreSelection(client:OpenCodeClient,connection:OpenCodeConnection,picked:UUID)async{
+    guard let saved=lastSelection.value(for:connection.id),
+      navigation.projects.contains(where:{OpenCodeIdentity.matches($0.id,saved.projectID)}),visibility.policy.shows(saved.projectID) else{return}
+    if !OpenCodeIdentity.matches(navigation.selectedProjectID ?? "",saved.projectID){await navigation.selectProject(saved.projectID)}
+    guard selection==picked,activeClient === client,self.connection.state == .ready else{return}
+    activateProjectStores()
+    guard let target=saved.chat else{return}
+    do{
+      let actual=try await client.session(id:target.sessionID)
+      guard selection==picked,activeClient === client,self.connection.state == .ready else{return}
+      guard actual.time.archived==nil,OpenCodeIdentity.matches(actual.id,target.sessionID),
+        OpenCodeIdentity.matches(actual.projectID,target.projectID),OpenCodeIdentity.matches(actual.location.directory,target.directory) else{
+        notice="The previous chat moved or is no longer available. Open it from Your Chats; its earlier draft remains in local recovery."
+        await rememberSelection(chat:nil);return
+      }
+      navigation.acceptChat(actual);await open(actual)
+    }catch{
+      guard selection==picked,activeClient === client else{return}
+      notice="The previous chat could not be restored. Its saved draft is still on this device."
+      if error as? RemoteError == .notFound{await rememberSelection(chat:nil)}
+    }
+  }
+  func rememberSelection(chat:OpenCodeTarget?)async{
+    guard let connection=connection.connection,let projectID=navigation.selectedProjectID else{return}
+    do{try await lastSelection.remember(connection:connection.id,projectID:projectID,chat:chat)}
+    catch{notice="The last-opened chat could not be saved. Your draft is stored separately."}
   }
   func deactivate(){
     selection=UUID();cancelInputs();cancelSendPreparation()
@@ -194,9 +236,18 @@ import OpenWorkRemoteCore
   func checkConversation() async {await conversation.refresh()}
   func changeWorkspace(_ workspace:Workspace) async {
     guard connection.state == .ready else{return}
-    selection=UUID();cancelInputs();cancelSendPreparation();self.workspace.deactivate();conversation.clearSelection();attachments.clearSelection();results.deactivate();controls.deactivate();approvals.deactivate();forms.clearSelection()
+    let picked=UUID();selection=picked;cancelInputs();cancelSendPreparation();self.workspace.deactivate();conversation.clearSelection();attachments.clearSelection();results.deactivate();controls.deactivate();approvals.deactivate();forms.clearSelection()
     newChatLocationRequest=nil;groups.activate(nil);search.activate(nil,reader:nil)
-    await navigation.selectProject(workspace.id);activateProjectStores()
+    await navigation.selectProject(workspace.id)
+    guard selection==picked,connection.state == .ready else{return}
+    activateProjectStores();await rememberSelection(chat:nil)
+  }
+  func sceneActive(_ active:Bool)async{
+    if !active{deactivate();await connection.sceneActive(false);return}
+    guard ready,!Task.isCancelled else{return}
+    await connection.sceneActive(true)
+    guard !Task.isCancelled else{return}
+    await connectionChanged()
   }
   func reconnect() async {
     if connection.state == .authenticationRejected{connection.pairAgain();return}

@@ -26,14 +26,32 @@ private actor NativeLifecycleTransport:HTTPTransport {
 }
 private actor NativeRetirementEventTransport:HTTPTransport{
   var cancelled=false
+  var hold=false
+  var opening:CheckedContinuation<Void,Never>?
+  var source:AsyncThrowingStream<SSEFrame,any Error>.Continuation?
+  func holdOpening(){hold=true}
+  func isOpening()->Bool{opening != nil}
+  func releaseOpening(){opening?.resume();opening=nil}
+  func cleanup(){source?.finish();source=nil}
   func data(for request:URLRequest)async throws->(Data,Int){throw RemoteError.unavailable}
   func events(for request:URLRequest)async throws->AsyncThrowingStream<SSEFrame,any Error>{
-    AsyncThrowingStream{continuation in continuation.onTermination={ [weak self] _ in Task{await self?.markCancelled()} }}
+    if hold{await withCheckedContinuation{opening=$0}}
+    return AsyncThrowingStream{continuation in source=continuation;continuation.onTermination={ [weak self] _ in Task{await self?.markCancelled()} }}
   }
   func markCancelled(){cancelled=true}
   func didCancel()->Bool{cancelled}
 }
 @Suite struct OpenCodeLifecycleTests {
+  @Test(.timeLimit(.minutes(1))) func aStreamOpenedAfterRetirementIsDisposedEvenWithoutATypedConsumer()async throws{
+    let t=NativeRetirementEventTransport(),connection=try OpenCodeConnection(origin:URL(string:"https://synthetic.example")!,displayName:"Computer")
+    let client=try OpenCodeClient(connection:connection,token:"synthetic",transport:t)
+    await t.holdOpening();let opening=Task{try await client.events()}
+    while !(await t.isOpening()){await Task.yield()}
+    client.retire();await t.releaseOpening();_ = try? await opening.value
+    try await Task.sleep(for:.milliseconds(50))
+    #expect(await t.didCancel())
+    await t.cleanup()
+  }
   private func setup(_ t:NativeLifecycleTransport)throws->(OpenCodeClient,OpenCodeTarget){
     let c=try OpenCodeConnection(origin:URL(string:"https://synthetic.example")!,displayName:"Computer")
     return(try OpenCodeClient(connection:c,token:"synthetic",transport:t),OpenCodeTarget(connectionID:c.id,projectID:"project",sessionID:"ses_owned",directory:"/project"))

@@ -85,6 +85,7 @@ import OpenWorkRemoteCore
   private var connectionTask: Task<Void, Never>?
   private var pairingTask: Task<Void, Never>?
   private var refreshTask: Task<Void, Never>?
+  private var nativeSceneTask:Task<Void,Never>?
   private var refreshID: UUID?
   private var pairingGeneration = UUID()
   private var savedPendingPairing = false
@@ -1057,6 +1058,12 @@ import OpenWorkRemoteCore
   func sceneActive(_ active: Bool) {
     guard !isRetired else { return }
     foreground = active
+    if let native{
+      nativeSceneTask?.cancel()
+      if !active{native.deactivate()}
+      nativeSceneTask=Task{await native.sceneActive(active)}
+      return
+    }
     if active {
       if client != nil && connection != .revoked { connect() }
     } else {

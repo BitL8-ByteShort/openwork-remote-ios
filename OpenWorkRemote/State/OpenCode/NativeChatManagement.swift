@@ -89,6 +89,7 @@ extension NativeAppCoordinator {
         workspace.deactivate();conversation.clearSelection();attachments.clearSelection();results.deactivate();controls.deactivate();approvals.deactivate();forms.clearSelection()
       }
       navigation.removeChats(Set(deletedIDs))
+      if navigation.target==nil{await rememberSelection(chat:nil)}
     }
   }
   func reviewActionChats(target:OpenCodeTarget)async{
