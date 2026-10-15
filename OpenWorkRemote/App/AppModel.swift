@@ -596,7 +596,7 @@ import OpenWorkRemoteCore
     guard let host, let wid = selectedWorkspace else { return nil }
     return MutationKey(hostId: host.hostId, workspaceId: wid, sessionId: nil, action: .create)
   }
-  var uncertainCreation: Bool { creationKey.map { disk.mutations.requiresReview($0) } ?? false }
+  var uncertainCreation: Bool { if let native{return native.creation.pending != nil};return creationKey.map { disk.mutations.requiresReview($0) } ?? false }
   func send() async {
     if let native{await native.send();return}
     guard canSend, let client else { return }
@@ -706,6 +706,7 @@ import OpenWorkRemoteCore
     } catch { notice = "Your computer is unavailable. Keep the draft and check later." }
   }
   func reviewRecentChats() async {
+    if let native{await native.checkCreatedChat();return}
     guard let key = creationKey else { return }
     do {
       try await reconcile()
@@ -716,6 +717,7 @@ import OpenWorkRemoteCore
     } catch { notice = "Recent chats could not be checked. Reconnect and try again." }
   }
   func createChat() async {
+    if let native{await native.createChat();return}
     guard let client, let wid = selectedWorkspace, connection == .ready,
       host?.capabilities.createSession == true, !loading, let key = creationKey, !uncertainCreation
     else { return }

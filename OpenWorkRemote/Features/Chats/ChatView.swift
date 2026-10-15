@@ -79,6 +79,9 @@ struct ChatView: View {
       }
     }.sheet(item: $approval) { ApprovalSheet(approval: $0) }
       .sheet(item: $question) { QuestionSheet(presentation: $0) }.toolbar(.hidden, for: .navigationBar)
+    .sheet(item:Binding(get:{sheet==nil ? model.native?.newChatLocationRequest:nil},set:{model.native?.newChatLocationRequest=$0})){request in
+      if let native=model.native{NativeChatLocationView(native:native,request:request)}
+    }
   }
   private var header: some View {
     HStack {

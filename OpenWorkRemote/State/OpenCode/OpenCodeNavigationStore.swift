@@ -75,6 +75,18 @@ enum NativeNavigationIssue { case unavailable,locationChanged,projectUnavailable
     guard self.target==target else{return};loadingMessages=false
     if failed{issue = .unavailable}
   }
+  func removeChats(_ ids:Set<String>){
+    sessions.removeAll{ids.contains($0.id)}
+    if let target,ids.contains(target.sessionID){
+      selection=UUID();selectedSession=nil;self.target=nil;messages=[];olderCursor=nil;seenHistoryCursors=[]
+      loadingMessages=false;loadingOlder=false;hasNewReplies=false;lastNativeSnapshot=[];latestNativePage=nil
+    }
+  }
+  func acceptChat(_ session:OpenCodeSession){
+    guard session.projectID==selectedProjectID,session.time.archived==nil else{return}
+    if let i=sessions.firstIndex(where:{$0.id==session.id}){sessions[i]=session}else{sessions.insert(session,at:0)}
+    if let target,target.sessionID==session.id,OpenCodeIdentity.matches(target.directory,session.location.directory){selectedSession=session}
+  }
   func refreshProjects() async {
     guard let reader else { return }
     let current=generation

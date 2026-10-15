@@ -5,6 +5,7 @@ struct MessageView: View {
   let message: ChatMessage
   @Environment(AppModel.self) private var model
   @State private var chatAction:ChatActionRequest?
+  @State private var nativeAction:NativeChatActionRequest?
   @State private var copied = false
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
@@ -19,7 +20,7 @@ struct MessageView: View {
         if message.role == "assistant" {
           HStack(spacing: 10) {
             BrandMark(size: 26)
-            Text("OpenWork").font(.caption.weight(.semibold)).foregroundStyle(Theme.muted)
+            Text(model.serviceName).font(.caption.weight(.semibold)).foregroundStyle(Theme.muted)
           }.frame(minHeight: 44, alignment: .leading)
             .accessibilityElement(children: .combine).padding(.bottom, 4)
         }
@@ -61,11 +62,16 @@ struct MessageView: View {
     }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
       .contextMenu {
         Button("Fork before this message",systemImage:"arrow.triangle.branch") { forkBefore() }
-          .disabled(model.connection != .ready || model.host?.capabilities.forkSession != true || message.state == "streaming")
+          .disabled(model.connection != .ready || (model.native==nil && model.host?.capabilities.forkSession != true) || message.state == "streaming")
       }.accessibilityAction(named:"Fork before this message") { forkBefore() }
       .sheet(item:$chatAction) { ChatActionView(request:$0) }
+      .sheet(item:$nativeAction){request in if let native=model.native{NativeChatActionView(native:native,request:request)}}
   }
   private func forkBefore() {
+    if let native=model.native{
+      guard model.connection == .ready,let session=model.selectedSession,let target=native.actionTarget(session),message.state != "streaming" else{return}
+      nativeAction=NativeChatActionRequest(session:session,target:target,deleting:false,beforeMessageID:message.id);return
+    }
     guard model.connection == .ready,model.host?.capabilities.forkSession == true,let session=model.selectedSession,let context=model.actionContext(for:session),message.state != "streaming" else{return}
     chatAction=ChatActionRequest(session:session,action:.fork(beforeMessageId:message.id),context:context)
 

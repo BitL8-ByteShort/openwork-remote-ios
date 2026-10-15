@@ -20,7 +20,7 @@ extension AppModel {
   var isRunning:Bool{native?.conversation.isActive ?? (status?.phase == "running")}
   var canChooseModel:Bool{native.map{$0.connection.state == .ready && $0.controls.context != nil} ?? (host?.capabilities.modelSettings == true)}
   var canBrowseFiles:Bool{native.map{$0.connection.state == .ready && $0.results.context != nil} ?? (host?.capabilities.artifacts == true)}
-  var canCreateChat:Bool{native == nil && connection == .ready && host?.capabilities.createSession == true && !loading && !uncertainCreation}
+  var canCreateChat:Bool{if let native{return native.canCreateChat};return connection == .ready && host?.capabilities.createSession == true && !loading && !uncertainCreation}
   var hasNewerReplies:Bool{native?.navigation.hasNewReplies == true}
   func followLatest(_ following:Bool){native?.followLatest(following)}
   func jumpToLatest(){native?.jumpToLatest()}

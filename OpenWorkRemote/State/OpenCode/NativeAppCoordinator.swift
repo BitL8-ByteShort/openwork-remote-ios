@@ -15,11 +15,17 @@ import OpenWorkRemoteCore
   let attachments:NativeAttachmentStore
   let results:NativeResultStore
   let visibility:NativeProjectVisibilityStore
+  let creation:NativeCreateStore
+  var newChatLocationRequest:NativeChatLocationRequest?
+  let chatActions:NativeChatActionStore
+  let groups:LocalChatGroupStore
+  let search=NativeChatSearchStore()
   private(set) var ready=false
   var notice:String?
   private(set) var preservingEarlierHistory=false
   @ObservationIgnored private var activeClient:OpenCodeClient?
   @ObservationIgnored private var selection=UUID()
+  var selectionGeneration:UUID{selection}
   @ObservationIgnored private var approvalTask:Task<Void,Never>?
   @ObservationIgnored private var formTask:Task<Void,Never>?
   @ObservationIgnored private var approvalsDirty=false
@@ -34,6 +40,9 @@ import OpenWorkRemoteCore
     results=NativeResultStore(files:ProtectedArtifactFiles(directory:root.appending(path:"NativeDownloads")))
     forms=NativeFormStore(persistence:try NativeFormFile(directory:root))
     visibility=NativeProjectVisibilityStore(persistence:try NativeVisibilityFile(directory:root))
+    creation=NativeCreateStore(persistence:try NativeCreationFile(directory:root))
+    chatActions=NativeChatActionStore(persistence:try NativeActionFile(directory:root))
+    groups=LocalChatGroupStore(persistence:try LocalChatGroupFile(directory:root))
     conversation.observe(snapshot:{[weak self] target,session,page in
       guard let self else{return}
       self.navigation.acceptNativeSnapshot(target:target,session:session,page:page,preserveWindow:self.preservingEarlierHistory)
@@ -41,7 +50,7 @@ import OpenWorkRemoteCore
     },event:{[weak self] event in self?.receive(event)},resync:{[weak self] in self?.refreshInputs()})
   }
   func start() async throws {
-    try await journal.restore();try await forms.restore();try await visibility.restore();ready=true
+    try await journal.restore();try await forms.restore();try await visibility.restore();try await creation.restore();try await chatActions.restore();try await groups.restore();ready=true
     try? await results.files.cleanup()
     await connection.start();await connectionChanged()
   }
@@ -49,7 +58,8 @@ import OpenWorkRemoteCore
     guard connection.state == .ready,let client=connection.client,let saved=connection.connection else{return}
     guard activeClient !== client else{return}
     deactivate();activeClient=client;visibility.activate(saved.id);navigation.activate(saved,reader:client)
-    await navigation.refreshProjects()
+    creation.activate(connectionID:saved.id,client:client)
+    await navigation.refreshProjects();activateProjectStores()
     do{try await visibility.observe(Set(navigation.projects.map(\.id)))}catch{notice="Project display preferences could not be saved."}
   }
   func open(_ session:OpenCodeSession) async {
@@ -67,7 +77,7 @@ import OpenWorkRemoteCore
   }
   func deactivate(){
     selection=UUID();cancelInputs()
-    conversation.deactivate();attachments.deactivate();results.deactivate();controls.deactivate();approvals.deactivate();forms.deactivate();activeClient=nil
+    conversation.deactivate();attachments.deactivate();results.deactivate();controls.deactivate();approvals.deactivate();forms.deactivate();creation.deactivate();chatActions.deactivate();groups.activate(nil);search.activate(nil,reader:nil);newChatLocationRequest=nil;activeClient=nil
   }
   private func cancelInputs(){
     approvalTask?.cancel();formTask?.cancel();approvalTask=nil;formTask=nil;approvalsDirty=false;formsDirty=false
@@ -128,6 +138,7 @@ import OpenWorkRemoteCore
   var uncertain:Bool{navigation.target.map{journal.pending(for:$0) != nil} ?? false}
   var canSend:Bool{
     connection.state == .ready && ready && journal.ready && !journal.storageIssue && !uncertain &&
+      !(navigation.target.map{chatActions.blocks($0)} ?? true) &&
       conversation.currentSession != nil && conversation.target==navigation.target && !conversation.sending && !conversation.isActive &&
       (!draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || attachments.canSend) &&
       (attachments.rows.isEmpty || attachments.canSend) && draft.utf8.count<=32_768
@@ -159,7 +170,8 @@ import OpenWorkRemoteCore
   func changeWorkspace(_ workspace:Workspace) async {
     guard connection.state == .ready else{return}
     selection=UUID();cancelInputs();conversation.clearSelection();attachments.clearSelection();results.deactivate();controls.deactivate();approvals.deactivate();forms.clearSelection()
-    await navigation.selectProject(workspace.id)
+    newChatLocationRequest=nil;groups.activate(nil);search.activate(nil,reader:nil)
+    await navigation.selectProject(workspace.id);activateProjectStores()
   }
   func reconnect() async {
     if connection.state == .authenticationRejected{connection.pairAgain();return}

@@ -2,9 +2,9 @@ import XCTest
 import CryptoKit
 
 final class NativeAppTests:XCTestCase {
-  @MainActor private func launch(slow:Bool=false,share:Bool=false)->XCUIApplication{
+  @MainActor private func launch(slow:Bool=false,share:Bool=false,noAnimations:Bool=false)->XCUIApplication{
     XCUIDevice.shared.orientation = .portrait
-    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app"]+(slow ? ["-slow-native-app-settings"]:[])+(share ? ["-artifact-test-save"]:[]);app.launch();return app
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app"]+(slow ? ["-slow-native-app-settings"]:[])+(share ? ["-artifact-test-save"]:[])+(noAnimations ? ["-native-fixture-no-animations"]:[]);app.launch();return app
   }
   @MainActor func testNativeConversationUsesExistingChatAndSettingsScreens(){
     let app=launch()
@@ -24,6 +24,64 @@ final class NativeAppTests:XCTestCase {
     app.buttons["native-settings-done"].tap()
     XCTAssertTrue(app.textFields["composer"].waitForExistence(timeout:2))
     let proof=XCTAttachment(screenshot:app.screenshot());proof.name="Native shared conversation shell";proof.lifetime = .keepAlways;add(proof)
+  }
+  @MainActor func testNativeRenameBlankCancelAndLongPress(){
+    let app=launch(noAnimations:true)
+    app.buttons["Open chat history"].tap()
+    XCTAssertTrue(app.buttons["chat-actions-ses_owned"].waitForExistence(timeout:4))
+    app.buttons["chat-actions-ses_owned"].tap();app.buttons["Rename"].tap()
+    let field=app.textFields["chat-name"]
+    XCTAssertTrue(field.waitForExistence(timeout:3));field.tap();field.typeText(String(repeating:XCUIKeyboardKey.delete.rawValue,count:11))
+    XCTAssertFalse(app.buttons["save-chat-name"].isEnabled)
+    field.typeText("Discard this edit");app.buttons["Cancel"].tap()
+    let row=app.buttons.containing(.staticText,identifier:"Native chat").firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout:3));row.press(forDuration:1)
+    XCTAssertTrue(app.buttons["Rename"].waitForExistence(timeout:3));app.buttons["Rename"].tap()
+    XCTAssertEqual(app.textFields["chat-name"].value as? String,"Native chat")
+    app.buttons["Cancel"].tap()
+    XCTAssertTrue(app.buttons["chat-actions-ses_owned"].waitForExistence(timeout:3))
+  }
+  @MainActor func testNativeVisibleRenameGroupsAndOlderTitleSearch(){
+    let app=launch(noAnimations:true)
+    app.buttons["Open chat history"].tap()
+    XCTAssertTrue(app.buttons["chat-actions-ses_owned"].waitForExistence(timeout:4))
+    app.buttons["chat-actions-ses_owned"].tap();app.buttons["Rename"].tap()
+    let field=app.textFields["chat-name"]
+    XCTAssertTrue(field.waitForExistence(timeout:3));field.tap()
+    field.press(forDuration:1)
+    if app.menuItems["Select All"].waitForExistence(timeout:1){app.menuItems["Select All"].tap();field.typeText("Renamed native chat")}
+    else{field.typeText(String(repeating:XCUIKeyboardKey.delete.rawValue,count:11)+"Renamed native chat")}
+    app.buttons["save-chat-name"].tap()
+    XCTAssertTrue(app.buttons.containing(.staticText,identifier:"Renamed native chat").firstMatch.waitForExistence(timeout:5))
+    app.buttons["groups-manage"].tap();app.buttons["native-group-new"].tap()
+    let name=app.textFields["native-group-name"];XCTAssertTrue(name.waitForExistence(timeout:3));name.tap();name.typeText("Personal")
+    app.buttons["native-group-save"].tap()
+    XCTAssertTrue(app.staticTexts["Personal"].waitForExistence(timeout:3))
+    app.buttons["native-groups-done"].tap()
+    app.buttons["chat-actions-ses_owned"].tap();app.buttons["Move to group"].tap();app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","native-move-choice-")).firstMatch.tap()
+    app.buttons["older-search-open"].tap()
+    let search=app.searchFields.firstMatch;XCTAssertTrue(search.waitForExistence(timeout:3));search.tap();search.typeText("Renamed")
+    XCTAssertTrue(app.buttons["native-search-hit-ses_owned"].waitForExistence(timeout:5))
+    let proof=XCTAttachment(screenshot:app.screenshot());proof.name="Native chat rename groups and title search";proof.lifetime = .keepAlways;add(proof)
+  }
+  @MainActor func testNativeCreateForkAndExplicitTreeDeletion(){
+    let app=launch()
+    app.buttons["Open chat history"].tap()
+    XCTAssertTrue(app.buttons["chat-actions-ses_owned"].waitForExistence(timeout:4))
+    app.buttons["chat-actions-ses_owned"].tap();app.buttons["Continue in a new chat"].tap()
+    XCTAssertTrue(app.buttons["native-action-confirm"].waitForExistence(timeout:3));app.buttons["native-action-confirm"].tap()
+    XCTAssertTrue(app.buttons["Model and chat settings"].waitForExistence(timeout:5))
+    app.buttons["Open chat history"].tap()
+    XCTAssertTrue(app.buttons["chat-actions-ses_fork"].waitForExistence(timeout:4));app.buttons["chat-actions-ses_fork"].tap()
+    app.buttons["Delete chat and branches"].tap()
+    XCTAssertTrue(app.staticTexts["1 chat in this tree"].waitForExistence(timeout:4))
+    app.buttons["native-action-confirm"].tap()
+    XCTAssertTrue(app.buttons["chat-actions-ses_owned"].waitForExistence(timeout:5))
+    XCTAssertFalse(app.buttons["chat-actions-ses_fork"].exists)
+    app.buttons["native-list-new-chat"].tap()
+    XCTAssertTrue(app.buttons["Model and chat settings"].waitForExistence(timeout:5))
+    app.buttons["Open chat history"].tap()
+    XCTAssertTrue(app.buttons.containing(.staticText,identifier:"New chat").firstMatch.waitForExistence(timeout:4))
   }
   @MainActor func testNativeDoneRemainsIndependentOfSlowCatalog(){
     let app=launch(slow:true)
