@@ -6,9 +6,21 @@ public struct OpenCodeMessageContent: Decodable, Sendable, Equatable {
   public let toolName:String?
   public let toolState:String?
   public let toolSummary:String?
+  public let toolFiles:[OpenCodeToolFileReference]
+  public let unsupportedToolFiles:Int
   private enum CodingKeys:String,CodingKey { case type,text,name,state }
   private struct State:Decodable {
-    struct Output:Decodable { let type:String;let text:String? }
+    struct Output:Decodable {
+      let type:String;let text:String?;let uri:String?;let mime:String?
+      private enum CodingKeys:String,CodingKey{case type,text,uri,mime}
+      init(from decoder:any Decoder)throws{
+        let c=try decoder.container(keyedBy:CodingKeys.self)
+        type=(try? c.decode(String.self,forKey:.type)) ?? "unknown"
+        text=type=="text" ? try? c.decode(String.self,forKey:.text):nil
+        uri=type=="file" ? try? c.decode(String.self,forKey:.uri):nil
+        mime=type=="file" ? try? c.decode(String.self,forKey:.mime):nil
+      }
+    }
     let status:String;let content:[Output]?
   }
   public init(from decoder:any Decoder) throws {
@@ -19,6 +31,12 @@ public struct OpenCodeMessageContent: Decodable, Sendable, Equatable {
     let state = type == "tool" ? try c.decode(State.self,forKey:.state) : nil
     toolState = state?.status
     toolSummary = state?.content?.filter{$0.type == "text"}.compactMap(\.text).joined(separator:"\n")
+    let references=state?.content?.filter{$0.type=="file"} ?? []
+    toolFiles=references.prefix(128).compactMap{value in
+      guard let uri=value.uri,let mime=value.mime,uri.utf8.count<=16_384,!mime.isEmpty,mime.utf8.count<=256 else{return nil}
+      return OpenCodeToolFileReference(uri:uri,mime:mime)
+    }
+    unsupportedToolFiles=references.count-toolFiles.count
   }
 }
 public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
@@ -70,7 +88,7 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
     guard content.count <= 4_096 else { throw RemoteError.invalidResponse }
   }
   public var storedTextBytes:Int {
-    (text?.utf8.count ?? 0) + content.reduce(0){$0 + ($1.text?.utf8.count ?? 0) + ($1.toolSummary?.utf8.count ?? 0)} +
+    (text?.utf8.count ?? 0) + content.reduce(0){$0 + ($1.text?.utf8.count ?? 0) + ($1.toolSummary?.utf8.count ?? 0) + $1.toolFiles.reduce(0){$0+$1.uri.utf8.count+$1.mime.utf8.count}} +
       files.reduce(0){$0 + ($1.name?.utf8.count ?? 0) + ($1.mime?.utf8.count ?? 0) + ($1.sourceURI?.utf8.count ?? 0) + 128} + (metadata?.storedBytes ?? 0)
   }
 }
