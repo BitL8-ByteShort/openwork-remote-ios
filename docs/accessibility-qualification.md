@@ -1,6 +1,6 @@
 # Native accessibility qualification
 
-October15 source checkpoint on the OpenCode migration branch. This is not a distributed native beta or physical-device acceptance.
+October15 Simulator qualification on the OpenCode migration branch. Native1.0.0(8) is now available in internal TestFlight; these captured tests do not establish physical-device acceptance.
 
 The largest accessibility text size is exercised on iPhone17Pro/iOS27, iPhoneSE3/iOS26.5 and iPadPro11/iPadOS 27 Simulators. The SE and iPad final cohorts pass conversation controls, the software keyboard and retained draft after question-sheet dismissal, plus structural accessibility audits. Native startup/offline privacy/back navigation also passes on both device families, including SE. iPad landscape retains the768point reading width.
 

@@ -4,7 +4,7 @@
 
 PocketWork is an independent iPhone and iPad companion for [OpenCode](https://github.com/anomalyco/opencode), maintained by Salty Panda LLC. Pick up a chat, answer a question or review a file while the work keeps running on your computer.
 
-**This branch contains the OpenCode v2 migration candidate. No OpenCode-backed PocketWork build has been distributed yet.** Existing internal TestFlight builds use the earlier OpenWork integration. Public App Store distribution, physical-device qualification and the new policy's publication remain pending. See [compatibility and evidence](docs/opencode-compatibility.md).
+**OpenCode-backed PocketWork1.0.0(8) is available to the existing internal TestFlight group.** Earlier0.1.0 builds use OpenWork. Physical-device acceptance and public App Store distribution remain pending. See [compatibility and evidence](docs/opencode-compatibility.md).
 
 ## In this source candidate
 
@@ -28,6 +28,8 @@ The inspected baseline is **OpenCode 2.0.29**. Keep the compatible OpenCode serv
 2. In PocketWork, scan the QR code or paste the pairing link.
 3. Review the HTTPS address and connect. A pairing code expires after five minutes and can be used once.
 4. Choose the projects and chats to display. Before sending or preparing attachments, review the reported AI-sharing context.
+
+On a CLI-only host, OpenCode v2.0.29 also provides `opencode pair --remote`. It prints native pairing links and a QR code; scan the QR or copy its HTTPS link into PocketWork. If native Remote access is off, OpenCode asks before enabling it. The app ignores the QR's plain-HTTP local addresses and uses an advertised HTTPS address.
 
 This connection uses OpenCode's native remote access. It needs no PocketWork bridge, OpenWork fork or separate Tailscale app. Normal TLS validation stays enabled. OpenCode may route encrypted traffic through OpenTunnel; the host and model-provider configuration still determine where work and data go.
 
@@ -68,4 +70,4 @@ Email **support@saltypanda.com** or use [GitHub Issues](https://github.com/BitL8
 
 The source and original artwork are [MIT licensed](LICENSE). The credited OpenCode logo has its own retained MIT notice in [NOTICE.md](NOTICE.md). PocketWork is independently maintained and isn't an official OpenCode product. OpenCode's maintainers aren't responsible for this app.
 
-The currently hosted [privacy](https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/), [support](https://bitl8-byteshort.github.io/openwork-remote-ios/support/) and [terms](https://bitl8-byteshort.github.io/openwork-remote-ios/terms/) pages still describe the earlier distributed beta until the reviewed native copy is published. The native candidate's exact offline copy lives in [bundled information](OpenWorkRemote/Resources/Information/); its manifest explicitly records publication approval status.
+Read [privacy](https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/), [support](https://bitl8-byteshort.github.io/openwork-remote-ios/support/) and [terms](https://bitl8-byteshort.github.io/openwork-remote-ios/terms/) at the stable information-site URLs. The exact approved offline copy is in [bundled information](OpenWorkRemote/Resources/Information/); its manifest records policy version2026-10-15.1.

@@ -1,6 +1,6 @@
 # OpenCode compatibility
 
-The OpenCode migration is under development. No native-backend PocketWork build has been distributed yet. Earlier-beta recovery is described in the [migration guide](migrating-from-openwork.md).
+OpenCode-backed PocketWork1.0.0(8) is available in the existing internal TestFlight group. Its signed archive uses public code551db8e, policy2026-10-15.1, universal iPhone/iPad settings and no DEBUG fixture code. Physical acceptance and public App Store distribution remain pending. Earlier-beta recovery is described in the [migration guide](migrating-from-openwork.md).
 
 Scoped native contract checks have passed against **OpenCode 2.0.29** on macOS and Ubuntu Linux. This does not qualify the complete source candidate for release. Native pairing uses OpenCode’s built-in HTTPS remote access. The computer must keep OpenCode running. There is no PocketWork bridge, Tailscale requirement or general remote-shell API in this connection path.
 

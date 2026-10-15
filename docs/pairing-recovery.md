@@ -2,6 +2,8 @@
 
 Use compatible OpenCode v2's built-in **Remote access → Pair device**, then scan its QR code or paste its link in PocketWork. Review the selected HTTPS address. The inspected 2.0.29 code expires after five minutes and can be used once. Create a fresh code when it expires or has already been redeemed.
 
+For a CLI-only host, run `opencode pair --remote` on the computer. This uses OpenCode's native remote address and asks before enabling Remote access when needed. Scan its QR or paste the HTTPS link. Localhost links refer to the device opening them; use the advertised HTTPS remote link on the phone. The app already handles a QR containing both local HTTP and remote HTTPS addresses.
+
 A saved credential reconnects without redeeming that old code again. Check that the computer is awake, OpenCode is running and Remote access is enabled. A temporary network error is not a reason to rotate the server password. Unsupported native versions can be blocked from writes.
 
 If OpenCode rejects the credential, choose **Pair again** and use a fresh native pairing. An obsolete request from a retired connection cannot replace the new connection. No connection recovery automatically resends an unconfirmed prompt.

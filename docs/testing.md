@@ -38,7 +38,7 @@ CI builds both Debug and Release without signing. After a Release build, `python
 
 The bundled information directory is canonical. An unapproved policy can be rendered only for private review with `--allow-draft`; normal publication generation intentionally refuses it. After approval, generate the site twice and verify no changes on the second run.
 
-No native candidate is distributed yet. Keep final joined host/device, accessibility, reviewer-access and App Store gates open until they have actual evidence. See [rendering measurements](rendering-and-responsiveness.md), [accessibility](accessibility-qualification.md) and [compatibility](opencode-compatibility.md).
+Native1.0.0(8), archived from code551db8e, is available to the existing internal TestFlight group. Keep remaining physical host/device, accessibility, reviewer-access and App Store gates open until they have actual evidence. See [rendering measurements](rendering-and-responsiveness.md), [accessibility](accessibility-qualification.md) and [compatibility](opencode-compatibility.md).
 
 ## October15 final UI checkpoint
 

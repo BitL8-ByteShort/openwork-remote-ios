@@ -2,7 +2,7 @@
 
 The OpenCode migration is a new connection backend for the existing PocketWork app. It keeps the app identity. It does not convert the earlier OpenWork pairing into an OpenCode credential.
 
-When the native beta is available through TestFlight, update there. No cable is required. Keep a copy of important unsent text before changing connections. The native candidate starts with OpenCode pairing, using **Remote access → Pair device** in a compatible OpenCode installation. The inspected baseline is 2.0.29.
+The native1.0.0(8) beta is available to the existing internal TestFlight group. Update there. No cable is required. Keep a copy of important unsent text before changing connections. The native candidate starts with OpenCode pairing, using **Remote access → Pair device** in a compatible OpenCode installation. The inspected baseline is 2.0.29.
 
 Earlier recoverable draft text stays local and separate. Open **Data Controls** to review it, select the intended native chat/folder and deliberately copy the text. Attachments, selected skills and uncertain actions are not transferred. Opening the app never resends an old prompt. A saved native chat selection is checked against its actual folder before restoration; moved-folder text requires review.
 

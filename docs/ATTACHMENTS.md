@@ -1,6 +1,6 @@
 # Photos and files
 
-This guide describes the OpenCode source candidate, which has not been distributed yet.
+This guide describes the native OpenCode integration available in internal TestFlight1.0.0(8). Physical picker/share acceptance remains separate.
 
 Choose the plus button in a selected chat, then **Choose photos** or **Browse files**. Native attachments support normalized PNG photos and PDF documents. Photos become PNGs up to 2,000 pixels on the longest edge; original location/camera metadata is not copied, and the original photo is unchanged. The system pickers control selection; the app does not request unrestricted photo-library access.
 
