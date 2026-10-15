@@ -181,6 +181,20 @@ final class NativeAppTests:XCTestCase {
     let proof=XCTAttachment(screenshot:XCUIScreen.main.screenshot());proof.name="Largest-text compact sharing decisions";proof.lifetime = .keepAlways;add(proof)
     cancel.tap();XCTAssertEqual(composer.value as? String,"A large-text sharing review")
   }
+  @MainActor func testSettingsCanPairAgainAndCancelWithoutForgettingTheDraft(){
+    let app=launch(noAnimations:true)
+    openFixtureChat(app)
+    let composer=app.textFields["composer"];composer.tap();composer.typeText("Keep this draft while pairing again")
+    app.buttons["Open chat history"].tap();app.buttons["Settings"].tap()
+    let repair=app.buttons["native-pair-again"]
+    XCTAssertTrue(repair.waitForExistence(timeout:4));guard repair.exists else{return}
+    repair.tap()
+    XCTAssertTrue(app.buttons["native-scan-pairing"].waitForExistence(timeout:4))
+    app.buttons["native-back"].tap()
+    XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:5))
+    openFixtureChat(app)
+    XCTAssertEqual(composer.value as? String,"Keep this draft while pairing again")
+  }
   @MainActor func testNativeConversationUsesExistingChatAndSettingsScreens(){
     let app=launch()
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:4))
