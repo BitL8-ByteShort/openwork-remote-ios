@@ -12,6 +12,7 @@ import OpenWorkRemoteCore
   let controls=NativeControlStore()
   let approvals=NativeApprovalStore()
   let forms:NativeFormStore
+  let attachments:NativeAttachmentStore
   let visibility:NativeProjectVisibilityStore
   private(set) var ready=false
   var notice:String?
@@ -28,6 +29,7 @@ import OpenWorkRemoteCore
     connection=ConnectionCoordinator(persistence:connectionPersistence,transport:transport)
     journal=NativeConversationJournal(persistence:try NativeConversationFile(directory:root))
     conversation=ConversationCoordinator(journal:journal)
+    attachments=NativeAttachmentStore(journal:journal,files:ProtectedAttachmentFiles(directory:root.appending(path:"NativeAttachmentBytes")))
     forms=NativeFormStore(persistence:try NativeFormFile(directory:root))
     visibility=NativeProjectVisibilityStore(persistence:try NativeVisibilityFile(directory:root))
     conversation.observe(snapshot:{[weak self] target,session,page in
@@ -50,6 +52,7 @@ import OpenWorkRemoteCore
     guard connection.state == .ready,let client=activeClient else{return}
     let current=UUID();selection=current;cancelInputs();preservingEarlierHistory=false
     guard let target=navigation.selectProvisional(session) else{return}
+    attachments.activate(target:target,client:client)
     controls.activate(target:target,client:client)
     approvals.activate(target:target,client:client);forms.activate(target:target,client:client)
     await conversation.activate(target:target,service:client)
@@ -60,7 +63,7 @@ import OpenWorkRemoteCore
   }
   func deactivate(){
     selection=UUID();cancelInputs()
-    conversation.deactivate();controls.deactivate();approvals.deactivate();forms.deactivate();activeClient=nil
+    conversation.deactivate();attachments.deactivate();controls.deactivate();approvals.deactivate();forms.deactivate();activeClient=nil
   }
   private func cancelInputs(){
     approvalTask?.cancel();formTask?.cancel();approvalTask=nil;formTask=nil;approvalsDirty=false;formsDirty=false
@@ -122,19 +125,36 @@ import OpenWorkRemoteCore
   var canSend:Bool{
     connection.state == .ready && ready && journal.ready && !journal.storageIssue && !uncertain &&
       conversation.currentSession != nil && conversation.target==navigation.target && !conversation.sending && !conversation.isActive &&
-      !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && draft.utf8.count<=32_768
+      (!draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || attachments.canSend) &&
+      (attachments.rows.isEmpty || attachments.canSend) && draft.utf8.count<=32_768
   }
   func setDraft(_ value:String){if let target=navigation.target{journal.setDraft(value,for:target)}}
   func select(_ presentation:ChatSession) async {
     guard let session=navigation.sessions.first(where:{OpenCodeIdentity.matches($0.id,presentation.id) && OpenCodeIdentity.matches($0.projectID,presentation.workspaceId)}) else{return}
     await open(session)
   }
-  func send() async {guard canSend else{return};await conversation.send()}
+  func send() async {
+    guard canSend else{return}
+    if attachments.rows.isEmpty{await conversation.send();return}
+    guard let context=attachments.context else{return}
+    let selected=attachments.rows
+    do{
+      let files=try await attachments.promptFiles(context:context)
+      guard navigation.target==context.target,conversation.target==context.target else{
+        notice="The chat changed before the files were sent. Your selected files stay with the original chat.";return
+      }
+      await conversation.send(files:files)
+      if !journal.storageIssue,journal.pending(for:context.target)==nil{
+        let retained=Set(journal.attachments(for:context.target).map(\.id))
+        for row in selected where !retained.contains(row.id){try? await attachments.files.remove(row.file)}
+      }
+    }catch{notice="The selected files could not be read safely. Unlock this device or remove and choose them again."}
+  }
   func stop() async {await conversation.interrupt()}
   func checkConversation() async {await conversation.refresh()}
   func changeWorkspace(_ workspace:Workspace) async {
     guard connection.state == .ready else{return}
-    selection=UUID();cancelInputs();conversation.clearSelection();controls.deactivate();approvals.deactivate();forms.clearSelection()
+    selection=UUID();cancelInputs();conversation.clearSelection();attachments.clearSelection();controls.deactivate();approvals.deactivate();forms.clearSelection()
     await navigation.selectProject(workspace.id)
   }
   func reconnect() async {

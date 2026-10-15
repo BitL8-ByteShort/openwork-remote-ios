@@ -67,6 +67,10 @@ import OpenWorkRemoteCore
     let decoded = try #require(CGImageSourceCreateWithData(data as CFData, nil))
     let image = try #require(CGImageSourceCreateImageAtIndex(decoded, 0, nil))
     #expect(image.width == 2048); #expect(image.height <= 683)
+    let native=try await vault.normalizedPhoto(source,maximumPixelSize:2000)
+    let nativeSource=try #require(CGImageSourceCreateWithData(native as CFData,nil))
+    let nativeImage=try #require(CGImageSourceCreateImageAtIndex(nativeSource,0,nil))
+    #expect(nativeImage.width==2000);#expect(nativeImage.height<=667)
     let attributes = try FileManager.default.attributesOfItem(atPath: folder.appending(path: "vault/\(file.id.uuidString.lowercased()).bin").path)
     #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
   }

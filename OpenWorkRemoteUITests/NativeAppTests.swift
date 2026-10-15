@@ -39,4 +39,26 @@ final class NativeAppTests:XCTestCase {
     app.buttons["Done"].tap()
     XCTAssertTrue(app.textFields["composer"].waitForExistence(timeout:2))
   }
+  @MainActor func testNativePhotoSelectionAndFileOnlySend(){
+    let app=launch()
+    XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:4))
+    app.buttons["Open chat history"].tap()
+    app.buttons.containing(.staticText,identifier:"Native chat").firstMatch.tap()
+    XCTAssertTrue(app.buttons["composer-add"].waitForExistence(timeout:4))
+    app.buttons["composer-add"].tap();app.buttons["Photos or files"].tap()
+    XCTAssertTrue(app.buttons["Choose photos"].waitForExistence(timeout:4))
+    let sample=app.buttons["native-fixture-photo"]
+    if !sample.isHittable{app.swipeUp()}
+    sample.tap()
+    XCTAssertTrue(app.staticTexts["Ready · inline media"].waitForExistence(timeout:5))
+    app.buttons["native-attachment-done"].tap()
+    let chips=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","native-attachment-chip-"))
+    XCTAssertEqual(chips.count,1)
+    XCTAssertTrue(app.buttons["send-message"].isEnabled)
+    app.buttons["send-message"].tap()
+    let removed=NSPredicate{_,_ in chips.count==0}
+    expectation(for:removed,evaluatedWith:nil)
+    waitForExpectations(timeout:5)
+  }
+
 }

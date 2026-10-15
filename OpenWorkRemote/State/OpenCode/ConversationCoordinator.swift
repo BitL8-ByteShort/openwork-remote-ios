@@ -77,13 +77,13 @@ enum NativeStreamState {case stopped,connecting,live,polling}
       else{issue = .unavailable}
     }
   }
-  func send() async {
+  func send(files:[OpenCodePromptFile]=[]) async {
     guard let target,let service,!sendingTargets.contains(target),journal.ready,!journal.storageIssue,journal.pending(for:target)==nil,
       issue != .locationChanged,issue != .authenticationRequired else{return}
     let current=generation,epoch=mutationEpoch;sendingTargets.insert(target);issue=nil
     defer{sendingTargets.remove(target)}
     let pending:NativePendingPrompt
-    do{pending=try await journal.prepare(target:target)}catch{if current==generation{issue = .storage};return}
+    do{pending=try await journal.prepare(target:target,files:files)}catch{if current==generation{issue = .storage};return}
     guard epoch==mutationEpoch,!Task.isCancelled else{
       // Durable intent exists, but no request was dispatched. Keep its draft editable.
       try? await journal.reject(pending);return

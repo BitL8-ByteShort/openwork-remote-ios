@@ -17,8 +17,24 @@ struct NativeConversationDisk:Codable,Sendable {
   var schemaVersion=1
   var drafts:[DraftKey:String]=[:]
   var pending:[DraftKey:NativePendingPrompt]=[:]
+  var attachments:[OpenCodeTarget:[NativeSelectedAttachment]]=[:]
+  init(){}
+  private enum CodingKeys:String,CodingKey{case schemaVersion,drafts,pending,attachments}
+  init(from decoder:any Decoder)throws{
+    let c=try decoder.container(keyedBy:CodingKeys.self)
+    schemaVersion=try c.decode(Int.self,forKey:.schemaVersion)
+    drafts=try c.decode([DraftKey:String].self,forKey:.drafts)
+    pending=try c.decode([DraftKey:NativePendingPrompt].self,forKey:.pending)
+    attachments=try c.decodeIfPresent([OpenCodeTarget:[NativeSelectedAttachment]].self,forKey:.attachments) ?? [:]
+  }
   func validate() throws {
     guard schemaVersion==1 else{throw RemoteError.incompatible}
+    guard attachments.count<=2_000 else{throw RemoteError.oversized}
+    for (target,rows) in attachments{
+      guard rows.count<=4,Set(rows.map(\.id)).count==rows.count else{throw RemoteError.oversized}
+      for row in rows{try row.validate(target:target)}
+      guard rows.reduce(0,{$0+$1.file.bytes})<=40*1_048_576 else{throw RemoteError.oversized}
+    }
     guard drafts.count<=2_000,pending.count<=100,
       drafts.values.allSatisfy({$0.utf8.count<=32_768}),
       pending.allSatisfy({key,value in
@@ -72,6 +88,11 @@ actor NativeConversationFile:NativeConversationPersistence {
     guard !retired else{throw RemoteError.unavailable}
     disk=result
     for key in disk.pending.keys where disk.pending[key]?.state == .prepared{disk.pending[key]?.state = .unknown}
+    for target in disk.attachments.keys{
+      disk.attachments[target]=disk.attachments[target]?.map{row in
+        var value=row;if value.phase == .preparing{value.phase = .uploadUnknown};return value
+      }
+    }
     ready=true;storageIssue=false
   }
   func draft(for target:OpenCodeTarget)->String{disk.drafts[target.nativeDraftKey] ?? ""}
@@ -87,9 +108,20 @@ actor NativeConversationFile:NativeConversationPersistence {
     disk.drafts[target.nativeDraftKey]=text
     try await persist()
   }
-  func prepare(target:OpenCodeTarget) async throws -> NativePendingPrompt {
+  func attachments(for target:OpenCodeTarget)->[NativeSelectedAttachment]{disk.attachments[target] ?? []}
+  func setAttachments(_ rows:[NativeSelectedAttachment],for target:OpenCodeTarget) async throws{
+    guard ready,!retired,pending(for:target)==nil else{throw RemoteError.unavailable}
+    guard rows.count<=4,Set(rows.map(\.id)).count==rows.count else{throw RemoteError.oversized}
+    for row in rows{try row.validate(target:target)}
+    guard rows.reduce(0,{$0+$1.file.bytes})<=40*1_048_576 else{throw RemoteError.oversized}
+    if rows.isEmpty{disk.attachments.removeValue(forKey:target)}else{disk.attachments[target]=rows}
+    try await persist()
+  }
+  func prepare(target:OpenCodeTarget,files:[OpenCodePromptFile]=[]) async throws -> NativePendingPrompt {
     guard ready,!storageIssue,!retired,pending(for:target)==nil else{throw RemoteError.unavailable}
-    let item=NativePendingPrompt(target:target,prompt:try OpenCodePrompt(text:draft(for:target)),state:.prepared)
+    let selected=attachments(for:target)
+    guard selected.count==files.count,selected.allSatisfy({row in row.phase == .ready && files.contains(where:{$0==row.prepared})}) else{throw RemoteError.unavailable}
+    let item=NativePendingPrompt(target:target,prompt:try OpenCodePrompt(text:draft(for:target),files:files),state:.prepared)
     disk.pending[target.nativeDraftKey]=item
     do{try await persist();return item}
     catch{disk.pending[target.nativeDraftKey]?.state = .unknown;throw error}
@@ -102,6 +134,9 @@ actor NativeConversationFile:NativeConversationPersistence {
   func confirm(_ item:NativePendingPrompt) async throws {
     guard ready,!retired,pending(for:item.target)?.prompt.id==item.prompt.id else{throw RemoteError.conflict}
     disk.pending.removeValue(forKey:item.target.nativeDraftKey)
+    let sent=Set(item.prompt.files.map(\.id))
+    let retained=attachments(for:item.target).filter{row in row.prepared.map{!sent.contains($0.id)} ?? true}
+    if retained.isEmpty{disk.attachments.removeValue(forKey:item.target)}else{disk.attachments[item.target]=retained}
     if OpenCodeIdentity.matches(draft(for:item.target),item.prompt.text){disk.drafts.removeValue(forKey:item.target.nativeDraftKey)}
     try await persist()
   }

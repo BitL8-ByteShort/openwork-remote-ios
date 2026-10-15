@@ -5,6 +5,7 @@ import OpenWorkRemoteCore
 /// Exercises the shared production views through the typed native HTTP client.
 /// Synthetic origin/credential; every response is in-process, no real network.
 private actor NativeAppUITestTransport:HTTPTransport {
+  var admitted:[String:Any]?
   let slow:Bool
   init(slow:Bool){self.slow=slow}
   private var record:[String:Any]{["id":"ses_owned","projectID":"project","title":"Native chat","location":["directory":"/project"],"time":["created":1,"updated":2],"model":["providerID":"Synthetic provider","id":"native-model"],"agent":"build","permissions":[]]}
@@ -18,7 +19,15 @@ private actor NativeAppUITestTransport:HTTPTransport {
     case "/api/session":value=["data":[record],"cursor":[:]]
     case "/api/session/ses_owned":value=["data":record]
     case "/api/session/ses_owned/message":value=["data":[["id":"msg_owned","type":"user","text":"Native message","time":["created":1]]],"cursor":[:]]
-    case "/api/session/ses_owned/inbox":value=["data":[]]
+    case "/api/session/ses_owned/prompt":
+      let body=try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:Any]
+      let files=(body["files"] as? [[String:Any]] ?? []).map{file -> [String:Any] in
+        let uri=file["uri"] as! String,parts=uri.split(separator:",",maxSplits:1)
+        return ["name":file["name"]!,"mime":String(parts[0].dropFirst(5).split(separator:";")[0]),"data":String(parts[1]),"source":["type":"inline"]]
+      }
+      admitted=["id":body["id"]!,"sessionID":"ses_owned","type":"user","payload":["text":body["text"]!,"files":files]]
+      value=["data":admitted!]
+    case "/api/session/ses_owned/inbox":value=["data":admitted.map{[$0]} ?? []]
     case "/api/session/active":value=["data":[:]]
     case "/api/session/ses_owned/permission":value=["data":[["id":"per_owned","sessionID":"ses_owned","action":"read","resources":["notes.txt"]]]]
     case "/api/session/ses_owned/form":value=["data":[form]]

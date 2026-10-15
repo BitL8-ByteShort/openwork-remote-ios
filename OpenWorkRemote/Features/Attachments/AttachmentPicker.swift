@@ -115,7 +115,7 @@ struct AttachmentPicker: View {
     return types
   }
 }
-private struct AttachmentChoice: View {
+struct AttachmentChoice: View {
   let label: String
   let symbol: String
   nonisolated init(_ label: String, symbol: String) { self.label = label; self.symbol = symbol }
