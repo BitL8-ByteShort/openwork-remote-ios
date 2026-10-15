@@ -73,7 +73,7 @@ extension OpenCodeClient:OpenCodeChatServing {
       let body=try JSONEncoder().encode(Body(id:intent.id,location:scope,model:intent.model,agent:intent.agent,metadata:["pocketworkCreationID":intent.id]))
       _=try await requireQualifiedWrites();try Task.checkCancellation()
       request=try makeRequest(segments:["api","session"],method:"POST",body:body)
-    }catch{throw OpenCodeChatNotSubmitted(reason:(error as? RemoteError) ?? (error is CancellationError ? .cancelled:.unavailable))}
+    }catch{throw OpenCodeChatNotSubmitted(reason:(error as? RemoteError) ?? (error is CancellationError || error is OpenCodeRequestNotDispatched ? .cancelled:.unavailable))}
     var status:Int?
     do{
       let result=try await transport.data(for:request,maximumBytes:OpenCodeResponseBudget.ordinary.rawValue);status=result.1
@@ -81,6 +81,7 @@ extension OpenCodeClient:OpenCodeChatServing {
       let receipt=try JSONDecoder().decode(NativeCreationResponse.self,from:result.0).data
       return try verifyCreation(receipt,intent:intent)
     }catch{
+      if error is OpenCodeRequestNotDispatched{throw OpenCodeChatNotSubmitted(reason:.cancelled)}
       // The same random ID plus its marker can confirm a lost response. No second POST.
       if let existing=try? await createdChat(for:intent){return existing}
       if let status,[400,401,403,404,413,422].contains(status){
@@ -101,9 +102,9 @@ extension OpenCodeClient:OpenCodeChatServing {
       struct Body:Encodable{let title:String}
       _=try await requireQualifiedWrites();try Task.checkCancellation()
       request=try makeRequest(segments:["api","session",target.sessionID],method:"PATCH",body:JSONEncoder().encode(Body(title:name)))
-    }catch{throw OpenCodeChatNotSubmitted(reason:(error as? RemoteError) ?? (error is CancellationError ? .cancelled:.unavailable))}
+    }catch{throw OpenCodeChatNotSubmitted(reason:(error as? RemoteError) ?? (error is CancellationError || error is OpenCodeRequestNotDispatched ? .cancelled:.unavailable))}
     var status:Int?
-    do{let result=try await transport.data(for:request,maximumBytes:OpenCodeResponseBudget.ordinary.rawValue);status=result.1;try checkStatus(result.1)}catch{}
+    do{let result=try await transport.data(for:request,maximumBytes:OpenCodeResponseBudget.ordinary.rawValue);status=result.1;try checkStatus(result.1)}catch is OpenCodeRequestNotDispatched{throw OpenCodeChatNotSubmitted(reason:.cancelled)}catch{}
     if let actual=try? await verifyTarget(target),OpenCodeIdentity.matches(actual.title,name){return actual}
     if let status,[400,401,403,404,413,422].contains(status){
       do{try checkStatus(status)}catch{throw OpenCodeChatNotSubmitted(reason:(error as? RemoteError) ?? .invalidResponse)}

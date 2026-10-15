@@ -94,7 +94,11 @@ enum NativeStreamState {case stopped,connecting,live,polling}
       guard result.matches(pending.prompt,sessionID:target.sessionID) else{throw RemoteError.conflict}
       try await journal.confirm(pending)
     }catch{
-      guard epoch==mutationEpoch else{try? await journal.mark(pending,state:.unknown);return}
+      guard epoch==mutationEpoch else{
+        if error is OpenCodePromptNotSubmitted{try? await journal.reject(pending)}
+        else{try? await journal.mark(pending,state:.unknown)}
+        return
+      }
       if journal.storageIssue{if current==generation{issue = .storage};return}
       let resultIssue:NativeConversationIssue
       do{

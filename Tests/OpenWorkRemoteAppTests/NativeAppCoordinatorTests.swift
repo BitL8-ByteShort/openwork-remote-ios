@@ -11,6 +11,9 @@ actor NativeShellTransport:HTTPTransport {
   var holdFirstHistory=true
   var admitted:[String:Any]?
   var prompts=0
+  var infoStatus=200
+  func setInfoStatus(_ status:Int){infoStatus=status}
+  func allowHistory(){holdFirstHistory=false}
   let session:[String:String]=["id":"ses_owned","projectID":"project","title":"Native chat"]
   func data(for request:URLRequest) async throws -> (Data,Int){
     let path=request.url!.path;paths.append(path)
@@ -35,7 +38,7 @@ actor NativeShellTransport:HTTPTransport {
     case "/api/model":catalogReads+=1;throw RemoteError.unavailable
     default:throw RemoteError.invalidResponse
     }
-    return(try JSONSerialization.data(withJSONObject:value),200)
+    return(try JSONSerialization.data(withJSONObject:value),path=="/api/info" ? infoStatus:200)
   }
   func events(for request:URLRequest) async throws -> AsyncThrowingStream<SSEFrame,any Error>{paths.append(request.url!.path);return AsyncThrowingStream{_ in}}
   func waitForHeldHistory() async{if held != nil{return};await withCheckedContinuation{waiters.append($0)}}
@@ -45,6 +48,23 @@ actor NativeShellTransport:HTTPTransport {
   func sentPrompts()->Int{prompts}
 }
 @Suite @MainActor struct NativeAppCoordinatorTests {
+  @Test func authenticationFailureImmediatelyDeactivatesChildStores()async throws{
+    let directory=FileManager.default.temporaryDirectory.appending(path:"native-auth-retirement-"+UUID().uuidString)
+    defer{try? FileManager.default.removeItem(at:directory)}
+    let saved=try nativeStored(),transport=NativeShellTransport();await transport.allowHistory()
+    let app=try NativeAppCoordinator(directory:directory,connectionPersistence:OpenCodePersistence(load:{saved},save:{_ in},remove:{}),transport:transport)
+    defer{app.deactivate()}
+    try await app.start();await app.open(try #require(app.navigation.sessions.first))
+    let client=try #require(app.connection.client)
+    #expect(app.conversation.target != nil && app.workspace.context != nil)
+    await transport.setInfoStatus(401);_ = try? await client.info()
+    let deadline=ContinuousClock.now.advanced(by:.seconds(2))
+    while app.connection.state != .authenticationRejected,ContinuousClock.now<deadline{await Task.yield()}
+    #expect(app.connection.state == .authenticationRejected)
+    #expect(app.conversation.target==nil && app.workspace.context==nil)
+    #expect(app.attachments.context==nil && app.controls.context==nil)
+    #expect(!app.canSend)
+  }
   @Test(.timeLimit(.minutes(1))) func nativeCompositionShowsInputsWhileHistoryAndCatalogAreUnavailable() async throws {
     let directory=FileManager.default.temporaryDirectory.appending(path:"native-app-"+UUID().uuidString)
     defer{try? FileManager.default.removeItem(at:directory)}

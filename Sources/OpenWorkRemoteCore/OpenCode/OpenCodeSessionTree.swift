@@ -30,7 +30,7 @@ extension OpenCodeClient:OpenCodeTreeServing {
       struct Body:Encodable{let before:String?}
       _=try await requireQualifiedWrites();try Task.checkCancellation()
       request=try makeRequest(segments:["api","session",target.sessionID,"fork"],method:"POST",body:JSONEncoder().encode(Body(before:beforeMessageID)))
-    }catch{throw OpenCodeChatNotSubmitted(reason:(error as? RemoteError) ?? (error is CancellationError ? .cancelled:.unavailable))}
+    }catch{throw OpenCodeChatNotSubmitted(reason:(error as? RemoteError) ?? (error is CancellationError || error is OpenCodeRequestNotDispatched ? .cancelled:.unavailable))}
     var status:Int?
     do{
       let response=try await transport.data(for:request,maximumBytes:OpenCodeResponseBudget.ordinary.rawValue);status=response.1
@@ -42,6 +42,7 @@ extension OpenCodeClient:OpenCodeTreeServing {
         OpenCodeModelRef.sameSelection(row.model,parent.model),OpenCodeIdentity.matches(row.agent,parent.agent),row.permissions==parent.permissions else{throw RemoteError.invalidResponse}
       return row
     }catch{
+      if error is OpenCodeRequestNotDispatched{throw OpenCodeChatNotSubmitted(reason:.cancelled)}
       if let status,[400,401,403,404,413,422].contains(status){
         do{try checkStatus(status)}catch{throw OpenCodeChatNotSubmitted(reason:(error as? RemoteError) ?? .invalidResponse)}
       }
@@ -92,9 +93,9 @@ extension OpenCodeClient:OpenCodeTreeServing {
       guard !current.sessions.contains(where:{active.contains($0.id)}) else{throw RemoteError.conflict}
       _=try await requireQualifiedWrites();try Task.checkCancellation()
       request=try makeRequest(segments:["api","session",review.target.sessionID],method:"DELETE")
-    }catch{throw OpenCodeChatNotSubmitted(reason:(error as? RemoteError) ?? (error is CancellationError ? .cancelled:.unavailable))}
+    }catch{throw OpenCodeChatNotSubmitted(reason:(error as? RemoteError) ?? (error is CancellationError || error is OpenCodeRequestNotDispatched ? .cancelled:.unavailable))}
     var status:Int?
-    do{let response=try await transport.data(for:request,maximumBytes:OpenCodeResponseBudget.ordinary.rawValue);status=response.1;try checkStatus(response.1)}catch{}
+    do{let response=try await transport.data(for:request,maximumBytes:OpenCodeResponseBudget.ordinary.rawValue);status=response.1;try checkStatus(response.1)}catch is OpenCodeRequestNotDispatched{throw OpenCodeChatNotSubmitted(reason:.cancelled)}catch{}
     if (try? await deletedSessionTree(review))==true{return}
     if let status,[400,401,403,404,413,422].contains(status){
       do{try checkStatus(status)}catch{throw OpenCodeChatNotSubmitted(reason:(error as? RemoteError) ?? .invalidResponse)}

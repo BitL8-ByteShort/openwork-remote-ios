@@ -144,11 +144,12 @@ extension OpenCodeClient {
       let body=try input.wireBody();try Task.checkCancellation()
       request=try makeRequest(segments:["api","session",target.sessionID,"prompt"],method:"POST",body:body)
     }catch{
-      let reason=(error as? RemoteError) ?? (error is CancellationError ? .cancelled : .unavailable)
+      let reason=(error as? RemoteError) ?? (error is CancellationError || error is OpenCodeRequestNotDispatched ? .cancelled : .unavailable)
       throw OpenCodePromptNotSubmitted(reason:reason)
     }
     let bytes:Data,status:Int
     do{(bytes,status)=try await transport.data(for:request,maximumBytes:OpenCodeResponseBudget.materializedPrompt.rawValue)}
+    catch is OpenCodeRequestNotDispatched{throw OpenCodePromptNotSubmitted(reason:.cancelled)}
     catch{throw RemoteError.outcomeUnknown}
     // A failed/oversized acknowledgement may follow successful durable admission.
     guard bytes.count<=OpenCodeResponseBudget.materializedPrompt.rawValue else{throw RemoteError.outcomeUnknown}

@@ -49,6 +49,11 @@ import OpenWorkRemoteCore
     creation=NativeCreateStore(persistence:try NativeCreationFile(directory:root))
     chatActions=NativeChatActionStore(persistence:try NativeActionFile(directory:root))
     groups=LocalChatGroupStore(persistence:try LocalChatGroupFile(directory:root))
+    connection.observeChanges{[weak self] in
+      guard let self else{return}
+      // Stop child work immediately, independent of a SwiftUI observation turn.
+      if self.connection.state != .ready || self.activeClient !== self.connection.client{self.deactivate()}
+    }
     conversation.observe(snapshot:{[weak self] target,session,page in
       guard let self else{return}
       self.navigation.acceptNativeSnapshot(target:target,session:session,page:page,preserveWindow:self.preservingEarlierHistory)
@@ -66,6 +71,7 @@ import OpenWorkRemoteCore
     deactivate();activeClient=client;visibility.activate(saved.id);navigation.activate(saved,reader:client)
     creation.activate(connectionID:saved.id,client:client)
     await navigation.refreshProjects();activateProjectStores()
+    guard activeClient === client,connection.state == .ready else{return}
     do{try await visibility.observe(Set(navigation.projects.map(\.id)))}catch{notice="Project display preferences could not be saved."}
   }
   func open(_ session:OpenCodeSession) async {

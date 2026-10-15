@@ -21,9 +21,14 @@ actor NativeConnectionTransport: HTTPTransport {
   var version = "2.0.29"
   var holdPairing = false
   var resumePairing: CheckedContinuation<Void, Never>?
+  var holdNextInfo = false
+  var resumeInfo: CheckedContinuation<Void, Never>?
   func setInfoStatus(_ value: Int) { infoStatus = value }
   func setVersion(_ value: String) { version = value }
   func setPairingHeld() { holdPairing = true }
+  func setNextInfoHeld(){holdNextInfo=true}
+  func infoIsHeld()->Bool{resumeInfo != nil}
+  func finishInfo(){resumeInfo?.resume();resumeInfo=nil}
   func finishPairing() { resumePairing?.resume(); resumePairing = nil }
   func count() -> Int { reads }
   func data(for request: URLRequest) async throws -> (Data, Int) {
@@ -32,7 +37,9 @@ actor NativeConnectionTransport: HTTPTransport {
       if holdPairing { await withCheckedContinuation { resumePairing = $0 } }
       return (Data(#"{"token":"native-new-token"}"#.utf8),pairingStatus)
     }
-    return (Data("{\"version\":\"\(version)\",\"urls\":[],\"paths\":{\"tmp\":\"/tmp/native\"}}".utf8),infoStatus)
+    let status=infoStatus
+    if holdNextInfo{holdNextInfo=false;await withCheckedContinuation{resumeInfo=$0}}
+    return (Data("{\"version\":\"\(version)\",\"urls\":[],\"paths\":{\"tmp\":\"/tmp/native\"}}".utf8),status)
   }
   func events(for request: URLRequest) async throws -> AsyncThrowingStream<SSEFrame, any Error> { throw RemoteError.unavailable }
 }
@@ -41,6 +48,58 @@ actor NativeConnectionTransport: HTTPTransport {
 }
 
 @Suite @MainActor struct OpenCodeConnectionTests {
+  @Test func replacedClientsLateRejectionCannotPoisonTheNewConnection()async throws{
+    let saved=NativeSavedConnection(try nativeStored()),transport=NativeConnectionTransport()
+    let model=ConnectionCoordinator(persistence:saved.persistence,transport:transport);await model.start()
+    let old=try #require(model.client)
+    await transport.setInfoStatus(401);await transport.setNextInfoHeld()
+    let stale=Task{try? await old.info()}
+    while !(await transport.infoIsHeld()){await Task.yield()}
+    await transport.setInfoStatus(200);await model.reconnect()
+    let current=try #require(model.client)
+    await transport.finishInfo();_ = await stale.value
+    for _ in 0..<20{await Task.yield()}
+    #expect(model.state == .ready && model.client === current)
+    #expect(current !== old)
+  }
+  @Test func oldCredentialRejectionDoesNotInterruptAReplacementPairing()async throws{
+    let saved=NativeSavedConnection(try nativeStored()),transport=NativeConnectionTransport()
+    let model=ConnectionCoordinator(persistence:saved.persistence,transport:transport);await model.start()
+    let old=try #require(model.client)
+    await transport.setPairingHeld()
+    let payload=try OpenCodePairingPayload.parse("https://two.example/auth/connect/synthetic")
+    let pairing=Task{await model.connect(payload,origin:payload.origins[0],displayName:"Replacement")}
+    while await transport.count()<2{await Task.yield()}
+    await transport.setInfoStatus(401)
+    _ = try? await old.info()
+    while model.client != nil{await Task.yield()}
+    #expect(model.state == .pairing && model.isBusy)
+    await transport.setInfoStatus(200);await transport.finishPairing();await pairing.value
+    #expect(model.state == .ready && saved.saves==1)
+    #expect(model.connection?.origin==payload.origins[0])
+  }
+  @Test func currentClientAuthenticationFailureChangesStateAndRetiresRequests()async throws{
+    let saved=NativeSavedConnection(try nativeStored()),transport=NativeConnectionTransport()
+    let model=ConnectionCoordinator(persistence:saved.persistence,transport:transport);await model.start()
+    let client=try #require(model.client)
+    await transport.setInfoStatus(401)
+    await #expect(throws:RemoteError.unauthorized){try await client.info()}
+    let deadline=ContinuousClock.now.advanced(by:.seconds(2))
+    while model.state != .authenticationRejected,ContinuousClock.now<deadline{await Task.yield()}
+    #expect(model.state == .authenticationRejected && model.client==nil)
+    #expect(saved.value != nil)
+  }
+  @Test func replacedClientCannotMakeAnotherRequest()async throws{
+    let saved=NativeSavedConnection(try nativeStored()),transport=NativeConnectionTransport()
+    let model=ConnectionCoordinator(persistence:saved.persistence,transport:transport);await model.start()
+    let old=try #require(model.client)
+    await model.reconnect()
+    #expect(model.client !== old)
+    let count=await transport.count()
+    await #expect(throws:(any Error).self){try await old.info()}
+    #expect(await transport.count()==count)
+    #expect(model.state == .ready)
+  }
   @Test func verifiedPairingCommitsOneNewEnvelope() async throws {
     let saved = NativeSavedConnection(), transport = NativeConnectionTransport()
     let model = ConnectionCoordinator(persistence:saved.persistence,transport:transport)
@@ -129,15 +188,18 @@ actor NativeConnectionTransport: HTTPTransport {
     #expect(await transport.count() == 0)
     #expect(saved.value != nil)
   }
-  @Test func failedForgetPreservesActiveConnection() async throws {
+  @Test func failedForgetKeepsStoredCredentialButStopsUsingIt() async throws {
     let saved = NativeSavedConnection(try nativeStored()), transport = NativeConnectionTransport()
     let model = ConnectionCoordinator(persistence:saved.persistence,transport:transport)
     await model.start()
+    let old=try #require(model.client)
     saved.failRemove = true
     model.forgetLocalConnection()
     #expect(model.connection != nil)
     #expect(saved.value != nil)
     #expect(model.issue == .storageUnavailable)
+    #expect(model.client==nil && model.state == .storageUnavailable)
+    await #expect(throws:(any Error).self){try await old.info()}
     saved.failRemove = false
     model.forgetLocalConnection()
     #expect(model.connection == nil)

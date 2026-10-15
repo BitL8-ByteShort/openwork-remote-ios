@@ -7,6 +7,7 @@ public actor OpenCodeClient {
   public let connection: OpenCodeConnection
   private let token: String
   let transport: any HTTPTransport
+  nonisolated let lifetime=OpenCodeRequestLifetime()
   private(set) var compatibilityStatus: CompatibilityStatus?
 
   public init(connection: OpenCodeConnection, token: String,
@@ -15,8 +16,11 @@ public actor OpenCodeClient {
       !token.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
       throw RemoteError.invalidPairing
     }
-    self.connection = connection; self.token = token; self.transport = transport
+    self.connection = connection; self.token = token; self.transport = OpenCodeScopedTransport(base:transport,lifetime:lifetime)
   }
+
+  public nonisolated func retire(){lifetime.retire()}
+  public nonisolated func observeAuthenticationFailure(_ handler:@escaping @Sendable()->Void){lifetime.observeAuthenticationFailure(handler)}
 
   public func info() async throws -> OpenCodeServerInfo {
     let result = try await decode(OpenCodeServerInfo.self, segments: ["api", "info"])
@@ -30,6 +34,7 @@ public actor OpenCodeClient {
 
   func makeRequest(segments: [String], query: [URLQueryItem] = [], method: String = "GET",
                    body: Data? = nil, contentType: String = "application/json") throws -> URLRequest {
+    try lifetime.requireActive()
     guard ["GET", "POST", "PATCH", "DELETE"].contains(method), !segments.isEmpty,
       segments.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && $0.utf8.count <= 2_048 && !$0.contains("\0") }),
       query.allSatisfy({ $0.name.utf8.count <= 256 && ($0.value?.utf8.count ?? 0) <= 16_384 }),

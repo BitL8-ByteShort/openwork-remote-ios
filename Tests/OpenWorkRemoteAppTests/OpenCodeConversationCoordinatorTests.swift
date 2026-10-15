@@ -14,6 +14,7 @@ actor NativeConversationService:OpenCodeConversationServing {
   var continuation:AsyncThrowingStream<OpenCodeEvent,any Error>.Continuation?
   var messageText="Initial"
   var holdNext=false
+  var holdSend=false
   var held:CheckedContinuation<Void,Never>?
   var heldWaiters:[CheckedContinuation<Void,Never>]=[]
   init(_ mode:Mode = .normal){self.mode=mode}
@@ -35,6 +36,7 @@ actor NativeConversationService:OpenCodeConversationServing {
   }
   func send(target:OpenCodeTarget,input:OpenCodePrompt) async throws -> OpenCodePromptAdmission {
     sent+=1;sentTargets.append(target)
+    if holdSend{holdSend=false;await withCheckedContinuation{c in held=c;heldWaiters.forEach{$0.resume()};heldWaiters=[]}}
     if mode == .notSubmitted{throw OpenCodePromptNotSubmitted(reason:.unavailable)}
     if mode == .rejected{throw RemoteError.forbidden}
     admitted=try mode == .conflict ? OpenCodePrompt(id:input.id,text:"Another admitted body") : input
@@ -57,6 +59,8 @@ actor NativeConversationService:OpenCodeConversationServing {
   func targets()->[OpenCodeTarget]{sentTargets}
   func setInterruptFailure(){active=true;failInterrupt=true}
   func holdNextMessage(){holdNext=true}
+  func holdNextSend(){holdSend=true}
+  func releaseSend(){held?.resume();held=nil}
   func waitUntilHeld() async {if held != nil{return};await withCheckedContinuation{heldWaiters.append($0)}}
   func releaseMessage(){held?.resume();held=nil}
   func setMessage(_ value:String){messageText=value}
@@ -69,6 +73,16 @@ actor NativeConversationService:OpenCodeConversationServing {
     let service=NativeConversationService(mode),coordinator=ConversationCoordinator(journal:journal)
     await coordinator.activate(target:target,service:service)
     return (coordinator,service,journal,target)
+  }
+  @Test(.timeLimit(.minutes(1))) func retiredKnownPreflightDoesNotBecomeAnUnknownSend()async throws{
+    let (coordinator,service,journal,target)=try await setup(.notSubmitted)
+    try await journal.saveDraft("Keep this draft",for:target)
+    await service.holdNextSend()
+    let sending=Task{await coordinator.send()};await service.waitUntilHeld()
+    coordinator.deactivate();await service.releaseSend();await sending.value
+    #expect(journal.pending(for:target)==nil)
+    #expect(journal.draft(for:target)=="Keep this draft")
+    #expect(coordinator.target==nil)
   }
   @Test func lostResponseReconcilesInboxWithoutResending() async throws {
     let (coordinator,service,journal,target)=try await setup(.lostResponse)

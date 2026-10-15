@@ -57,6 +57,7 @@ public actor SessionTransport: HTTPTransport {
   public func data(for request: URLRequest, maximumBytes: Int) async throws -> (Data, Int) {
     let budget = profile == .openCode ? 56 * 1_048_576 : 8_388_608
     guard (1...budget).contains(maximumBytes) else { throw RemoteError.oversized }
+    try Task.checkCancellation()
     let (bytes, response) = try await session.bytes(for: request)
     defer { bytes.task.cancel() }
     guard let http = response as? HTTPURLResponse else { throw RemoteError.invalidResponse }
@@ -71,6 +72,7 @@ public actor SessionTransport: HTTPTransport {
   public func binary(for request: URLRequest, maximumBytes: Int) async throws -> BinaryHTTPResponse {
     let budget = profile == .openCode ? 20 * 1_048_576 : 1_048_576
     guard (1...budget).contains(maximumBytes) else { throw RemoteError.oversized }
+    try Task.checkCancellation()
     let (bytes, response) = try await session.bytes(for: request)
     defer { bytes.task.cancel() }
     guard let http = response as? HTTPURLResponse else { throw RemoteError.invalidResponse }
@@ -103,7 +105,10 @@ public actor SessionTransport: HTTPTransport {
   public func events(for request: URLRequest) async throws -> AsyncThrowingStream<
     SSEFrame, any Error
   > {
+    try Task.checkCancellation()
     let (bytes, response) = try await session.bytes(for: request)
+    var transferredToStream=false
+    defer{if !transferredToStream{bytes.task.cancel()}}
     guard let http = response as? HTTPURLResponse else { throw RemoteError.invalidResponse }
     if http.statusCode == 401 { throw RemoteError.unauthorized }
     if http.statusCode == 403 { throw RemoteError.forbidden }
@@ -112,6 +117,7 @@ public actor SessionTransport: HTTPTransport {
       throw RemoteError.unavailable
     }
     let frameLimit = profile == .openCode ? 262_144 : 16_384
+    transferredToStream=true
     return AsyncThrowingStream(bufferingPolicy: .bufferingNewest(128)) { continuation in
       let task = Task {
         defer { bytes.task.cancel() }

@@ -32,7 +32,7 @@ extension OpenCodeClient {
   public func events() async throws -> AsyncThrowingStream<OpenCodeEvent,any Error> {
     var request=try makeRequest(segments:["api","event"])
     request.setValue("text/event-stream",forHTTPHeaderField:"Accept")
-    let source=try await transport.events(for:request)
+    let source=try await transport.events(for:request),lifetime=self.lifetime
     return AsyncThrowingStream(bufferingPolicy:.bufferingNewest(128)){ continuation in
       let task=Task {
         do {
@@ -44,7 +44,10 @@ extension OpenCodeClient {
           continuation.finish()
         } catch{continuation.finish(throwing:error)}
       }
-      continuation.onTermination={_ in task.cancel()}
+      let ticket:UUID?
+      do{ticket=try lifetime.register{task.cancel()}}
+      catch{ticket=nil;task.cancel();continuation.finish(throwing:CancellationError())}
+      continuation.onTermination={_ in task.cancel();if let ticket{lifetime.finish(ticket)}}
     }
   }
 }

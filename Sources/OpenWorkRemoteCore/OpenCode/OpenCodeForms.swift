@@ -219,7 +219,7 @@ extension OpenCodeClient:OpenCodeFormServing {
       let segments=["api","session",target.sessionID,"form",reviewed.id]+(answer==nil ? [] : ["reply"])
       request=try makeRequest(segments:segments,method:answer==nil ? "DELETE" : "POST",body:body)
     }catch{
-      throw OpenCodeFormNotSubmitted(reason:(error as? RemoteError) ?? (error is OpenCodeFormValidation ? .invalidResponse : .unavailable))
+      throw OpenCodeFormNotSubmitted(reason:(error as? RemoteError) ?? (error is CancellationError || error is OpenCodeRequestNotDispatched ? .cancelled:error is OpenCodeFormValidation ? .invalidResponse : .unavailable))
     }
     do{
       let (bytes,status)=try await transport.data(for:request)
@@ -227,7 +227,8 @@ extension OpenCodeClient:OpenCodeFormServing {
         do{try checkStatus(status)}catch{throw OpenCodeFormNotSubmitted(reason:(error as? RemoteError) ?? .invalidResponse)}
       }
       guard bytes.count<=8_388_608,status==204 else{throw RemoteError.outcomeUnknown}
-    }catch let rejected as OpenCodeFormNotSubmitted{throw rejected}
+    }catch is OpenCodeRequestNotDispatched{throw OpenCodeFormNotSubmitted(reason:.cancelled)}
+    catch let rejected as OpenCodeFormNotSubmitted{throw rejected}
     catch{
       // The write may have succeeded. Only native state can resolve it; never replay.
       return try await settledFormResult(target:target,id:reviewed.id,answer:answer)
