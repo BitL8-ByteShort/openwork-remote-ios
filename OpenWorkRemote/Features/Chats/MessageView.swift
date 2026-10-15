@@ -35,12 +35,15 @@ struct MessageView: View {
           case "text": MarkdownView(text: block.text ?? "")
           case "code": CodeBlockView(text: block.text ?? "", language: block.language)
           case "tool": ToolActivityView(block: block)
+          case "error":
+            Label(block.text ?? "The task ended with an error.",systemImage:"exclamationmark.circle")
+              .font(.callout).foregroundStyle(.red)
           default:
             Label(block.label ?? "Content available on computer", systemImage: "desktopcomputer")
               .font(.callout).foregroundStyle(Theme.muted)
           }
         }
-        if message.state == "error" {
+        if message.state == "error" && !message.blocks.contains(where:{$0.kind == "error"}) {
           Label(
             "The task ended with an error. Check your computer for details.",
             systemImage: "exclamationmark.circle"

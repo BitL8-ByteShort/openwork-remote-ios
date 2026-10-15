@@ -47,6 +47,7 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
   public let content:[OpenCodeMessageContent]
   public let time:Time
   public let hasError:Bool
+  public let failureNotice:String?
   public let outcome:String?
   public let hasAttachments:Bool
   public let snapshotFiles:[String]
@@ -101,12 +102,21 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
       }else{snapshotFiles=[];unsupportedSnapshotFiles=1}
     }else{snapshotFiles=[];unsupportedSnapshotFiles=0}
     hasError = try c.contains(.error) && !c.decodeNil(forKey:.error)
+    // Keep a recognized explanation, never an arbitrary provider response, URL or credential.
+    struct Failure:Decodable {let type:String;let message:String;let status:Int?}
+    let failure = type == "assistant" && hasError ? try? c.decode(Failure.self,forKey:.error) : nil
+    if let failure, failure.type == "provider.auth", failure.status == 403,
+      failure.message.utf8.count <= 8_192,
+      failure.message.lowercased().contains("free tier can only be used from within opencode") {
+      failureNotice = "OpenCode’s free-model service rejected this request. Try a new chat, review the model and tool rules in OpenCode, or choose another configured model."
+    }else{failureNotice=nil}
     outcome = type == "idle" ? try c.decodeIfPresent(String.self,forKey:.outcome) : nil
     hasAttachments = promptPayload?.hasAttachments==true || (metadata?.displayText(ifMatching:text ?? "") != nil && metadata?.attachments.isEmpty==false)
     guard content.count <= 4_096 else { throw RemoteError.invalidResponse }
   }
   public var storedTextBytes:Int {
     var bytes = text?.utf8.count ?? 0
+    bytes += failureNotice?.utf8.count ?? 0
     if let payload=promptPayload{
       for id in payload.skillIDs{bytes += id?.utf8.count ?? 0}
       for name in payload.skillNames{bytes += name?.utf8.count ?? 0}

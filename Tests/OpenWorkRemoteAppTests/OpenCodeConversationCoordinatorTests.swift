@@ -7,6 +7,7 @@ actor NativeConversationService:OpenCodeConversationServing {
   enum Mode:Sendable{case normal,lostResponse,conflict,rejected,notSubmitted}
   let mode:Mode
   var admitted:OpenCodePrompt?
+  var inFlight:OpenCodePrompt?
   var sent=0
   var sentTargets:[OpenCodeTarget]=[]
   var active=false
@@ -36,6 +37,7 @@ actor NativeConversationService:OpenCodeConversationServing {
   }
   func send(target:OpenCodeTarget,input:OpenCodePrompt) async throws -> OpenCodePromptAdmission {
     sent+=1;sentTargets.append(target)
+    inFlight=input
     if holdSend{holdSend=false;await withCheckedContinuation{c in held=c;heldWaiters.forEach{$0.resume()};heldWaiters=[]}}
     if mode == .notSubmitted{throw OpenCodePromptNotSubmitted(reason:.unavailable)}
     if mode == .rejected{throw RemoteError.forbidden}
@@ -60,6 +62,7 @@ actor NativeConversationService:OpenCodeConversationServing {
   func setInterruptFailure(){active=true;failInterrupt=true}
   func holdNextMessage(){holdNext=true}
   func holdNextSend(){holdSend=true}
+  func admitInFlight(){admitted=inFlight}
   func releaseSend(){held?.resume();held=nil}
   func waitUntilHeld() async {if held != nil{return};await withCheckedContinuation{heldWaiters.append($0)}}
   func releaseMessage(){held?.resume();held=nil}
@@ -93,6 +96,42 @@ actor NativeConversationService:OpenCodeConversationServing {
     #expect(journal.pending(for:target)==nil)
     #expect(journal.draft(for:target).isEmpty)
     #expect(coordinator.issue==nil)
+  }
+  @Test(.timeLimit(.minutes(1))) func snapshotWhileSendIsInFlightDoesNotInventUncertainDelivery() async throws {
+    let (coordinator,service,journal,target)=try await setup()
+    defer{coordinator.deactivate()}
+    try await journal.saveDraft("Still sending",for:target)
+    await service.holdNextSend()
+    let sending=Task{await coordinator.send()}
+    await service.waitUntilHeld()
+    await coordinator.refresh()
+    let issueDuringSend=coordinator.issue
+    let pendingDuringSend=journal.pending(for:target)?.state
+    let wasSending=coordinator.sending
+    await service.releaseSend();await sending.value
+    #expect(wasSending)
+    #expect(pendingDuringSend == .prepared)
+    #expect(issueDuringSend == nil)
+    #expect(coordinator.issue == nil)
+    #expect(journal.pending(for:target) == nil)
+    #expect(journal.draft(for:target).isEmpty)
+    #expect(await service.sendCount() == 1)
+  }
+  @Test(.timeLimit(.minutes(1))) func earlyInboxReadCannotConfirmTheSameSendTwice() async throws {
+    let (coordinator,service,journal,target)=try await setup()
+    defer{coordinator.deactivate()}
+    try await journal.saveDraft("Admitted while awaiting response",for:target)
+    await service.holdNextSend()
+    let sending=Task{await coordinator.send()}
+    await service.waitUntilHeld();await service.admitInFlight()
+    await coordinator.refresh()
+    let pendingBeforeResponse=journal.pending(for:target)?.state
+    await service.releaseSend();await sending.value
+    #expect(pendingBeforeResponse == .prepared)
+    #expect(coordinator.issue == nil)
+    #expect(journal.pending(for:target) == nil)
+    #expect(journal.draft(for:target).isEmpty)
+    #expect(await service.sendCount() == 1)
   }
   @Test func conflictingAdmissionKeepsOriginalIntentAndDraft() async throws {
     let (coordinator,service,journal,target)=try await setup(.conflict)
