@@ -100,5 +100,46 @@ import OpenWorkRemoteCore
       }
     }
   }
+  var connectionState:ConnectionState{
+    switch connection.state{
+    case .unpaired:return .unpaired
+    case .pairing:return .pairing
+    case .connecting:return .connecting
+    case .ready:return .ready
+    case .offline,.storageUnavailable:return .offline
+    case .authenticationRejected:return .revoked
+    case .incompatible:return .incompatible
+    }
+  }
+  var workspaces:[Workspace]{navigation.projects.filter{visibility.policy.shows($0.id)}.map(\.presentation)}
+  var sessions:[ChatSession]{navigation.sessions.map{sessionPresentation($0)}}
+  var selectedSession:ChatSession?{navigation.selectedSession.map{sessionPresentation($0)}}
+  private func sessionPresentation(_ session:OpenCodeSession)->ChatSession{
+    session.presentation(active:conversation.isActive && session.id==navigation.target?.sessionID,modelLabel:session.model?.id)
+  }
+  var draft:String{navigation.target.map{journal.draft(for:$0)} ?? ""}
+  var uncertain:Bool{navigation.target.map{journal.pending(for:$0) != nil} ?? false}
+  var canSend:Bool{
+    connection.state == .ready && ready && journal.ready && !journal.storageIssue && !uncertain &&
+      conversation.currentSession != nil && conversation.target==navigation.target && !conversation.sending && !conversation.isActive &&
+      !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && draft.utf8.count<=32_768
+  }
+  func setDraft(_ value:String){if let target=navigation.target{journal.setDraft(value,for:target)}}
+  func select(_ presentation:ChatSession) async {
+    guard let session=navigation.sessions.first(where:{OpenCodeIdentity.matches($0.id,presentation.id) && OpenCodeIdentity.matches($0.projectID,presentation.workspaceId)}) else{return}
+    await open(session)
+  }
+  func send() async {guard canSend else{return};await conversation.send()}
+  func stop() async {await conversation.interrupt()}
+  func checkConversation() async {await conversation.refresh()}
+  func changeWorkspace(_ workspace:Workspace) async {
+    guard connection.state == .ready else{return}
+    selection=UUID();cancelInputs();conversation.clearSelection();controls.deactivate();approvals.deactivate();forms.clearSelection()
+    await navigation.selectProject(workspace.id)
+  }
+  func reconnect() async {
+    if connection.state == .authenticationRejected{connection.pairAgain();return}
+    await connection.reconnect();await connectionChanged()
+  }
   func olderMessages() async {preservingEarlierHistory=true;await navigation.loadOlder()}
 }

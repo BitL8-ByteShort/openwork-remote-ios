@@ -76,6 +76,12 @@ actor NativeConversationFile:NativeConversationPersistence {
   }
   func draft(for target:OpenCodeTarget)->String{disk.drafts[target.nativeDraftKey] ?? ""}
   func pending(for target:OpenCodeTarget)->NativePendingPrompt?{disk.pending[target.nativeDraftKey]}
+  /// SwiftUI edits update immediately; durable intent still precedes every send.
+  func setDraft(_ text:String,for target:OpenCodeTarget){
+    guard ready,!retired,text.utf8.count<=32_768 else{return}
+    disk.drafts[target.nativeDraftKey]=text
+    Task{try? await persist()}
+  }
   func saveDraft(_ text:String,for target:OpenCodeTarget) async throws {
     guard ready,!retired,text.utf8.count<=32_768 else{throw RemoteError.unavailable}
     disk.drafts[target.nativeDraftKey]=text

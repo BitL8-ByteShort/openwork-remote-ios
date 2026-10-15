@@ -71,7 +71,8 @@ enum NativeFormIssue{case unavailable,storage,changed,replyUnconfirmed,authentic
     let value=NativeFormContext(target:target,generation:UUID());context=value;self.client=client
     form=nil;pending=[];loading=false;submitting=false;issue=nil;validation=nil;readID=UUID();return value
   }
-  func deactivate(){connectionEpoch=UUID();boundConnection=nil;context=nil;client=nil;form=nil;pending=[];loading=false;submitting=false;readID=UUID()}
+  func deactivate(){connectionEpoch=UUID();boundConnection=nil;clearSelection()}
+  func clearSelection(){context=nil;client=nil;form=nil;pending=[];loading=false;submitting=false;readID=UUID()}
   func retire(){retired=true;ready=false;deactivate()}
   func close(){form=nil;validation=nil;readID=UUID();loading=false}
   private var key:NativeFormKey?{guard let target=context?.target,let form else{return nil};return NativeFormKey(target:target,formID:form.id,fingerprint:form.definitionFingerprint)}

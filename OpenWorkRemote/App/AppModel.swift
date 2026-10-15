@@ -4,11 +4,29 @@ import Observation
 import OpenWorkRemoteCore
 
 @MainActor @Observable final class AppModel {
-  var connection: ConnectionState = .unpaired
+  private(set) var native:NativeAppCoordinator?
+  private(set) var nativeMigration:ConnectionMigration?
+  private var bridgeConnection: ConnectionState = .unpaired
+  var connection: ConnectionState {
+    get{if let native{return native.connectionState};return bridgeConnection}
+    set{if native==nil{bridgeConnection=newValue}}
+  }
   var host: OpenWorkRemoteCore.Host?
-  var workspaces: [Workspace] = []
-  var sessions: [ChatSession] = []
-  var messages: [ChatMessage] = []
+  private var bridgeWorkspaces: [Workspace] = []
+  var workspaces: [Workspace] {
+    get{if let native{return native.workspaces};return bridgeWorkspaces}
+    set{if native==nil{bridgeWorkspaces=newValue}}
+  }
+  private var bridgeSessions: [ChatSession] = []
+  var sessions: [ChatSession] {
+    get{if let native{return native.sessions};return bridgeSessions}
+    set{if native==nil{bridgeSessions=newValue}}
+  }
+  private var bridgeMessages: [ChatMessage] = []
+  var messages: [ChatMessage] {
+    get{if let native{return native.messages};return bridgeMessages}
+    set{if native==nil{bridgeMessages=newValue}}
+  }
   var approvals: [Approval] = []
   let questions: QuestionStore
   let attachments: AttachmentStore
@@ -22,16 +40,40 @@ import OpenWorkRemoteCore
   var status: SessionStatus?
   private var directory = PagedSnapshot<ChatSession>()
   private var history = PagedSnapshot<ChatMessage>()
-  var sessionCursor: String? { directory.cursor }
-  var messageCursor: String? { history.cursor }
-  var selectedWorkspace: String?
-  var selectedSession: ChatSession?
+  var sessionCursor: String? { if let native{return native.navigation.sessionCursor};return directory.cursor }
+  var messageCursor: String? { if let native{return native.navigation.olderCursor};return history.cursor }
+  private var bridgeSelectedWorkspace: String? = nil
+  var selectedWorkspace: String? {
+    get{if let native{return native.navigation.selectedProjectID};return bridgeSelectedWorkspace}
+    set{if native==nil{bridgeSelectedWorkspace=newValue}}
+  }
+  private var bridgeSelectedSession: ChatSession? = nil
+  var selectedSession: ChatSession? {
+    get{if let native{return native.selectedSession};return bridgeSelectedSession}
+    set{if native==nil{bridgeSelectedSession=newValue}}
+  }
   var disk = DiskState()
-  var notice: String?
+  private var bridgeNotice: String? = nil
+  var notice: String? {
+    get{if let native{return native.notice};return bridgeNotice}
+    set{if let native{native.notice=newValue}else{bridgeNotice=newValue}}
+  }
   var updatingControls = false
-  var sending = false
-  var loading = false
-  var stopRequested = false
+  private var bridgeSending: Bool = false
+  var sending: Bool {
+    get{if let native{return native.conversation.sending};return bridgeSending}
+    set{if native==nil{bridgeSending=newValue}}
+  }
+  private var bridgeLoading: Bool = false
+  var loading: Bool {
+    get{if let native{return native.navigation.loadingMessages};return bridgeLoading}
+    set{if native==nil{bridgeLoading=newValue}}
+  }
+  private var bridgeStopRequested: Bool = false
+  var stopRequested: Bool {
+    get{if let native{return native.conversation.stopping};return bridgeStopRequested}
+    set{if native==nil{bridgeStopRequested=newValue}}
+  }
   var pairingError: String?
   var pendingPhone = false
   var onboardingStep = 0
@@ -58,18 +100,21 @@ import OpenWorkRemoteCore
   private(set) var resetReplacement: DataResetReport?
   var lastResetReport: DataResetReport?
   var draft: String {
-    get { disk.conversation.currentDraft }
+    get { if let native{return native.draft};return disk.conversation.currentDraft }
     set {
       guard !isRetired else { return }
+      if let native{native.setDraft(newValue);return}
       disk.conversation.setDraft(newValue)
       saveDrafts()
     }
   }
   var uncertain: Bool {
-    disk.conversation.selected.map { disk.conversation.uncertain.contains($0) } ?? false
+    if let native{return native.uncertain}
+    return disk.conversation.selected.map { disk.conversation.uncertain.contains($0) } ?? false
   }
   var canSend: Bool {
-    connection == .ready && !sending && !updatingControls && !uncertain && selectedSession != nil
+    if let native{return native.canSend}
+    return connection == .ready && !sending && !updatingControls && !uncertain && selectedSession != nil
       && !chatActions.blocksSending(disk.conversation.selected)
       && host?.capabilities.sendText == true && ["idle", "error"].contains(status?.phase ?? "")
       && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.rows.isEmpty)
@@ -97,8 +142,19 @@ import OpenWorkRemoteCore
     self.groups = GroupStore(directory:draftStore?.directory)
     self.chatActions = ChatActionStore(directory:draftStore?.directory)
   }
+  convenience init(native:NativeAppCoordinator,legacyDraftStore:DraftStore,pairingPersistence:PairingPersistence = .keychain,
+                   transport:any HTTPTransport=SessionTransport(profile:.openCode)){
+    self.init(pairingPersistence:pairingPersistence,transport:transport,draftStore:legacyDraftStore)
+    self.native=native
+  }
   func start() async {
     guard !isRetired else { return }
+    if let native{
+      do{if let draftStore{nativeMigration=ConnectionMigration(legacy:try pairingPersistence.load(),disk:try await draftStore.load())}}
+      catch{native.notice="Earlier OpenWork drafts remain on this device, but their recovery text could not be opened."}
+      do{try await native.start()}catch{native.notice="Saved PocketWork data could not be opened. Unlock the device and restart the app."}
+      return
+    }
     #if DEBUG
       if ProcessInfo.processInfo.arguments.contains("-ui-testing-onboarding") { return }
     #endif
@@ -142,6 +198,7 @@ import OpenWorkRemoteCore
     }
   }
   func connect() {
+    if let native{Task{await native.reconnect()};return}
     guard !isRetired else { return }
     if connection == .revoked {
       pairAgain()
@@ -375,6 +432,7 @@ import OpenWorkRemoteCore
     }
   }
   func select(_ session: ChatSession) async {
+    if let native{await native.select(session);return}
     guard let host else { return }
     let current = generation
     let selection = UUID()
@@ -456,6 +514,7 @@ import OpenWorkRemoteCore
     } else { questions.activate(nil) }
   }
   func changeWorkspace(_ workspace: Workspace) async {
+    if let native{await native.changeWorkspace(workspace);return}
     selectionID = UUID()
     questions.activate(nil)
     attachments.activate(nil)
@@ -505,6 +564,7 @@ import OpenWorkRemoteCore
     guard actual.title == title else { throw failure ?? RemoteError.conflict }
   }
   func olderSessions() async {
+    if let native{await native.navigation.loadMoreSessions();return}
     guard let client, let wid = selectedWorkspace, let cursor = sessionCursor else { return }
     let current = generation
     do {
@@ -515,6 +575,7 @@ import OpenWorkRemoteCore
     } catch { notice = "Older chats could not be loaded." }
   }
   func earlierMessages() async {
+    if let native{await native.olderMessages();return}
     guard let client, let s = selectedSession, let cursor = messageCursor else { return }
     let current = generation
     do {
@@ -530,13 +591,14 @@ import OpenWorkRemoteCore
     saveRevision += 1
     try await draftStore.save(disk, revision: saveRevision)
   }
-  var hasPairing: Bool { storedPairing != nil }
+  var hasPairing: Bool { if let native{return native.connection.connection != nil};return storedPairing != nil }
   var creationKey: MutationKey? {
     guard let host, let wid = selectedWorkspace else { return nil }
     return MutationKey(hostId: host.hostId, workspaceId: wid, sessionId: nil, action: .create)
   }
   var uncertainCreation: Bool { creationKey.map { disk.mutations.requiresReview($0) } ?? false }
   func send() async {
+    if let native{await native.send();return}
     guard canSend, let client else { return }
     let current = generation
     do {
@@ -593,6 +655,7 @@ import OpenWorkRemoteCore
     } catch { notice = "Your message could not be sent. Check the connection and message length." }
   }
   func stop() async {
+    if let native{await native.stop();return}
     guard connection == .ready, !stopRequested, let client, let s = selectedSession, let host,
       host.capabilities.stop
     else { return }
@@ -628,6 +691,7 @@ import OpenWorkRemoteCore
     } catch { notice = "Check the conversation before requesting Stop again." }
   }
   func checkConversation() async {
+    if let native{await native.checkConversation();return}
     guard let key = disk.conversation.selected else { return }
     do {
       try await loadSelected()
