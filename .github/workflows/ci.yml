@@ -27,6 +27,8 @@ jobs:
           git diff --exit-code -- OpenWorkRemote.xcodeproj
       - name: Test core
         run: swift test
+      - name: Test information generator
+        run: python3 -m unittest discover -s scripts/tests
       - name: Verify published information matches bundled text
         run: |
           python3 scripts/generate-information-site.py --output docs

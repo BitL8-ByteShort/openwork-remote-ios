@@ -39,6 +39,18 @@ def main():
     if email and not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", email):
         parser.error("Invalid support email")
     args.output.mkdir(parents=True, exist_ok=True)
+    # Chris removed the earlier-beta policy from the maintained site. A reused
+    # output directory must not keep serving the former generated index.
+    # Remove that one owned page; preserve unrelated assets and unknown files.
+    retired = args.output / "privacy/openwork-beta/index.html"
+    if not retired.resolve().is_relative_to(args.output.resolve()):
+        parser.error("Retired policy path must remain inside the output directory")
+    retired.unlink(missing_ok=True)
+    if retired.parent.exists():
+        try:
+            retired.parent.rmdir()
+        except OSError:
+            pass  # Nonempty directories contain files this generator does not own.
     css = """html{color-scheme:light dark}body{font:1.1rem/1.65 system-ui,sans-serif;margin:0;background:Canvas;color:CanvasText}header,main,footer{max-width:48rem;margin:auto;padding:1.5rem}nav{display:flex;gap:1.25rem;flex-wrap:wrap}a{color:LinkText;text-underline-offset:.2em}a:focus-visible{outline:3px solid #5477ff;outline-offset:5px}h1{line-height:1.15;font-size:clamp(2rem,6vw,3rem)}h2{line-height:1.3}p,li{overflow-wrap:anywhere}section{margin-top:2rem}footer{border-top:1px solid GrayText;font-size:.95rem}.draft{border:2px solid #5477ff;padding:1rem}small{font-size:.9rem}"""
     (args.output / "style.css").write_text(css + "\n")
     pages = {
