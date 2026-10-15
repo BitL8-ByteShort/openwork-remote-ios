@@ -16,7 +16,7 @@ extension NativeAppCoordinator {
     return NativeProjectKey(connectionID:connection.id,projectID:projectID)
   }
   func activateProjectStores(){
-    groups.activate(projectKey);search.activate(projectKey,reader:connection.client)
+    groups.activate(projectKey);defaults.activate(projectKey);search.activate(projectKey,reader:connection.client)
   }
   var newChatLocations:[String]{
     guard let projectID=navigation.selectedProjectID else{return []}
@@ -27,7 +27,7 @@ extension NativeAppCoordinator {
         if !list.contains(where:{OpenCodeIdentity.matches($0,path)}){list.append(path)}
       }.sorted()
   }
-  var canCreateChat:Bool{connection.state == .ready && !navigation.loadingMessages && creation.canCreate && !newChatLocations.isEmpty}
+  var canCreateChat:Bool{connection.state == .ready && defaults.ready && !defaults.busy && defaults.scope==projectKey && !navigation.loadingMessages && creation.canCreate && !newChatLocations.isEmpty}
   @discardableResult func createChat(directory:String?=nil,onCreated:(()->Void)?=nil)async->Bool{
     guard canCreateChat,let projectID=navigation.selectedProjectID,let scope=projectKey else{
       notice="Open an existing project location on your computer before creating a chat.";return false
@@ -41,7 +41,8 @@ extension NativeAppCoordinator {
     }
     newChatLocationRequest=nil
     let epoch=connection.client,picked=selectionGeneration
-    let session=await creation.create(projectID:projectID,directory:selected)
+    let preferences=defaults.value
+    let session=await creation.create(projectID:projectID,directory:selected,model:preferences.model,agent:preferences.agent)
     guard let session,connection.client === epoch,connection.state == .ready,navigation.selectedProjectID==projectID else{
       notice=creation.notice;return false
     }
@@ -85,7 +86,7 @@ extension NativeAppCoordinator {
       await open(session)
     case .deleted:
       if let selected=navigation.target,deletedIDs.contains(selected.sessionID){
-        conversation.clearSelection();attachments.clearSelection();results.deactivate();controls.deactivate();approvals.deactivate();forms.clearSelection()
+        workspace.deactivate();conversation.clearSelection();attachments.clearSelection();results.deactivate();controls.deactivate();approvals.deactivate();forms.clearSelection()
       }
       navigation.removeChats(Set(deletedIDs))
     }

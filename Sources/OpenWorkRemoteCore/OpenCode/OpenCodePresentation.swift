@@ -22,7 +22,9 @@ extension OpenCodeMessage {
       role=type=="user" ? "user" : "system"
       var result:[MessageBlock]=[]
       if let text=displayText,!text.isEmpty{result.append(MessageBlock(kind:"text",text:text))}
-      if hasAttachments{result.append(MessageBlock(kind:"omitted",label:"Attachments are available on your computer."))}
+      for name in fileLabels{result.append(MessageBlock(kind:"attachment",label:"File: "+name))}
+      for name in skillLabels{result.append(MessageBlock(kind:"skill",label:"Skill: "+name))}
+      if hasAttachments,fileLabels.isEmpty,skillLabels.isEmpty{result.append(MessageBlock(kind:"omitted",label:"Attachments are available on your computer."))}
       blocks=result
     case "assistant":
       role="assistant"

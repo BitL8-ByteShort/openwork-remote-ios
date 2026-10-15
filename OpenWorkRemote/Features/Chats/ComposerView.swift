@@ -5,6 +5,7 @@ struct ComposerView: View {
   @FocusState private var focused: Bool
   @State private var attachments: AttachmentPresentation?
   @State private var skills=false
+  @State private var nativeSkills:NativeWorkspaceContext?
   @State private var nativeAttachments:NativeAttachmentContext?
   var body: some View {
     VStack(spacing: 8) {
@@ -18,7 +19,7 @@ struct ComposerView: View {
         }}
       }
       if !model.selectedSkillIDs.isEmpty {
-        ScrollView(.horizontal){HStack{ForEach(model.selectedSkillIDs,id:\.self){id in Button{model.removeSelectedSkill(id)}label:{Label((model.skills.catalog?.items.first{$0.id==id}?.name ?? "Selected skill")+" · Remove",systemImage:"sparkles").font(.caption).padding(10).background(Theme.surface,in:Capsule())}.disabled(model.sending).accessibilityIdentifier("selected-skill-"+id)}}}
+        ScrollView(.horizontal){HStack{ForEach(model.selectedSkillIDs,id:\.self){id in Button{model.removeSelectedSkill(id)}label:{Label((model.native?.workspace.selectedSkills.first{$0.id==id}?.name ?? model.skills.catalog?.items.first{$0.id==id}?.name ?? "Selected skill")+" · Remove",systemImage:"sparkles").font(.caption).padding(10).background(Theme.surface,in:Capsule())}.disabled(model.sending || model.uncertain).accessibilityIdentifier("selected-skill-"+id)}}}
       }
       if !model.attachments.rows.isEmpty, let context = model.attachmentContext {
         ScrollView(.horizontal) {
@@ -50,7 +51,10 @@ struct ComposerView: View {
             if let context=model.native?.attachments.context{nativeAttachments=context}
             else if let context=model.attachmentContext{attachments=AttachmentPresentation(context:context)}
           }
-          Button("Skills",systemImage:"sparkles"){focused=false;skills=true}
+          Button("Skills",systemImage:"sparkles"){
+            focused=false
+            if let context=model.native?.workspace.context{nativeSkills=context}else{skills=true}
+          }
         }label:{Image(systemName:"plus").font(.title3).frame(width:44,height:44)}
           .disabled(model.selectedSession == nil || model.sending).accessibilityLabel("Add to message").accessibilityIdentifier("composer-add")
         TextField(
@@ -76,8 +80,8 @@ struct ComposerView: View {
             focused = false
             Task { await model.send() }
           } label: {
-            Image(systemName: "arrow.up").font(.title3.weight(.semibold)).frame(
-              width: 44, height: 44)
+            if model.native?.preparingSend==true{ProgressView().frame(width:44,height:44)}else{Image(systemName: "arrow.up").font(.title3.weight(.semibold)).frame(
+              width: 44, height: 44)}
           }.background(model.canSend ? Theme.accent : Theme.line, in: Circle()).foregroundStyle(
             model.canSend ? Theme.onAccent : Theme.muted
           ).disabled(!model.canSend).accessibilityLabel("Send message").accessibilityIdentifier(
@@ -90,6 +94,9 @@ struct ComposerView: View {
       ).foregroundStyle(Theme.muted).frame(maxWidth: .infinity)
     }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8).background(Theme.background)
       .sheet(isPresented:$skills){NavigationStack{SkillListView().toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){skills=false}}}}}
+      .sheet(item:$nativeSkills){context in
+        if let store=model.native?.workspace{NavigationStack{NativeSkillListView(store:store,context:context,onSelection:{if nativeSkills==context{nativeSkills=nil}}).toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){nativeSkills=nil}.accessibilityIdentifier("native-skills-done")}}}}
+      }
       .sheet(item:$attachments) { AttachmentPicker(context:$0.context) }
       .sheet(item:$nativeAttachments){context in
         if let store=model.native?.attachments{NativeAttachmentPicker(store:store,context:context)}

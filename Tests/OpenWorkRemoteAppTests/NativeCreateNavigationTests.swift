@@ -38,6 +38,8 @@ private actor NativeCreateNavigationTransport:HTTPTransport {
     let app=try NativeAppCoordinator(directory:root,connectionPersistence:OpenCodePersistence(load:{stored},save:{_ in},remove:{}),transport:transport)
     defer{app.deactivate()}
     try await app.start()
+    app.defaults.activate(nil);#expect(!app.canCreateChat)
+    app.activateProjectStores();#expect(app.canCreateChat)
     let creation=Task{await app.createChat()};await transport.waitForCreate()
     let project=try #require(app.workspaces.first)
     await app.changeWorkspace(project);await transport.release();_=await creation.value

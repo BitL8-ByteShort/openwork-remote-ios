@@ -46,7 +46,7 @@ public struct OpenCodeModel:Decodable,Sendable,Equatable {
     key.append(contentsOf:providerID.utf8);key.append(contentsOf:id.utf8);return key
   }
   public var selectable:Bool{enabled && ["alpha","beta","deprecated","active"].contains(status)}
-  func accepts(_ ref:OpenCodeModelRef)->Bool {
+  public func accepts(_ ref:OpenCodeModelRef)->Bool {
     selectable && OpenCodeIdentity.matches(ref.providerID,providerID) && OpenCodeIdentity.matches(ref.id,id) &&
       (ref.isDefaultVariant || (ref.variant.map{variant in variants.contains{OpenCodeIdentity.matches($0.id,variant)}} ?? false))
   }

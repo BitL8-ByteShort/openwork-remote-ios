@@ -44,8 +44,18 @@ private actor NativeAppUITestTransport:HTTPTransport {
     case "/api/session/ses_owned/fork":
       var row=record;row["id"]="ses_fork";row["title"]=title+" (fork #1)";extra["ses_fork"]=row;value=["data":row]
     case "/api/session/ses_owned/message":
-      value=["data":[["id":"msg_owned","type":"user","text":"Native message","time":["created":1]],
+      var history:[String:Any]=["data":[["id":"msg_owned","type":"user","text":"Native message","time":["created":1]],
         ["id":"msg_result","type":"assistant","time":["created":2],"content":[["type":"text","text":"Your result is ready."],["type":"tool","name":"generate","state":["status":"completed","content":[["type":"file","uri":"file:///project/result.txt","mime":"text/plain"]]]]]]],"cursor":[:]]
+      if let admitted,let payload=admitted["payload"] as? [String:Any]{
+        var rows=history["data"] as! [[String:Any]]
+        rows.insert(["id":admitted["id"]!,"type":"user","text":payload["text"]!,"files":payload["files"] ?? [],"skills":payload["skills"] ?? [],"time":["created":3]],at:0)
+        history["data"]=rows
+      }
+      value=history
+    case "/api/vcs":value=["location":["directory":"/project"],"data":["provider":"git","branch":["current":"main"]]]
+    case "/api/vcs/status":value=["location":["directory":"/project"],"data":[["file":"notes.txt","status":"modified","additions":1,"deletions":1]]]
+    case "/api/vcs/diff":value=["location":["directory":"/project"],"data":[["file":"notes.txt","status":"modified","additions":1,"deletions":1,"patch":"@@ -1 +1 @@\n-old\n+new"]]]
+    case "/api/skill":value=["location":["directory":"/project"],"data":[["id":"skill_owned","name":"Review fixture","path":"/skills/review/SKILL.md","content":"Only review the fixture text."]]]
     case "/api/fs/list":value=["location":["directory":"/project"],"data":[["path":"project-only.txt","type":"file"]]]
     case "/api/session/ses_owned/prompt":
       let body=try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:Any]
@@ -53,7 +63,7 @@ private actor NativeAppUITestTransport:HTTPTransport {
         let uri=file["uri"] as! String,parts=uri.split(separator:",",maxSplits:1)
         return ["name":file["name"]!,"mime":String(parts[0].dropFirst(5).split(separator:";")[0]),"data":String(parts[1]),"source":["type":"inline"]]
       }
-      admitted=["id":body["id"]!,"sessionID":"ses_owned","type":"user","payload":["text":body["text"]!,"files":files]]
+      admitted=["id":body["id"]!,"sessionID":"ses_owned","type":"user","payload":["text":body["text"]!,"files":files,"skills":(body["skills"] as? [[String:String]] ?? []).map{["id":$0["id"]!,"name":"Review fixture","text":"Only review the fixture text."]}]]
       value=["data":admitted!]
     case "/api/session/ses_owned/inbox":value=["data":admitted.map{[$0]} ?? []]
     case "/api/session/active":value=["data":[:]]

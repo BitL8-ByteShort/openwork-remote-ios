@@ -61,6 +61,7 @@ public struct OpenCodePromptAdmission:Decodable,Sendable,CustomStringConvertible
     public let hasAttachments:Bool
     public let files:[OpenCodeMaterializedFile]
     public let skillIDs:[String?]
+    public let skillNames:[String?]
     let agentCount:Int
     private enum CodingKeys:String,CodingKey{case text,files,agents,skills}
     private struct Item:Decodable,Sendable {}
@@ -68,7 +69,8 @@ public struct OpenCodePromptAdmission:Decodable,Sendable,CustomStringConvertible
       let c=try decoder.container(keyedBy:CodingKeys.self)
       text=try c.decode(String.self,forKey:.text)
       files=try c.decodeIfPresent([OpenCodeMaterializedFile].self,forKey:.files) ?? []
-      skillIDs=try (c.decodeIfPresent([OpenCodeSkillIdentity].self,forKey:.skills) ?? []).map(\.id)
+      let skills=try c.decodeIfPresent([OpenCodeSkillIdentity].self,forKey:.skills) ?? []
+      skillIDs=skills.map(\.id);skillNames=skills.map(\.name)
       agentCount=try (c.decodeIfPresent([Item].self,forKey:.agents) ?? []).count
       guard files.count<=200,skillIDs.count<=200,agentCount<=200 else{throw RemoteError.invalidResponse}
       hasAttachments = !files.isEmpty || !skillIDs.isEmpty || agentCount>0
@@ -81,6 +83,7 @@ public struct OpenCodePromptAdmission:Decodable,Sendable,CustomStringConvertible
     }
     public static func ==(a:Self,b:Self)->Bool{
       OpenCodeIdentity.matches(a.text,b.text) && a.files==b.files && a.agentCount==b.agentCount && a.skillIDs.count==b.skillIDs.count &&
+        zip(a.skillNames,b.skillNames).allSatisfy{OpenCodeIdentity.matches($0,$1)} &&
         zip(a.skillIDs,b.skillIDs).allSatisfy{OpenCodeIdentity.matches($0,$1)}
     }
   }

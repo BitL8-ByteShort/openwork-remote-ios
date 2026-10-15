@@ -83,6 +83,41 @@ final class NativeAppTests:XCTestCase {
     app.buttons["Open chat history"].tap()
     XCTAssertTrue(app.buttons.containing(.staticText,identifier:"New chat").firstMatch.waitForExistence(timeout:4))
   }
+  @MainActor func testNativeWorkingCopySkillsAndSkillOnlySend(){
+    let app=launch(noAnimations:true)
+    app.buttons["Open chat history"].tap();app.buttons.containing(.staticText,identifier:"Native chat").firstMatch.tap()
+    XCTAssertTrue(app.buttons["Model and chat settings"].waitForExistence(timeout:4));app.buttons["Model and chat settings"].tap()
+    XCTAssertTrue(app.buttons["native-chat-changes-settings"].waitForExistence(timeout:4));app.buttons["native-chat-changes-settings"].tap()
+    XCTAssertTrue(app.buttons["native-change-notes.txt"].waitForExistence(timeout:4));app.buttons["native-change-notes.txt"].tap()
+    XCTAssertTrue(app.staticTexts["Added line: +new"].waitForExistence(timeout:4))
+    app.navigationBars["Review change"].buttons.firstMatch.tap();app.buttons["native-changes-done"].tap();app.buttons["native-settings-done"].tap()
+    app.buttons["composer-add"].tap();app.buttons["Skills"].tap()
+    let skillSearch=app.searchFields.firstMatch;XCTAssertTrue(skillSearch.waitForExistence(timeout:3));skillSearch.tap();skillSearch.typeText("Review")
+    XCTAssertTrue(app.buttons["native-skill-skill_owned"].waitForExistence(timeout:4));app.buttons["native-skill-skill_owned"].tap()
+    XCTAssertTrue(app.staticTexts["Only review the fixture text."].waitForExistence(timeout:4))
+    app.buttons["native-skill-use"].tap()
+    XCTAssertTrue(app.buttons["selected-skill-skill_owned"].waitForExistence(timeout:4))
+    XCTAssertTrue(app.buttons["send-message"].isEnabled);app.buttons["send-message"].tap()
+    let cleared=NSPredicate(format:"exists == false")
+    expectation(for:cleared,evaluatedWith:app.buttons["selected-skill-skill_owned"])
+    waitForExpectations(timeout:5)
+    XCTAssertTrue(app.staticTexts["Skill: Review fixture"].waitForExistence(timeout:4))
+  }
+  @MainActor func testNativeNewChatDefaultsSaveAndReset(){
+    let app=launch(noAnimations:true)
+    app.buttons["Open chat history"].tap();app.buttons["Settings"].tap()
+    let entry=app.buttons["native-defaults-open"]
+    for _ in 0..<3 where !entry.exists || !entry.isHittable{app.swipeUp()}
+    XCTAssertTrue(entry.waitForExistence(timeout:4));entry.tap()
+    XCTAssertTrue(app.buttons["native-default-model"].waitForExistence(timeout:4));app.buttons["native-default-model"].tap()
+    let model=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","native-model-choice-")).firstMatch
+    XCTAssertTrue(model.waitForExistence(timeout:4));model.tap();app.buttons["native-defaults-save"].tap()
+    XCTAssertTrue(entry.waitForExistence(timeout:4));entry.tap()
+    XCTAssertTrue(app.buttons["native-default-reset-all"].waitForExistence(timeout:4));app.buttons["native-default-reset-all"].tap();app.buttons["native-defaults-save"].tap()
+    XCTAssertTrue(app.buttons["native-connection-done"].waitForExistence(timeout:4));app.buttons["native-connection-done"].tap()
+    app.buttons["native-list-new-chat"].tap()
+    XCTAssertTrue(app.buttons["Model and chat settings"].waitForExistence(timeout:5))
+  }
   @MainActor func testNativeDoneRemainsIndependentOfSlowCatalog(){
     let app=launch(slow:true)
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:4))

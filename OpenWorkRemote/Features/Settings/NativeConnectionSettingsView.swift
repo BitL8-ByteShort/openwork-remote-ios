@@ -8,6 +8,7 @@ struct NativeConnectionSettingsView:View {
   @AppStorage("compactToolActivity") private var compact=true
   @State private var modelSettings=false
   @State private var forget=false
+  @State private var newDefaults:NativeDefaultsPresentation?
   var body:some View{
     NavigationStack{
       List{
@@ -26,6 +27,7 @@ struct NativeConnectionSettingsView:View {
           Button("Model & settings"){modelSettings=true}.disabled(!model.canChooseModel)
           Toggle("Compact tool activity",isOn:$compact)
         }header:{Text("Conversation")}footer:{Text("Group tool calls into an expandable Activity row. Required approvals and questions stay visible.")}
+        Section{Button("New chat defaults"){if let scope=native.projectKey{newDefaults=NativeDefaultsPresentation(scope:scope,value:native.defaults.value,locations:native.newChatLocations)}}.disabled(native.projectKey==nil).accessibilityIdentifier("native-defaults-open")}
         Section{Picker("Appearance",selection:$appearance){Text("System").tag("system");Text("Light").tag("light");Text("Dark").tag("dark")}}
         Section{
           Text("Keep OpenCode running with its built-in Remote access enabled. Replies continue on the computer while PocketWork is closed.")
@@ -35,6 +37,7 @@ struct NativeConnectionSettingsView:View {
       }.scrollContentBackground(.hidden).background(Theme.background).navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
         .toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){dismiss()}.accessibilityIdentifier("native-connection-done")}}
         .sheet(isPresented:$modelSettings){ModelSettingsView()}
+        .sheet(item:$newDefaults){NativeChatDefaultsView(native:native,review:$0)}
         .confirmationDialog("Forget this computer?",isPresented:$forget,titleVisibility:.visible){
           Button("Forget computer",role:.destructive){Task{await model.forget();if model.connection == .unpaired{dismiss()}}}
         }message:{Text("This removes the saved connection on this device. It does not revoke the server token or delete chats or files on the computer.")}

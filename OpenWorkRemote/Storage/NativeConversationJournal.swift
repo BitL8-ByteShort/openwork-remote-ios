@@ -18,17 +18,26 @@ struct NativeConversationDisk:Codable,Sendable {
   var drafts:[DraftKey:String]=[:]
   var pending:[DraftKey:NativePendingPrompt]=[:]
   var attachments:[OpenCodeTarget:[NativeSelectedAttachment]]=[:]
+  var selectedSkills:[OpenCodeTarget:[NativeSelectedSkill]]=[:]
   init(){}
-  private enum CodingKeys:String,CodingKey{case schemaVersion,drafts,pending,attachments}
+  private enum CodingKeys:String,CodingKey{case schemaVersion,drafts,pending,attachments,selectedSkills}
   init(from decoder:any Decoder)throws{
     let c=try decoder.container(keyedBy:CodingKeys.self)
     schemaVersion=try c.decode(Int.self,forKey:.schemaVersion)
     drafts=try c.decode([DraftKey:String].self,forKey:.drafts)
     pending=try c.decode([DraftKey:NativePendingPrompt].self,forKey:.pending)
+    selectedSkills=try c.decodeIfPresent([OpenCodeTarget:[NativeSelectedSkill]].self,forKey:.selectedSkills) ?? [:]
     attachments=try c.decodeIfPresent([OpenCodeTarget:[NativeSelectedAttachment]].self,forKey:.attachments) ?? [:]
   }
   func validate() throws {
     guard schemaVersion==1 else{throw RemoteError.incompatible}
+    guard selectedSkills.count<=2_000 else{throw RemoteError.oversized}
+    for (target,rows) in selectedSkills{
+      guard rows.count<=50,Set(rows.map{OpenCodeIdentity.key($0.id)}).count==rows.count,
+        target.directory.hasPrefix("/"),target.directory.utf8.count<=8_192,!target.directory.contains("\0"),
+        !target.projectID.isEmpty,target.projectID.utf8.count<=2_048,target.sessionID.hasPrefix("ses"),target.sessionID.utf8.count<=2_048 else{throw RemoteError.invalidResponse}
+      for row in rows{try row.validate()}
+    }
     guard attachments.count<=2_000 else{throw RemoteError.oversized}
     for (target,rows) in attachments{
       guard rows.count<=4,Set(rows.map(\.id)).count==rows.count else{throw RemoteError.oversized}
@@ -117,11 +126,20 @@ actor NativeConversationFile:NativeConversationPersistence {
     if rows.isEmpty{disk.attachments.removeValue(forKey:target)}else{disk.attachments[target]=rows}
     try await persist()
   }
-  func prepare(target:OpenCodeTarget,files:[OpenCodePromptFile]=[]) async throws -> NativePendingPrompt {
+  func skills(for target:OpenCodeTarget)->[NativeSelectedSkill]{disk.selectedSkills[target] ?? []}
+  func setSkills(_ rows:[NativeSelectedSkill],for target:OpenCodeTarget)async throws{
+    guard ready,!retired,pending(for:target)==nil else{throw RemoteError.unavailable}
+    guard rows.count<=50,Set(rows.map{OpenCodeIdentity.key($0.id)}).count==rows.count else{throw RemoteError.oversized}
+    for row in rows{try row.validate()}
+    if rows.isEmpty{disk.selectedSkills.removeValue(forKey:target)}else{disk.selectedSkills[target]=rows}
+    try await persist()
+  }
+  func prepare(target:OpenCodeTarget,files:[OpenCodePromptFile]=[],skills:[String]=[]) async throws -> NativePendingPrompt {
     guard ready,!storageIssue,!retired,pending(for:target)==nil else{throw RemoteError.unavailable}
     let selected=attachments(for:target)
+    guard self.skills(for:target).map({OpenCodeIdentity.key($0.id)})==skills.map(OpenCodeIdentity.key) else{throw RemoteError.conflict}
     guard selected.count==files.count,selected.allSatisfy({row in row.phase == .ready && files.contains(where:{$0==row.prepared})}) else{throw RemoteError.unavailable}
-    let item=NativePendingPrompt(target:target,prompt:try OpenCodePrompt(text:draft(for:target),files:files),state:.prepared)
+    let item=NativePendingPrompt(target:target,prompt:try OpenCodePrompt(text:draft(for:target),files:files,skills:skills),state:.prepared)
     disk.pending[target.nativeDraftKey]=item
     do{try await persist();return item}
     catch{disk.pending[target.nativeDraftKey]?.state = .unknown;throw error}
@@ -134,6 +152,9 @@ actor NativeConversationFile:NativeConversationPersistence {
   func confirm(_ item:NativePendingPrompt) async throws {
     guard ready,!retired,pending(for:item.target)?.prompt.id==item.prompt.id else{throw RemoteError.conflict}
     disk.pending.removeValue(forKey:item.target.nativeDraftKey)
+    let sentSkills=Set(item.prompt.skills.map(OpenCodeIdentity.key))
+    let retainedSkills=skills(for:item.target).filter{!sentSkills.contains(OpenCodeIdentity.key($0.id))}
+    if retainedSkills.isEmpty{disk.selectedSkills.removeValue(forKey:item.target)}else{disk.selectedSkills[item.target]=retainedSkills}
     let sent=Set(item.prompt.files.map(\.id))
     let retained=attachments(for:item.target).filter{row in row.prepared.map{!sent.contains($0.id)} ?? true}
     if retained.isEmpty{disk.attachments.removeValue(forKey:item.target)}else{disk.attachments[item.target]=retained}

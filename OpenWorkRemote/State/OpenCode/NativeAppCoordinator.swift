@@ -20,6 +20,10 @@ import OpenWorkRemoteCore
   let chatActions:NativeChatActionStore
   let groups:LocalChatGroupStore
   let search=NativeChatSearchStore()
+  let workspace:NativeWorkspaceStore
+  let defaults:LocalChatDefaultsStore
+  private(set) var preparingSend=false
+  @ObservationIgnored private var sendPreparation=UUID()
   private(set) var ready=false
   var notice:String?
   private(set) var preservingEarlierHistory=false
@@ -36,6 +40,8 @@ import OpenWorkRemoteCore
     connection=ConnectionCoordinator(persistence:connectionPersistence,transport:transport)
     journal=NativeConversationJournal(persistence:try NativeConversationFile(directory:root))
     conversation=ConversationCoordinator(journal:journal)
+    workspace=NativeWorkspaceStore(journal:journal)
+    defaults=LocalChatDefaultsStore(persistence:try LocalChatDefaultsFile(directory:root))
     attachments=NativeAttachmentStore(journal:journal,files:ProtectedAttachmentFiles(directory:root.appending(path:"NativeAttachmentBytes")))
     results=NativeResultStore(files:ProtectedArtifactFiles(directory:root.appending(path:"NativeDownloads")))
     forms=NativeFormStore(persistence:try NativeFormFile(directory:root))
@@ -50,7 +56,7 @@ import OpenWorkRemoteCore
     },event:{[weak self] event in self?.receive(event)},resync:{[weak self] in self?.refreshInputs()})
   }
   func start() async throws {
-    try await journal.restore();try await forms.restore();try await visibility.restore();try await creation.restore();try await chatActions.restore();try await groups.restore();ready=true
+    try await journal.restore();try await forms.restore();try await visibility.restore();try await creation.restore();try await chatActions.restore();try await groups.restore();try await defaults.restore();ready=true
     try? await results.files.cleanup()
     await connection.start();await connectionChanged()
   }
@@ -64,9 +70,10 @@ import OpenWorkRemoteCore
   }
   func open(_ session:OpenCodeSession) async {
     guard connection.state == .ready,let client=activeClient else{return}
-    let current=UUID();selection=current;cancelInputs();preservingEarlierHistory=false
+    let current=UUID();selection=current;cancelInputs();cancelSendPreparation();preservingEarlierHistory=false
     guard let target=navigation.selectProvisional(session) else{return}
     attachments.activate(target:target,client:client);results.activate(target:target,client:client)
+    workspace.activate(target:target,client:client)
     controls.activate(target:target,client:client)
     approvals.activate(target:target,client:client);forms.activate(target:target,client:client)
     await conversation.activate(target:target,service:client)
@@ -76,7 +83,8 @@ import OpenWorkRemoteCore
     else if conversation.currentSession==nil{notice="This chat could not be loaded. Reconnect or try opening it again."}
   }
   func deactivate(){
-    selection=UUID();cancelInputs()
+    selection=UUID();cancelInputs();cancelSendPreparation()
+    workspace.deactivate();defaults.activate(nil)
     conversation.deactivate();attachments.deactivate();results.deactivate();controls.deactivate();approvals.deactivate();forms.deactivate();creation.deactivate();chatActions.deactivate();groups.activate(nil);search.activate(nil,reader:nil);newChatLocationRequest=nil;activeClient=nil
   }
   private func cancelInputs(){
@@ -139,8 +147,8 @@ import OpenWorkRemoteCore
   var canSend:Bool{
     connection.state == .ready && ready && journal.ready && !journal.storageIssue && !uncertain &&
       !(navigation.target.map{chatActions.blocks($0)} ?? true) &&
-      conversation.currentSession != nil && conversation.target==navigation.target && !conversation.sending && !conversation.isActive &&
-      (!draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || attachments.canSend) &&
+      conversation.currentSession != nil && conversation.target==navigation.target && !conversation.sending && !preparingSend && !conversation.isActive &&
+      (!draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || attachments.canSend || !workspace.selectedSkills.isEmpty) &&
       (attachments.rows.isEmpty || attachments.canSend) && draft.utf8.count<=32_768
   }
   func setDraft(_ value:String){if let target=navigation.target{journal.setDraft(value,for:target)}}
@@ -148,28 +156,39 @@ import OpenWorkRemoteCore
     guard let session=navigation.sessions.first(where:{OpenCodeIdentity.matches($0.id,presentation.id) && OpenCodeIdentity.matches($0.projectID,presentation.workspaceId)}) else{return}
     await open(session)
   }
+  private func cancelSendPreparation(){sendPreparation=UUID();preparingSend=false}
   func send() async {
-    guard canSend else{return}
-    if attachments.rows.isEmpty{await conversation.send();return}
-    guard let context=attachments.context else{return}
-    let selected=attachments.rows
+    guard canSend,let context=workspace.context,context.target==navigation.target else{return}
+    let id=UUID();sendPreparation=id;preparingSend=true
+    defer{if sendPreparation==id{preparingSend=false}}
+    let text=draft,selected=attachments.rows,chosen=workspace.selectedSkills
+    guard let skills=await workspace.validatedSkills(context) else{
+      if sendPreparation==id{notice=workspace.skillsNotice ?? "The selected skills could not be checked. Review them before sending."};return
+    }
     do{
-      let files=try await attachments.promptFiles(context:context)
-      guard navigation.target==context.target,conversation.target==context.target else{
-        notice="The chat changed before the files were sent. Your selected files stay with the original chat.";return
+      let files:[OpenCodePromptFile]
+      if selected.isEmpty{files=[]}
+      else{
+        guard let fileContext=attachments.context,fileContext.target==context.target else{return}
+        files=try await attachments.promptFiles(context:fileContext)
       }
-      await conversation.send(files:files)
+      guard sendPreparation==id,navigation.target==context.target,conversation.target==context.target else{return}
+      guard OpenCodeIdentity.matches(text,draft),chosen==workspace.selectedSkills,
+        selected.map(\.id)==attachments.rows.map(\.id),selected.map(\.prepared)==attachments.rows.map(\.prepared) else{
+        notice="Your draft or selected items changed during the check. Review them and tap Send again.";return
+      }
+      await conversation.send(files:files,skills:skills)
       if !journal.storageIssue,journal.pending(for:context.target)==nil{
         let retained=Set(journal.attachments(for:context.target).map(\.id))
         for row in selected where !retained.contains(row.id){try? await attachments.files.remove(row.file)}
       }
-    }catch{notice="The selected files could not be read safely. Unlock this device or remove and choose them again."}
+    }catch{if sendPreparation==id{notice="The selected files could not be read safely. Unlock this device or remove and choose them again."}}
   }
   func stop() async {await conversation.interrupt()}
   func checkConversation() async {await conversation.refresh()}
   func changeWorkspace(_ workspace:Workspace) async {
     guard connection.state == .ready else{return}
-    selection=UUID();cancelInputs();conversation.clearSelection();attachments.clearSelection();results.deactivate();controls.deactivate();approvals.deactivate();forms.clearSelection()
+    selection=UUID();cancelInputs();cancelSendPreparation();self.workspace.deactivate();conversation.clearSelection();attachments.clearSelection();results.deactivate();controls.deactivate();approvals.deactivate();forms.clearSelection()
     newChatLocationRequest=nil;groups.activate(nil);search.activate(nil,reader:nil)
     await navigation.selectProject(workspace.id);activateProjectStores()
   }

@@ -5,6 +5,7 @@ struct NativeModelSettingsView:View {
   let store:NativeControlStore
   let context:NativeControlContext
   var onFiles:(()->Void)? = nil
+  var onChanges:(()->Void)? = nil
   @Environment(\.dismiss) private var dismiss
   @State private var review:NativeControlReview?
   @State private var draft:NativeModelDraft?
@@ -15,6 +16,7 @@ struct NativeModelSettingsView:View {
     NavigationStack {
       Form {
         if let onFiles{Section("This chat"){Button(action:onFiles){Label("Files from this chat",systemImage:"doc.on.doc")}.accessibilityIdentifier("native-chat-files-settings")}}
+        if let onChanges{Section{Button(action:onChanges){Label("Working-copy changes",systemImage:"doc.text.magnifyingglass")}.accessibilityIdentifier("native-chat-changes-settings")}}
         if store.loading{ProgressView("Loading settings…")}
         NativeControlIssueView(store:store){Task{await reload()}}
         if let snapshot,let review,let draft {
@@ -74,7 +76,7 @@ struct NativeModelSettingsView:View {
     if let captured=store.review(context){review=captured}
   }
 }
-private struct NativeModelPicker:View {
+struct NativeModelPicker:View {
   let models:[OpenCodeModel]
   let selectedKey:Data?
   let choose:(OpenCodeModel)->Void
@@ -90,7 +92,7 @@ private struct NativeModelPicker:View {
             if selectedKey==model.selectionKey{Image(systemName:"checkmark").foregroundStyle(Theme.accent)}
             if !model.selectable{Text("Unavailable").font(.caption).foregroundStyle(Theme.muted)}
           }.padding(.vertical,4)
-        }.disabled(!model.selectable)
+        }.disabled(!model.selectable).accessibilityIdentifier("native-model-choice-"+model.selectionKey.base64EncodedString())
       }
     }.searchable(text:$search,prompt:"Find a model").navigationTitle("Model")
       .scrollContentBackground(.hidden).background(Theme.background)

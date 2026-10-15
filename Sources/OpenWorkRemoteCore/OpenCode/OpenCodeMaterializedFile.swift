@@ -35,9 +35,12 @@ public struct OpenCodeMaterializedFile:Decodable,Sendable,Equatable {
 }
 struct OpenCodeSkillIdentity:Decodable,Sendable{
   let id:String?
-  private enum CodingKeys:String,CodingKey{case id}
+  let name:String?
+  private enum CodingKeys:String,CodingKey{case id,name}
   init(from decoder:any Decoder)throws{
-    let value=try decoder.container(keyedBy:CodingKeys.self).decodeIfPresent(String.self,forKey:.id)
+    let c=try decoder.container(keyedBy:CodingKeys.self)
+    let value=try c.decodeIfPresent(String.self,forKey:.id),name=try? c.decode(String.self,forKey:.name)
     id=(value?.utf8.count ?? 0)<=2_048 ? value : nil
+    self.name=(name?.utf8.count ?? 0)<=4_096 ? name:nil
   }
 }

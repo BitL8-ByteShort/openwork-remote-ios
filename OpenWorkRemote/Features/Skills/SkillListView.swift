@@ -10,6 +10,12 @@ struct SkillListView: View {
   @Environment(AppModel.self) private var model
   @State private var editor: SkillEditPresentation?
   var body: some View {
+    if let native=model.native{
+      if let context=native.workspace.context{NativeSkillListView(store:native.workspace,context:context)}
+      else{ContentUnavailableView("Open a chat",systemImage:"sparkles",description:Text("Choose a connected chat to browse its registered skills."))}
+    }else{legacyBody}
+  }
+  private var legacyBody:some View{
     List {
       Section {
         Text(

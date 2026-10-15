@@ -1,6 +1,6 @@
 import Foundation
 
-enum OpenCodeResponseBudget:Int {case ordinary=8_388_608,materializedPrompt=58_720_256}
+enum OpenCodeResponseBudget:Int {case ordinary=8_388_608,skillCatalog=16_777_216,materializedPrompt=58_720_256}
 
 /// Typed feature methods are the public surface. Raw routing stays inside this module.
 public actor OpenCodeClient {

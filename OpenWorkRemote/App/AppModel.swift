@@ -61,7 +61,7 @@ import OpenWorkRemoteCore
   var updatingControls = false
   private var bridgeSending: Bool = false
   var sending: Bool {
-    get{if let native{return native.conversation.sending};return bridgeSending}
+    get{if let native{return native.preparingSend || native.conversation.sending};return bridgeSending}
     set{if native==nil{bridgeSending=newValue}}
   }
   private var bridgeLoading: Bool = false
@@ -1327,13 +1327,18 @@ extension AppModel {
     return SkillContext(hostId:host.hostId,workspaceId:wid,generation:generation)
   }
   var skillsRefreshID:String{(skillContext.map{$0.hostId+"/"+$0.workspaceId+"/"+$0.generation.uuidString} ?? "offline")+"/"+String(host?.capabilities.skillsRead == true)}
-  var selectedSkillIDs:[String]{disk.conversation.selectedSkills}
+  var selectedSkillIDs:[String]{native?.workspace.selectedSkills.map(\.id) ?? disk.conversation.selectedSkills}
   func toggleSelectedSkill(_ item:SkillSummary){
     guard connection == .ready,!sending,host?.capabilities.skillsSelect==true,item.selectable,selectedSession != nil else{return}
     var ids=selectedSkillIDs;if ids.contains(item.id){ids.removeAll{$0==item.id}}else{guard ids.count<8 else{notice="Select up to eight skills for one message.";return};ids.append(item.id)}
     do{try disk.conversation.setSelectedSkills(ids);saveDrafts()}catch{notice="This skill could not be selected."}
   }
-  func removeSelectedSkill(_ id:String){guard !sending else{return};do{try disk.conversation.setSelectedSkills(selectedSkillIDs.filter{$0 != id});saveDrafts()}catch{}}
+  func removeSelectedSkill(_ id:String){
+    if let native,let context=native.workspace.context{
+      guard !sending,!uncertain else{return}
+      Task{do{try await native.workspace.removeSkill(id,context:context)}catch{native.notice="The selected skill could not be removed safely."}};return
+    }
+    guard !sending else{return};do{try disk.conversation.setSelectedSkills(selectedSkillIDs.filter{$0 != id});saveDrafts()}catch{}}
   func refreshSkills()async{
     guard let c=skillContext,let client else{skills.activate(nil);return};skills.activate(c)
     await skills.refresh(client:client,context:c,read:host?.capabilities.skillsRead==true,write:host?.capabilities.skillsWrite==true)

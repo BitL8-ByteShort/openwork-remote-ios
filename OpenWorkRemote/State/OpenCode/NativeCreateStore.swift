@@ -46,9 +46,9 @@ import OpenWorkRemoteCore
       let session=try await client.createChat(intent)
       try await clear(intent)
       return current==epoch ? session:nil
-    }catch is OpenCodeChatNotSubmitted{
+    }catch let rejected as OpenCodeChatNotSubmitted{
       do{try await clear(intent)}catch{}
-      if current==epoch{notice="The chat was not created. Reconnect or refresh the project and try again."}
+      if current==epoch{notice=rejected.reason == .incompatible ? "A local model or agent default is no longer available. Review New chat defaults or use the OpenCode default.":"The chat was not created. Reconnect or refresh the project and try again."}
     }catch{
       if disk.pending[connectionID]?.intent.id==intent.id{
         disk.pending[connectionID]?.state = .unknown;try? await persist()

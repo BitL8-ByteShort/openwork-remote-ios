@@ -54,6 +54,14 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
   private let promptPayload:OpenCodePromptAdmission.Payload?
   private let metadata:OpenCodeMessagePresentation?
   public var files:[OpenCodeMaterializedFile]{promptPayload?.files ?? []}
+  public var fileLabels:[String]{
+    let staged=metadata?.displayText(ifMatching:text ?? "") != nil ? metadata?.attachments.map(\.name) ?? []:[]
+    return files.map{$0.name ?? "Attachment"}+staged
+  }
+  public var skillLabels:[String]{
+    guard let promptPayload else{return []}
+    return zip(promptPayload.skillNames,promptPayload.skillIDs).map{$0 ?? $1 ?? "Skill on your computer"}
+  }
   public var displayText:String?{
     guard let text else{return nil}
     return metadata?.displayText(ifMatching:text) ?? text
@@ -98,7 +106,8 @@ public struct OpenCodeMessage: Decodable, Sendable, Identifiable, Equatable {
     guard content.count <= 4_096 else { throw RemoteError.invalidResponse }
   }
   public var storedTextBytes:Int {
-    (text?.utf8.count ?? 0) + content.reduce(0){$0 + ($1.text?.utf8.count ?? 0) + ($1.toolSummary?.utf8.count ?? 0) + $1.toolFiles.reduce(0){$0+$1.uri.utf8.count+$1.mime.utf8.count}} +
+    (text?.utf8.count ?? 0) + (promptPayload?.skillIDs.compactMap{$0}.reduce(0){$0+$1.utf8.count} ?? 0) +
+      (promptPayload?.skillNames.compactMap{$0}.reduce(0){$0+$1.utf8.count} ?? 0) + content.reduce(0){$0 + ($1.text?.utf8.count ?? 0) + ($1.toolSummary?.utf8.count ?? 0) + $1.toolFiles.reduce(0){$0+$1.uri.utf8.count+$1.mime.utf8.count}} +
       snapshotFiles.reduce(0){$0+$1.utf8.count} + files.reduce(0){$0 + ($1.name?.utf8.count ?? 0) + ($1.mime?.utf8.count ?? 0) + ($1.sourceURI?.utf8.count ?? 0) + 128} + (metadata?.storedBytes ?? 0)
   }
 }

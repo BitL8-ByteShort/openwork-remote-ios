@@ -6,6 +6,9 @@ struct ChangesView: View {
   @Environment(\.dismiss) private var dismiss
   private var store: ChangeStore {model.changes}
   var body: some View {
+    if let native=model.native{NativeChangesView(native:native)}else{legacyBody}
+  }
+  private var legacyBody:some View{
     NavigationStack {
       ScrollView {
         VStack(alignment:.leading,spacing:24) {

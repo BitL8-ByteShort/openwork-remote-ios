@@ -12,9 +12,13 @@ struct MessageView: View {
       if message.role == "user" {
         HStack {
           Spacer(minLength: 42)
-          Text(message.blocks.compactMap(\.text).joined(separator: "\n")).font(.body).lineSpacing(4)
-            .textSelection(.enabled).padding(18).background(
-              Theme.surface, in: RoundedRectangle(cornerRadius: 24))
+          VStack(alignment:.leading,spacing:10){
+            let text=message.blocks.compactMap(\.text).joined(separator:"\n")
+            if !text.isEmpty{Text(text).font(.body).lineSpacing(4).textSelection(.enabled)}
+            ForEach(Array(message.blocks.enumerated()).filter{$0.element.text==nil},id:\.offset){_,block in
+              Label(block.label ?? "Context available on your computer",systemImage:block.kind=="skill" ? "sparkles":"paperclip").font(.callout).textSelection(.enabled)
+            }
+          }.padding(18).background(Theme.surface,in:RoundedRectangle(cornerRadius:24))
         }
       } else {
         if message.role == "assistant" {

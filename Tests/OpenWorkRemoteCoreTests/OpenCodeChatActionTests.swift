@@ -20,6 +20,7 @@ private actor NativeChatMutationTransport:HTTPTransport {
     let path=request.url!.path
     if path=="/api/info"{return(Data(#"{"version":"2.0.29","urls":[],"paths":{"tmp":"/tmp/native"}}"#.utf8),200)}
     if path=="/api/location"{return(Data(#"{"directory":"/project","project":{"id":"project","directory":"/project","canonical":"/project"}}"#.utf8),200)}
+    if path=="/api/model"{return(Data(#"{"location":{"directory":"/project"},"data":[]}"#.utf8),200)}
     if path=="/api/session",request.httpMethod=="POST"{
       creates+=1;let body=try JSONSerialization.jsonObject(with:request.httpBody!) as! [String:Any]
       let id=body["id"] as! String,metadata=body["metadata"] as! [String:String]
@@ -50,6 +51,13 @@ private actor NativeChatMutationTransport:HTTPTransport {
     #expect(await transport.counts().1==0)
     #expect(try await client.rename(target:target,title:" New ",expectedTitle:"Original").title=="New")
     #expect(await transport.counts().1==1)
+  }
+  @Test func unavailableLocalDefaultDoesNotFallBackOrCreateAnyChat()async throws{
+    let transport=NativeChatMutationTransport(),(client,target)=try setup(transport)
+    let intent=try OpenCodeNewChatIntent(connectionID:target.connectionID,projectID:target.projectID,directory:target.directory,
+      model:OpenCodeModelRef(providerID:"provider",id:"removed-model"))
+    await #expect(throws:OpenCodeChatNotSubmitted(reason:.incompatible)){try await client.createChat(intent)}
+    #expect(await transport.counts().0==0)
   }
   @Test func lostRenameAcknowledgementReadsBackWithoutRepeatingPatch()async throws{
     let transport=NativeChatMutationTransport(),(client,target)=try setup(transport)
