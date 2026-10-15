@@ -1,56 +1,59 @@
-![OpenWork Remote: Your computer. Your chats. Your iPhone.](docs/assets/banner.png)
+![PocketWork. Your computer. Your chats. OpenCode v2 on iPhone and iPad.](docs/assets/pocketwork-banner.svg)
 
 # PocketWork
 
-**PocketWork**, maintained by Salty Panda LLC, is an independent iOS companion for [OpenWork](https://github.com/different-ai/openwork). Pick up a chat from your iPhone while the work keeps running on your computer.
+PocketWork is an independent iPhone and iPad companion for [OpenCode](https://github.com/anomalyco/opencode), maintained by Salty Panda LLC. Pick up a chat, answer a question or review a file while the work keeps running on your computer.
 
-This is an early source release. Desktop source builds have been tested on macOS and Ubuntu Linux. Installation and re-pairing have been confirmed on a physical iPhone. Broader cellular and recovery qualification is still pending. It isn't an official OpenWork app. Beta builds are distributed through invitation-only internal TestFlight testing. There is no public TestFlight link or App Store release.
+**OpenCode-backed PocketWork1.0.0(8) is available to the existing internal TestFlight group.** Earlier0.1.0 builds use OpenWork. Physical-device acceptance and public App Store distribution remain pending. See [compatibility and evidence](docs/opencode-compatibility.md).
 
-## What you can do
+## In this source candidate
 
-- Connect with a short-lived pairing code and approve the phone on your computer.
-- Allow selected projects, or explicitly allow all current and future projects.
-- Read chats, send messages, stop work, and review supported approval requests.
-- Change a chat's model and supported reasoning settings.
-- Long-press a recent chat to rename it on the phone and computer (requires a host advertising rename support).
-- Review and revoke saved folder permissions where the host supports them.
-- Keep tool calls in a compact Activity row and expand them when needed.
+- Built-in OpenCode v2 pairing by QR code or pasted link, saved in Keychain.
+- Projects, recent chats, paged history, new chats, rename, fork and reviewed deletion.
+- Models, supported variants, agents, ordered chat rules and pending approvals.
+- Agent questions and forms, with answer drafts and explicit submission.
+- Photos and supported files, registered skills, result previews and explicit sharing.
+- Read-only working-copy changes and diffs.
+- Local chat groups, project visibility choices and new-chat defaults.
+- Expandable Activity, accessible input sheets and a bounded reader for long replies.
+- Offline help/legal information and separate local draft, download, sharing and reset controls.
 
-The host decides which actions are available. OpenWork v2 doesn't expose a general approval-mode switch through this integration. Unsupported permissions stay on the computer.
+These are implemented features with synthetic and scoped native-host checks. They are not a claim that the complete release-candidate journey has passed on physical devices. Native host skill editing and scheduled work stay on the computer. Search covers chat titles, not message contents.
 
-Internal TestFlight build **0.1.0 (5)** includes questions and selected photo/PDF
-attachments. Physical picker, cellular and recovery acceptance remain open.
-The current source candidate adds [generated-file previews and explicit sharing](docs/ARTIFACTS.md); those results features are not in build 5.
-See [attachment behavior, data handling and qualification limits](docs/ATTACHMENTS.md).
+## Connect
 
-## How it connects
+The inspected baseline is **OpenCode 2.0.29**. Keep the compatible OpenCode server running and the computer awake.
 
-The iPhone talks to a small, scoped bridge managed by OpenWork. The bridge uses the local OpenWork runtime. It doesn't give the phone a shell, a generic proxy, or the runtime's credentials.
+1. In OpenCode Settings, enable its built-in **Remote access** and choose **Pair device**.
+2. In PocketWork, scan the QR code or paste the pairing link.
+3. Review the HTTPS address and connect. A pairing code expires after five minutes and can be used once.
+4. Choose the projects and chats to display. Before sending or preparing attachments, review the reported AI-sharing context.
 
-Both devices need [Tailscale](https://tailscale.com/) on the same permitted private network. The bridge uses Tailscale Serve for HTTPS. Your computer must be awake with OpenWork running. There is no public tunnel, and the app keeps normal TLS certificate validation enabled.
+On a CLI-only host, OpenCode v2.0.29 also provides `opencode pair --remote`. It prints native pairing links and a QR code; scan the QR or copy its HTTPS link into PocketWork. If native Remote access is off, OpenCode asks before enabling it. The app ignores the QR's plain-HTTP local addresses and uses an advertised HTTPS address.
 
-The desktop work lives on the [`jorvek/seamless-remote-access` branch of our OpenWork fork](https://github.com/BitL8-ByteShort/openwork/tree/jorvek/seamless-remote-access). See its [setup and protocol guide](https://github.com/BitL8-ByteShort/openwork/blob/jorvek/seamless-remote-access/packages/remote-access/README.md) and [qualification record](https://github.com/BitL8-ByteShort/openwork/blob/jorvek/seamless-remote-access/packages/remote-access/docs/qualification.md). Integrated Remote access requires OpenCode v2 enabled for chats; installing the current official OpenWork release alone won't enable it. The desktop feature is off by default and also requires the deployment's feature policy to allow it.
+This connection uses OpenCode's native remote access. It needs no PocketWork bridge, OpenWork fork or separate Tailscale app. Normal TLS validation stays enabled. OpenCode may route encrypted traffic through OpenTunnel; the host and model-provider configuration still determine where work and data go.
 
-## Install the beta
+**Pairing grants server-wide access.** Visible projects and “Show future projects” change this device's lists; they don't restrict the credential. Tool approval requests, saved grants and chat rules are separate controls. Forget removes the credential from this device and does not revoke it on the server. Read [Security](SECURITY.md) before pairing a shared server.
 
-Invited testers can open Apple’s TestFlight invitation on their iPhone and install **OpenWork Remote**. TestFlight is the beta update route; a USB cable is not required. Updates use the existing app identity and retain its local pairing and drafts. If the computer revoked the phone, choose **Pair again** and approve a new connection in OpenWork.
+## Existing beta users
 
-TestFlight availability does not mean physical or cellular qualification is complete. The host still needs the integrated Remote access build described above.
+The app keeps the PocketWork name, existing Apple app record and bundle identity. OpenWork pairing cannot be reused with OpenCode. Earlier recoverable draft text stays separate for deliberate copying into a reviewed native chat; files, skills and uncertain actions are not silently moved or resent.
 
-## Build the app
+TestFlight remains the beta update route, without a cable requirement. There is no public TestFlight invitation or App Store release for this candidate. See [migration and recovery](docs/migrating-from-openwork.md).
 
-You need a Mac with Xcode and Swift 6 support. The deployment target is iOS 18 or later. The core package also supports macOS 15 or later for tests. There are no external Swift package dependencies.
+## Build and test
+
+Use a Mac with Xcode and Swift 6. The universal target supports iOS/iPadOS 18 or later; core/state tests use macOS 15 or later. Available Simulator evidence currently covers iOS 26.5 and iOS/iPadOS 27. A deployment-target setting does not establish minimum-version runtime acceptance.
 
 ```sh
 git clone https://github.com/BitL8-ByteShort/openwork-remote-ios.git
 cd openwork-remote-ios
 swift test
+python3 scripts/generate-ios-project.py
 open OpenWorkRemote.xcodeproj
 ```
 
-Select the **OpenWorkRemote** scheme and an iPhone Simulator, then run. To install on your own phone, select your development team in Signing & Capabilities and choose an available bundle identifier. No signing team, certificate, provisioning profile, or account credential is included here.
-
-For an unsigned Simulator build:
+Select the **OpenWorkRemote** scheme. Local Simulator Keychain tests may need ad-hoc signing. Device/App Store signing requires your own Apple configuration; no signing team, keys or provisioning files are included. For a compilation-only unsigned Simulator build:
 
 ```sh
 xcodebuild -project OpenWorkRemote.xcodeproj \
@@ -59,49 +62,12 @@ xcodebuild -project OpenWorkRemote.xcodeproj \
   -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO build
 ```
 
-The checked-in Xcode project is generated by `python3 scripts/generate-ios-project.py`. Run the generator after adding app source files. Keep personal signing settings out of commits.
+There are no external Swift package dependencies. See [Contributing](CONTRIBUTING.md), [testing](docs/testing.md), [accessibility evidence](docs/accessibility-qualification.md) and [rendering limits](docs/rendering-and-responsiveness.md).
 
-## Pair a phone
+## Support and licensing
 
-Once a compatible host is available:
+Email **support@saltypanda.com** or use [GitHub Issues](https://github.com/BitL8-ByteShort/openwork-remote-ios/issues). Issues are public. Leave out credentials, pairing links, transcripts and private host information.
 
-1. Enable OpenCode v2 for chats in Advanced settings. Open **Settings → Remote access** on the computer and enable phone access.
-2. Choose **Pair a phone**. Scan its QR code in the iOS app, or paste the pairing code.
-3. Review the request on the computer. Choose projects, then approve it.
-4. Open a chat on the phone. You can change or revoke the phone's access from the computer.
+The source and original artwork are [MIT licensed](LICENSE). The credited OpenCode logo has its own retained MIT notice in [NOTICE.md](NOTICE.md). PocketWork is independently maintained and isn't an official OpenCode product. OpenCode's maintainers aren't responsible for this app.
 
-If you revoke a phone, it shows **Pair again**. Create a new code on the computer, scan or paste it, and approve the new request. Drafts stay on the phone, scoped to their original computer and chat.
-
-Approvals that the phone cannot safely handle ask you to continue on the computer. Losing a network connection doesn't automatically resubmit a message whose result is uncertain.
-
-### Answer questions
-
-On a host advertising question support, a pending question appears above the conversation, outside compact Activity. Choose answers or enter text, then tap **Send answers**. **Cancel** closes the sheet and keeps your draft. **Dismiss question** explicitly cancels the request on the computer. Unknown form types require the computer.
-
-Question drafts and submission IDs are stored in a protected local file, scoped to the computer, project and chat. A changed request requires fresh review. An unconfirmed response is never sent again automatically; check the chat on the computer. Older hosts keep their existing chat functions without question replies.
-
-## Privacy and security
-
-Connection credentials are stored in the iOS Keychain. The app doesn't include analytics or crash-reporting services. Prompts still go to whichever model provider your OpenWork host uses, under that provider's terms.
-
-See [SECURITY.md](SECURITY.md) for the security boundary and private vulnerability reporting. Please don't put pairing codes, tokens, transcripts, private hostnames, or signing files in issues.
-
-## Contributing and licensing
-
-Issues and pull requests are welcome. Write access is controlled by the repository owner; a public repository doesn't give visitors permission to push changes. See [CONTRIBUTING.md](CONTRIBUTING.md) for checks and review expectations.
-
-The source and original artwork in this repository are [MIT licensed](LICENSE). See [NOTICE.md](NOTICE.md) for attribution and platform terms. OpenWork's maintainers aren't responsible for this iOS app.
-
-The source candidate adds [read-only Workspace changes](docs/CHANGES.md). It includes outside-chat edits, requires host file access and provides no file-changing actions. This feature is not in TestFlight build 5.
-
-The source candidate also adds [workspace chat groups](docs/GROUPS.md), including explicit Move chat and group removal that keeps chats. Groups are not in TestFlight build 5.
-
-Chat copy/delete behavior, recovery and limits: [Chat actions](docs/chat-actions.md).
-
-Older title search, coverage and data flow: [Title search](docs/title-search.md).
-
-Workspace-scoped new-chat default controls and their authorization/recovery boundaries are documented in [Workspace defaults](docs/workspace-defaults.md).
-
-The source candidate adds native-backed [workspace skills](docs/skills.md), with kept drafts and the computer’s existing approval rules. Build 5 excludes this feature.
-
-Help, About and three local-data removal controls are implemented in the source candidate. They are not in TestFlight build 5. Read the [privacy policy](https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/) and [support page](https://bitl8-byteshort.github.io/openwork-remote-ios/support/), or contact support@saltypanda.com. Public release remains gated on verified provider disclosures and consent, reviewer access and physical acceptance.
+Read [privacy](https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/), [support](https://bitl8-byteshort.github.io/openwork-remote-ios/support/) and [terms](https://bitl8-byteshort.github.io/openwork-remote-ios/terms/) at the stable information-site URLs. The exact approved offline copy is in [bundled information](OpenWorkRemote/Resources/Information/); its manifest records policy version2026-10-15.1.

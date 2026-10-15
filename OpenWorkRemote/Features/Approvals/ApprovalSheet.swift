@@ -1,3 +1,4 @@
+#if DEBUG
 import OpenWorkRemoteCore
 import SwiftUI
 
@@ -68,3 +69,5 @@ struct ApprovalSheet: View {
     }
   }
 }
+
+#endif

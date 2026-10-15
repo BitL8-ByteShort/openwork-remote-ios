@@ -1,3 +1,4 @@
+#if DEBUG || !os(iOS)
 import Foundation
 import Observation
 import OpenWorkRemoteCore
@@ -221,3 +222,5 @@ private struct GroupDisk: Codable, Sendable { var intents: [GroupIntent] = [] }
     pending?.phase == .uncertain && reviewedUncertain && !needsRefresh
   }
 }
+
+#endif

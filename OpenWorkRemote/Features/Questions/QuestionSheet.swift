@@ -1,3 +1,4 @@
+#if DEBUG
 import OpenWorkRemoteCore
 import SwiftUI
 
@@ -158,3 +159,5 @@ private struct QuestionFieldView: View {
     }
   }
 }
+
+#endif

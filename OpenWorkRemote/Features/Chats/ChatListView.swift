@@ -1,3 +1,4 @@
+#if DEBUG
 import OpenWorkRemoteCore
 import SwiftUI
 
@@ -14,6 +15,9 @@ struct ChatListView: View {
   @State private var groupFilter: String?
   @State private var searchingOlder = false
   var body: some View {
+    if let native=model.native{NativeChatListView(native:native)}else{legacyBody}
+  }
+  private var legacyBody:some View{
     NavigationStack {
       List {
         Section {
@@ -114,8 +118,7 @@ struct ChatListView: View {
           } label: {
             Image(systemName: "square.and.pencil")
           }.disabled(
-            model.connection != .ready || model.host?.capabilities.createSession != true
-              || model.loading || model.uncertainCreation
+            !model.canCreateChat
           ).accessibilityLabel("New chat")
         }
       }.sheet(isPresented: $showingSettings) { ConnectionView() }
@@ -188,3 +191,5 @@ struct ChatListView: View {
     model.sessions.filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) }
   }
 }
+
+#endif

@@ -1,3 +1,4 @@
+#if DEBUG
 import OpenWorkRemoteCore
 import SwiftUI
 
@@ -275,3 +276,5 @@ struct MoveChatView: View {
     ).accessibilityAddTraits(selected == id ? .isSelected : [])
   }
 }
+
+#endif

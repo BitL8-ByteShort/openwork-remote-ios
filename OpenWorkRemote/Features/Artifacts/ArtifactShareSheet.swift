@@ -10,6 +10,13 @@ import Synchronization
 // UI completion runs on MainActor and the copy runs on a utility task.
 private final class ArtifactQualificationActivity: UIActivity, @unchecked Sendable {
   private let selected = Mutex<URL?>(nil)
+  private let stages = Mutex<[String]>([])
+  private func record(_ stage:String){
+    let value=stages.withLock{$0.append(stage);return $0.joined(separator:"\n")}
+    let root=FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appending(path:"ArtifactShareQualification",directoryHint:.isDirectory)
+    try? FileManager.default.createDirectory(at:root,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700,.protectionKey:FileProtectionType.complete])
+    try? Data(value.utf8).write(to:root.appending(path:"activity-stage.txt"),options:[.atomic,.completeFileProtection])
+  }
   let saved: @MainActor @Sendable (String) -> Void
   init(saved: @escaping @MainActor @Sendable (String) -> Void) { self.saved = saved; super.init() }
   override var activityType: UIActivity.ActivityType? { UIActivity.ActivityType("com.saltypanda.openworkremote.qualification.save") }
@@ -18,13 +25,14 @@ private final class ArtifactQualificationActivity: UIActivity, @unchecked Sendab
   override func canPerform(withActivityItems items: [Any]) -> Bool { items.count == 1 && (items.first as? URL)?.isFileURL == true }
   override func prepare(withActivityItems items: [Any]) {
     let url = items.first as? URL
-    selected.withLock { $0 = url }
+    selected.withLock { $0 = url };record("prepared-file-\(url?.isFileURL == true)")
   }
   override func perform() {
+    record("perform")
     Task { @MainActor in await saveSelectedCopy() }
   }
   @MainActor private func saveSelectedCopy() async {
-    guard let source = selected.withLock({ $0 }) else { activityDidFinish(false); return }
+    guard let source = selected.withLock({ $0 }) else { record("no-selected-file");activityDidFinish(false); return }
     let folder = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
       .appending(path:"ArtifactShareQualification",directoryHint:.isDirectory)
       let checksum: String? = await Task.detached(priority:.utility) {
@@ -44,8 +52,9 @@ private final class ArtifactQualificationActivity: UIActivity, @unchecked Sendab
             "sha256":hash,"activityItemCount":1,"destinationReadbackMatched":true]
           try JSONSerialization.data(withJSONObject:receipt).write(to:destination.appending(path:"receipt.json"),options:[.atomic,.completeFileProtection])
           return hash
-        } catch { return nil }
+        } catch { self.record("copy-error-"+(error as NSError).domain+"-"+String((error as NSError).code));return nil }
       }.value
+      record(checksum==nil ? "copy-failed":"saved")
       if let checksum { saved(checksum) }; activityDidFinish(checksum != nil)
   }
 }

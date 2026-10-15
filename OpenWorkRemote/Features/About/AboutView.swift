@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AboutView: View {
+  var allowsDataControls=true
   private let information = Result { try ProductInformation.load() }
   var body: some View {
     List {
@@ -14,7 +15,7 @@ struct AboutView: View {
               .foregroundStyle(Theme.muted).accessibilityIdentifier("about-version")
           }
         }.padding(.vertical, 8)
-        Text("An independently maintained companion for OpenWork.").font(.callout)
+        Text("An independently maintained companion for OpenCode v2.").font(.callout)
       }
       switch information {
       case .success(let info):
@@ -30,9 +31,9 @@ struct AboutView: View {
           Link(destination: info.supportEmailURL) {
             Label("Email support", systemImage: "envelope")
           }.accessibilityIdentifier("about-support-email")
-          NavigationLink { DataControlsView() } label: {
-            Label("Data on this phone", systemImage: "iphone")
-          }.accessibilityIdentifier("about-data-controls")
+          if allowsDataControls{NavigationLink { DataControlsView() } label: {
+            Label("Data on this device", systemImage: "iphone.and.ipad")
+          }.accessibilityIdentifier("about-data-controls")}
         } footer: {
           Text("Support issues are public. Leave out pairing codes, tokens, private chats and personal files.")
         }

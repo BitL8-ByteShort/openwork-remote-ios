@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title description">
+<title id="title">PocketWork</title><desc id="description">Your computer. Your chats. OpenCode v2 on iPhone and iPad. Independently maintained by Salty Panda LLC.</desc>
+<rect width="1280" height="360" rx="32" fill="#faf9f6"/>
+<circle cx="1140" cy="30" r="205" fill="#eeedff"/><circle cx="1240" cy="330" r="130" fill="#e6ebff"/>
+<rect x="70" y="76" width="94" height="94" rx="28" fill="#3a51e8"/>
+<path d="M106 106H96V140H106M127 106H137V140H127M109 123H126M121 118L126 123L121 128" fill="none" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<g fill="#20242b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif"><text x="190" y="150" font-size="70" font-weight="700" letter-spacing="-2">PocketWork</text>
+<text x="72" y="230" font-size="35" font-weight="500">Your computer. Your chats.</text>
+<text x="72" y="284" font-size="25" fill="#616774">OpenCode v2 on iPhone and iPad.</text>
+<text x="1205" y="316" font-size="16" fill="#616774" text-anchor="end">INDEPENDENT COMPANION</text></g></svg>

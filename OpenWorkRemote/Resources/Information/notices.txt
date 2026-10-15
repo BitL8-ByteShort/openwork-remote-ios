@@ -2,7 +2,33 @@
 Copyright (c) 2026 Chris (BitL8-ByteShort). MIT License. The complete license is included on the Source license screen and in the public source repository.
 
 ## Shipped libraries and artwork
-No third-party SDK or external Swift package is bundled with the iOS client. The app uses Apple system frameworks, system fonts and SF Symbols. Its app icon and connection artwork are original project assets. OpenWork's host software and Tailscale run separately; their source and licenses are not bundled into this iOS app.
+No third-party SDK or external Swift package is bundled with the iOS client. The app uses Apple system frameworks, system fonts and SF Symbols. Its app icon and connection artwork are original project assets except for the credited OpenCode logo. OpenCode and OpenTunnel run separately and are not bundled in the iOS app. Earlier OpenWork compatibility code retained for local recovery or development does not make this release an OpenWork client.
 
-## OpenWork relationship
-PocketWork is an independently maintained companion for OpenWork. OpenWork is referenced to identify the software this app connects to. PocketWork is not an official OpenWork product.
+## Independent companion
+PocketWork is maintained independently by Salty Panda LLC. OpenCode is referenced to identify the software it connects to. The OpenCode logo is used to identify that integration under the notice below; it does not imply endorsement or official affiliation.
+
+OpenCode logo
+Official logo paths from anomalyco/opencode v2.0.29.
+https://opencode.ai/brand
+
+MIT License
+
+Copyright (c) 2025 opencode
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

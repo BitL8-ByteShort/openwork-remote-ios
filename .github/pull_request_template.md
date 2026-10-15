@@ -1,10 +1,12 @@
-Describe the problem and resulting behavior.
+Describe the concrete problem and resulting native OpenCode behavior.
 
-Testing:
+Testing (record the version/commit and actual results):
 
-- Core tests:
-- Simulator build:
-- UI screenshots, if applicable:
-- Physical device or host checks, if applicable:
+- Core and app-state checks; identify opt-in skips:
+- Generated project and information-site consistency:
+- Simulator model/OS, normal or reduced animations, and synthetic screenshots:
+- Actual Mac and Linux disposable-host checks, if applicable:
+- Physical iPhone/iPad checks, if applicable:
+- Remaining release or policy-publication gates:
 
-Keep secrets and real user data out of this PR. Sign off your commits.
+Keep tokens, pairing payloads, private origins, transcripts and signing files out of this PR. Do not infer physical acceptance or public release from a build. Sign off contributions.

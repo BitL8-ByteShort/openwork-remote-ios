@@ -3,6 +3,7 @@ import SwiftUI
 
 struct RenameChatView: View {
   let session: ChatSession
+  let nativeReview:NativeRenameReview?
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
   @State private var title: String
@@ -11,7 +12,8 @@ struct RenameChatView: View {
   @State private var requestID = UUID()
   @FocusState private var focused: Bool
 
-  init(session: ChatSession) {
+  init(session: ChatSession,nativeReview:NativeRenameReview?=nil) {
+    self.nativeReview=nativeReview
     self.session = session
     _title = State(initialValue: session.title)
   }
@@ -23,7 +25,7 @@ struct RenameChatView: View {
           TextField("Chat name", text: $title, axis: .vertical)
             .focused($focused).disabled(saving).accessibilityIdentifier("chat-name")
         } footer: {
-          Text("This name also appears in OpenWork on your computer.")
+          Text("This name also appears in \(model.serviceName) on your computer.")
         }
         if trimmed.unicodeScalars.count > 200 {
           Text("Use a name with 200 characters or fewer.").foregroundStyle(.red)
@@ -33,21 +35,33 @@ struct RenameChatView: View {
       }.scrollContentBackground(.hidden).background(Theme.background)
         .navigationTitle("Rename chat").navigationBarTitleDisplayMode(.inline)
         .toolbar {
-          ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
+          ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving && nativeReview==nil) }
           ToolbarItem(placement: .confirmationAction) {
             Button("Save") { Task { await save() } }
               .disabled(saving || trimmed.isEmpty || trimmed.unicodeScalars.count > 200 || trimmed == session.title)
               .accessibilityIdentifier("save-chat-name")
           }
         }
-    }.interactiveDismissDisabled(saving)
+    }.interactiveDismissDisabled(saving && nativeReview==nil)
       .onAppear { focused = true }
       .onChange(of: title) { _, _ in requestID = UUID(); error = nil }
   }
   private func save() async {
     saving = true; error = nil; focused = false
     defer { saving = false }
-    do { try await model.rename(session, title: title, requestId: requestID); dismiss() }
+    do {
+      if let native=model.native{
+        guard let nativeReview else{throw RemoteError.unavailable}
+        try await native.rename(nativeReview,title:title)
+      } else {
+        #if DEBUG
+        try await model.rename(session, title: title, requestId: requestID)
+        #else
+        throw RemoteError.unavailable
+        #endif
+      }
+      dismiss()
+    }
     catch RemoteError.conflict {
       self.error = "This chat’s name changed on your computer. Your edit is kept here. Cancel and open Rename again to review the current name."
     } catch {

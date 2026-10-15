@@ -51,6 +51,7 @@ actor ProtectedAttachmentFiles {
     var resource = URLResourceValues(); resource.isExcludedFromBackup = true
     var target = directory; try target.setResourceValues(resource)
   }
+  func retire(){retired=true}
   func invalidateAndRemove() throws {
     retired = true
     try prepare(allowRetired: true)
@@ -135,7 +136,8 @@ actor ProtectedAttachmentFiles {
   func importPhoto(_ selected: URL) throws -> LocalAttachmentFile {
     try savePhotoPNG(normalizedPhoto(selected))
   }
-  func normalizedPhoto(_ selected: URL) throws -> Data {
+  func normalizedPhoto(_ selected: URL,maximumPixelSize:Int=2048) throws -> Data {
+    guard (1...2048).contains(maximumPixelSize) else{throw RemoteError.invalidResponse}
     guard selected.isFileURL else { throw RemoteError.invalidResponse }
     let scoped = selected.startAccessingSecurityScopedResource()
     defer { if scoped { selected.stopAccessingSecurityScopedResource() } }
@@ -161,10 +163,10 @@ actor ProtectedAttachmentFiles {
       width > 0, height > 0, width <= 100_000, height <= 100_000,
       width <= 100_000_000 / height else { throw RemoteError.invalidResponse }
     let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways:true,
-      kCGImageSourceCreateThumbnailWithTransform:true, kCGImageSourceThumbnailMaxPixelSize:2048,
+      kCGImageSourceCreateThumbnailWithTransform:true, kCGImageSourceThumbnailMaxPixelSize:maximumPixelSize,
       kCGImageSourceShouldCacheImmediately:true]
     guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
-      image.width <= 2048, image.height <= 2048 else { throw RemoteError.invalidResponse }
+      image.width <= maximumPixelSize, image.height <= maximumPixelSize else { throw RemoteError.invalidResponse }
     try Task.checkCancellation()
     let encoded = NSMutableData()
     guard let output = CGImageDestinationCreateWithData(encoded, UTType.png.identifier as CFString, 1, nil) else {
@@ -219,6 +221,18 @@ actor ProtectedAttachmentFiles {
       hash.update(data: data)
     }
     guard count == reference.bytes, hash.finalize().map({ String(format: "%02x", $0) }).joined() == reference.sha256 else { throw RemoteError.invalidResponse }
+  }
+  /// Bounded, same-handle verification for native prompt rehydration.
+  func read(_ reference:LocalAttachmentFile)throws->Data{
+    try AttachmentValidation.metadata(name:reference.name,mime:reference.mime,bytes:reference.bytes,sha256:reference.sha256)
+    try prepare()
+    let file=try openRegular(path(reference.id),flags:O_RDONLY,privateFile:true)
+    defer{try? file.close()}
+    guard try file.seekToEnd()==reference.bytes else{throw RemoteError.invalidResponse}
+    try file.seek(toOffset:0);try Task.checkCancellation()
+    let data=try file.read(upToCount:reference.bytes+1) ?? Data()
+    guard data.count==reference.bytes,SHA256.hash(data:data).map({String(format:"%02x",$0)}).joined()==reference.sha256 else{throw RemoteError.conflict}
+    return data
   }
   func remove(_ reference: LocalAttachmentFile) throws {
     try prepare()

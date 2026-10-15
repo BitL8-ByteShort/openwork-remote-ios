@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 
 struct WelcomeView: View {
@@ -34,3 +35,5 @@ struct WelcomeView: View {
     }.background(Theme.background).foregroundStyle(Theme.ink)
   }
 }
+
+#endif

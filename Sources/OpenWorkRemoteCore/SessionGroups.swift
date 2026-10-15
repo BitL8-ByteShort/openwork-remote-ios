@@ -69,6 +69,7 @@ public enum GroupAction: Codable, Sendable, Equatable {
   case assign(sessionId: String, groupId: String?)
   case remove(id: String)
 }
+#if DEBUG || !os(iOS)
 extension BridgeClient {
   public func sessionGroups(_ wid: String) async throws -> GroupSnapshot {
     try await decode(
@@ -139,3 +140,5 @@ extension BridgeClient {
     return receipt
   }
 }
+
+#endif

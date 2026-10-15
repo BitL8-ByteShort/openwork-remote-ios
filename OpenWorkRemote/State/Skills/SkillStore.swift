@@ -14,9 +14,10 @@ struct SkillIntent: Codable, Sendable {
   let hostId: String, workspaceId: String, requestId: UUID, action: SkillAction
   var phase: Phase
 }
-private struct SkillDisk: Codable, Sendable {
+struct SkillDisk: Codable, Sendable {
   var drafts: [SkillDraft] = [], intents: [SkillIntent] = []
 }
+#if DEBUG || !os(iOS)
 @MainActor @Observable final class SkillStore {
   private(set) var context: SkillContext?
   private(set) var catalog: SkillCatalog?
@@ -401,3 +402,5 @@ private struct SkillDisk: Codable, Sendable {
     notice = nil
   }
 }
+
+#endif

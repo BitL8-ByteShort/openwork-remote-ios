@@ -1,8 +1,11 @@
 ## App Store terms
-Apple's standard Licensed Application End User License Agreement applies to App Store distribution unless a custom agreement is supplied. Open the Apple EULA link to read the agreement. This app does not add a custom end-user agreement or an acceptance checkbox.
+Apple's standard Licensed Application End User License Agreement applies to App Store distribution unless a custom agreement is supplied. The Apple EULA link opens that agreement. PocketWork does not add a custom end-user agreement or an acceptance checkbox.
 
 ## Source-code license
-PocketWork's published iOS source is available under the MIT License. The Source license screen includes the full notice. The source license is separate from the App Store end-user agreement.
+PocketWork's published iOS source is available under the MIT License. The Source license screen contains the complete notice. This source license is separate from Apple's App Store end-user agreement.
 
-## Other services
-OpenWork, Tailscale and any model providers or services you configure have their own terms. PocketWork does not supply a model account or pay your provider's charges. Only connect a computer and workspace you are authorized to use.
+## OpenCode and other services
+OpenCode, OpenTunnel, model providers, plugins, hosting and services you configure have their own terms. PocketWork does not supply a model account or pay provider charges. Only pair computers and access projects, chats and files you are authorized to use. Built-in pairing grants server-wide access; this app's project visibility is a display preference. Review tool permissions and AI-sharing information before taking actions. PocketWork is independently maintained by Salty Panda LLC and is not an official OpenCode product.
+
+## Contact
+For PocketWork support, contact support@saltypanda.com or https://github.com/BitL8-ByteShort/openwork-remote-ios/issues. Public issues must not contain private data or credentials.

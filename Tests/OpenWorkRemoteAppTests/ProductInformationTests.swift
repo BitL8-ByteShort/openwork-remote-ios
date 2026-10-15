@@ -15,7 +15,8 @@ import Testing
 
   @Test func helpDoesNotRequireHost() throws {
     let information = try ProductInformation.load()
-    #expect(information.document(.help).text.contains("Tailscale"))
+    #expect(information.document(.help).text.contains("OpenCode v2"))
+    #expect(!information.document(.help).text.contains("requires Tailscale"))
     #expect(information.document(.help).text.contains("Remote access"))
     #expect(information.document(.help).text.contains("offline"))
   }
@@ -44,6 +45,17 @@ import Testing
     #expect(information.manifest.privacyURL.absoluteString == "https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/")
   }
 
+  @Test @MainActor func nativeSharingReviewUsesTheBundledPolicyAndAccurateResetLimits()throws{
+    let information=try ProductInformation.load()
+    #expect(information.manifest.policyVersion==ProviderDisclosureStore.policyVersion)
+    let privacy=information.document(.privacy).text
+    #expect(privacy.contains("OpenCode v2"))
+    #expect(privacy.contains("does not revoke"))
+    #expect(privacy.contains("cannot verify the final provider destination"))
+    #expect(!privacy.contains("attempt to revoke"))
+    #expect(!privacy.contains("requires Tailscale"))
+  }
+
   @Test func invalidOrPlaceholderURLFailsReleaseValidation() throws {
     let bad = ["http://example.com", "https://example.com/privacy", "https://localhost/privacy", "https://127.0.0.1/privacy", "https://192.168.1.2/privacy", "https://bitl8-byteshort.github.io@evil.test/privacy", "https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/?token=secret", "javascript:alert(1)"]
     for value in bad {
@@ -68,7 +80,9 @@ import Testing
     let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let license = try String(contentsOf: repo.appending(path: "LICENSE"), encoding: .utf8)
     #expect(information.document(.sourceLicense).text == license)
-    #expect(information.manifest.notices.map(\.id) == ["pocketwork-source"])
+    #expect(information.manifest.notices.map(\.id) == ["pocketwork-source", "opencode-logo"])
+    #expect(information.document(.notices).text.contains("Copyright (c) 2025 opencode"))
+    #expect(information.document(.notices).text.contains("OpenCode logo"))
     #expect(information.document(.notices).text.contains("No third-party SDK"))
     #expect(information.document(.notices).text.contains("OpenWork"))
   }

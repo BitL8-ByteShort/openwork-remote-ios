@@ -1,3 +1,4 @@
+#if DEBUG
 import OpenWorkRemoteCore
 import SwiftUI
 
@@ -93,3 +94,5 @@ struct ChatSearchView: View {
     return f.date(from: text)
   }
 }
+
+#endif

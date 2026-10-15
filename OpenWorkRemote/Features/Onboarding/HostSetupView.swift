@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 
 struct HostSetupView: View {
@@ -48,3 +49,5 @@ struct HostSetupView: View {
     }
   }
 }
+
+#endif

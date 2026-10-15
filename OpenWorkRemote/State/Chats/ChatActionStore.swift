@@ -1,3 +1,4 @@
+#if DEBUG || !os(iOS)
 import Foundation
 import Observation
 import OpenWorkRemoteCore
@@ -229,3 +230,5 @@ private struct ChatActionDisk: Codable, Sendable { var intents: [ChatActionInten
     needsRefresh = true
   }
 }
+
+#endif

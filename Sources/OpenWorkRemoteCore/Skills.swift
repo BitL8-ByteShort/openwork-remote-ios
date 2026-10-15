@@ -137,6 +137,7 @@ public enum SkillAction: Codable, Sendable, Equatable {
     return body
   }
 }
+#if DEBUG || !os(iOS)
 extension BridgeClient {
   private func skillsPath(_ wid: String) throws -> String {
     guard wid.range(of: "^[A-Za-z0-9_-]{1,200}$", options: .regularExpression) != nil else {
@@ -180,3 +181,5 @@ extension BridgeClient {
     return receipt
   }
 }
+
+#endif

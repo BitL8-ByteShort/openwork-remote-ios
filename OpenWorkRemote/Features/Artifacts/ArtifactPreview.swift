@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 import OpenWorkRemoteCore
 
@@ -83,3 +84,5 @@ struct ArtifactPreview: View {
       }
   }
 }
+
+#endif

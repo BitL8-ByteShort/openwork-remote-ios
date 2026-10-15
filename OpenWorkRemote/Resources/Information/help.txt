@@ -1,26 +1,26 @@
-## Connect your computer
-Keep the tested OpenWork preview running on your Mac or Linux computer with Remote access enabled. The current beta requires Tailscale on your phone and computer, signed into the same private network. Create a pairing code in OpenWork, scan or paste it here, then approve the phone and workspace access on your computer.
+## Connect OpenCode v2
+Keep the qualified OpenCode version running and the computer awake. In OpenCode Settings, enable its built-in Remote access and choose Pair device. Scan the QR code or paste its pairing link in PocketWork, review the HTTPS address, then connect. Codes expire after five minutes and can be used once. Native remote access works without a separate Tailscale app. The compatibility guide lists tested versions; an unqualified version can be blocked from writes.
 
-## Keep chatting
-Choose a workspace and chat, or start a new chat. Model & settings changes the available model and reasoning for that chat. Long-press a chat in Your Chats to rename, fork or delete it when your computer supports the action. Use the plus button to choose Photos or files, or workspace skills.
+## Understand pairing
+The saved credential grants access to the OpenCode server, including its projects and supported file operations. Visible projects and Show future projects affect this device's lists only. They are not access restrictions. Tool approvals, saved tool grants and chat rules remain separate controls in OpenCode. Do not pair a shared server unless you are authorized to access it.
 
-## Permissions and Activity
-Settings shows which workspaces and features your phone can access. Change those grants on your computer. Tool and file approvals still follow OpenWork's rules. Compact tool activity groups tool calls into an expandable Activity row; required approvals and questions stay visible.
+## Chats and settings
+Open Your chats to choose a project or conversation. Use a chat's visible Actions menu, long press or accessibility actions to rename, move it to a local group, continue in a new chat, or review deletion of that chat and its branches. Search older chat titles searches titles, not message contents. Local groups do not sync to OpenCode. Model & settings changes the selected chat's available model, variant, agent and rules. New chat defaults are local to the connection/project and only apply when PocketWork creates a chat.
 
-## If your computer is offline
-Check that OpenWork is open, Remote access is enabled, the computer is awake and both devices are connected to Tailscale. Tap Reconnect in Settings. If you revoked this phone on the computer, use Pair again and approve a fresh code. Help and legal information remain available offline.
+## Questions, approvals and Activity
+Required approvals and questions stay visible above the conversation. Review them before answering. Closing a question sheet keeps its answer draft; Dismiss question cancels the pending question on the computer. Unsupported or external form steps hand off to the computer. Compact tool activity groups tool calls into an expandable Activity row. It does not hide required input.
+
+## Attachments, skills and results
+Use the plus button to choose photos, supported files or registered skills. PocketWork asks you to review AI sharing before preparation or sending. Review the reported provider and its routing uncertainty, then explicitly retry the action; approval alone does not send. A prepared document may already have a copy on the computer. Removing it here does not delete that host copy. Selected skills are included as instructions only when you send. Files from this chat opens supported results or project browsing; preview and share only the copy you choose. Changes are read-only. Host skill editing and scheduled work continue in OpenCode.
+
+## Offline, reconnect and pair again
+Help, legal information and Data Controls remain available offline. To reconnect, check that the computer is awake, OpenCode is running and Remote access is enabled. Use Reconnect in Settings. If OpenCode rejects the credential, create a fresh pairing code and use Pair again. Forget removes the saved credential here; it does not revoke it on the server. The tested OpenCode version requires server-password rotation to invalidate all paired credentials. Do not rotate it merely to troubleshoot a temporary network failure.
 
 ## An action is unconfirmed
-If a send, file upload or change could not be confirmed, check the chat or current state on your computer before repeating it. The app keeps an unconfirmed action separate from an unsent draft so it cannot quietly send the same action twice.
+Check the chat or actual state on the computer before repeating a send or change. PocketWork keeps uncertain actions separate from unsent drafts and does not automatically resend them. Reopening the app checks the last chat's actual folder before restoring selection. Earlier or moved-folder text can be copied through Data Controls into a reviewed chat; files, selected skills and unfinished actions are not silently transferred.
 
-## Files and changes
-File access requires a separate grant on your computer. Downloads and previews are local copies; sharing sends the selected copy to the app you choose. Reviewing changed files is read-only. Removing a local copy does not delete the original on your computer.
+## Data Controls and earlier betas
+Data Controls separately clears unsent text, downloaded copies or sharing permissions, and offers full local reset. It explains retained files and uncertain records before each action. Reset removes native and earlier OpenWork credentials and recognized local data; it reports failures. It does not revoke server access, stop remote work or delete computer files and chats. Earlier OpenWork pairing cannot be reused for OpenCode. Recoverable earlier draft text stays available locally until you remove it.
 
-## Get support
-Email support@saltypanda.com or use the support link to open GitHub Issues. Issues are public. Include the app version, your computer's operating system and simple steps to reproduce the problem. Leave out pairing codes, tokens, private chats, personal files and model account credentials. Use the repository's private security-reporting option for a security concern.
-
-## Data on this phone
-About & Help and Settings both open Data on this phone. Clear unsent drafts keeps unconfirmed action details and selected files. Remove downloaded copies keeps the original files on your computer. Reset all local data removes pairing and this app's saved copies and attempts to revoke access on the computer. If the computer is offline, revoke this phone in OpenWork later. Chats and original files on the computer are kept.
-
-## Independent companion
-PocketWork is maintained by Salty Panda LLC as an independent companion for OpenWork. It is not an official OpenWork product. Your computer owns the workspaces, model accounts and tool settings. A model provider may charge for use separately.
+## Support and independent maintenance
+Salty Panda LLC maintains PocketWork independently. It is not an official OpenCode product. OpenCode, your hosting/network services and model providers have their own terms and may charge separately. Email support@saltypanda.com or open GitHub Issues through the support link. Include the app version, host operating system, OpenCode version and reproduction steps. Issues are public: do not include pairing links, tokens, private chats, personal files or provider credentials. Use private vulnerability reporting for security concerns.

@@ -1,5 +1,8 @@
 import OpenWorkRemoteCore
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 private enum ChatSheet: String, Identifiable {
   case chats, settings, model, files
@@ -10,20 +13,27 @@ struct ChatView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var sheet: ChatSheet?
+  #if DEBUG
   @State private var approval: Approval?
   @State private var question: QuestionPresentation?
+  #endif
   @State private var nearBottom = true
   @State private var newReplies = false
   @AppStorage("compactToolActivity") private var compactToolActivity = true
   var body: some View {
+    GeometryReader{geometry in
+      layout(compactControls:dynamicTypeSize.isAccessibilitySize && geometry.size.height<500,availableWidth:geometry.size.width)
+    }
+  }
+  private func layout(compactControls:Bool,availableWidth:CGFloat)->some View{
     VStack(spacing: 0) {
-      header
+      if !usesSystemToolbar { header(compact:compactControls) }
       if model.connection != .ready {
         HStack {
           if model.connection == .reconnecting || model.connection == .connecting {
             ProgressView().controlSize(.small)
           }
-          Text(model.connection.label).font(.caption)
+          Text(model.connectionLabel).font(.caption)
           Spacer()
           Button(model.connection == .revoked ? "Pair again" : "Reconnect") { model.connect() }.font(.caption.weight(.semibold)).frame(
             minHeight: 44)
@@ -41,7 +51,9 @@ struct ChatView: View {
           }
         }.padding(.leading, 24).foregroundStyle(Theme.muted)
       }
-      if let first = model.approvals.first {
+      if let native=model.native{NativeChatInputs(native:native,compact:compactControls)}
+      #if DEBUG
+      if model.native==nil,let first = model.approvals.first {
         ApprovalBanner(approval: first) { approval = first }.padding(.horizontal, 24).padding(
           .top, 12)
       }
@@ -57,10 +69,11 @@ struct ChatView: View {
         Label("Questions could not be checked. Reconnect or continue on your computer.", systemImage: "questionmark.bubble")
           .font(.callout).foregroundStyle(Theme.muted).padding(.horizontal, 24).padding(.vertical, 12)
       }
-      if model.status?.phase == "error" {
+      if model.native==nil,model.status?.phase == "error" {
         Label("The model could not finish. Check its setup in OpenWork on your computer.", systemImage: "exclamationmark.circle")
           .font(.callout).foregroundStyle(Theme.muted).padding(.horizontal, 24).padding(.vertical, 12)
       }
+      #endif
       if model.loading {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if model.selectedSession == nil {
@@ -69,54 +82,94 @@ struct ChatView: View {
         conversation
       }
       ComposerView()
-    }.background(Theme.background).foregroundStyle(Theme.ink).sheet(item: $sheet, onDismiss: { model.artifacts.closePreview() }) {
+    }.background(Theme.background).foregroundStyle(Theme.ink).sheet(item: $sheet, onDismiss: closePreview) {
       switch $0 {
       case .chats: ChatListView()
       case .settings: ConnectionView()
       case .model: ModelSettingsView()
       case .files: ArtifactListView()
       }
-    }.sheet(item: $approval) { ApprovalSheet(approval: $0) }
-      .sheet(item: $question) { QuestionSheet(presentation: $0) }.toolbar(.hidden, for: .navigationBar)
-  }
-  private var header: some View {
-    HStack {
-      Button {
-        InteractionMetrics.measure("Open history handler") { sheet = .chats }
-      } label: {
-        Image(systemName: "line.3.horizontal").font(.title3).frame(width: 44, height: 44)
-      }.accessibilityLabel("Open chat history")
-      Spacer(minLength: 6)
-      Button {
-        sheet = .model
-      } label: {
-        VStack(spacing: 3) {
-          Text(
-            model.workspaces.first(where: { $0.id == model.selectedWorkspace })?.name ?? "OpenWork"
-          ).font(.headline).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-            .fixedSize(horizontal: false, vertical: true)
-          Text(
-            [model.selectedSession?.modelLabel, model.host?.displayName].compactMap { $0 }.joined(
-              separator: " · ")
-          ).font(.caption).foregroundStyle(Theme.muted)
-            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-            .fixedSize(horizontal: false, vertical: true)
+    }
+    #if DEBUG
+    .sheet(item: $approval) { ApprovalSheet(approval: $0) }
+    .sheet(item: $question) { QuestionSheet(presentation: $0) }
+    #endif
+    .toolbar(usesSystemToolbar ? .visible : .hidden, for: .navigationBar)
+    .toolbar {
+      if usesSystemToolbar {
+        ToolbarItem(placement:.topBarLeading) { historyButton }
+        ToolbarItem(placement:.principal) {
+          modelButton(compact:compactControls || dynamicTypeSize.isAccessibilitySize || availableWidth<600)
+            .frame(maxWidth:availableWidth/3)
         }
-      }.frame(minHeight: 44).accessibilityLabel("Model and chat settings")
-        .accessibilityValue([
-          model.workspaces.first(where: { $0.id == model.selectedWorkspace })?.name,
-          model.selectedSession?.modelLabel, model.host?.displayName
-        ].compactMap { $0 }.joined(separator: ", "))
-      Spacer(minLength: 6)
-      Button {
-        Task { await model.createChat() }
-      } label: {
-        Image(systemName: "square.and.pencil").font(.title3).frame(width: 44, height: 44)
-      }.disabled(
-        model.connection != .ready || model.host?.capabilities.createSession != true
-          || model.loading
-      ).accessibilityLabel("New chat")
-    }.padding(.horizontal, 16).padding(.vertical, 8)
+        ToolbarItem(placement:.topBarTrailing) { newChatButton }
+      }
+    }
+    .sheet(item:Binding(get:{sheet==nil ? model.native?.newChatLocationRequest:nil},set:{model.native?.newChatLocationRequest=$0})){request in
+      if let native=model.native{NativeChatLocationView(native:native,request:request)}
+    }.nativeSharingReview(model.native,operation:.message)
+  }
+  private func closePreview() {
+    model.native?.results.closePreview()
+    #if DEBUG
+    model.artifacts.closePreview()
+    #endif
+  }
+  // Native toolbar placements reserve room for iPadOS window controls. A
+  // custom leading button under a hidden navigation bar can be occluded.
+  private var usesSystemToolbar:Bool {
+    #if os(iOS)
+    UIDevice.current.userInterfaceIdiom == .pad
+    #else
+    false
+    #endif
+  }
+  private func header(compact:Bool)->some View {
+    HStack {
+      historyButton
+      Spacer(minLength:6)
+      modelButton(compact:compact)
+      Spacer(minLength:6)
+      newChatButton
+    }.padding(.horizontal,16).padding(.vertical,8).fixedSize(horizontal:false,vertical:true)
+  }
+  private var historyButton:some View {
+    Button {
+      InteractionMetrics.measure("Open history handler") { sheet = .chats }
+    } label: {
+      Image(systemName:"line.3.horizontal").font(.system(size:22)).frame(width:44,height:44)
+    }.accessibilityLabel("Open chat history")
+  }
+  private func modelButton(compact:Bool)->some View {
+    Button {
+      sheet = .model
+    } label: {
+      VStack(spacing:3) {
+        if compact {
+          Image(systemName:"slider.horizontal.3").font(.system(size:22)).frame(width:44,height:44)
+        } else {
+          Text(model.workspaces.first(where:{$0.id == model.selectedWorkspace})?.name ?? model.serviceName)
+            .font(.headline).lineLimit(dynamicTypeSize.isAccessibilitySize ? 2:1)
+            .fixedSize(horizontal:false,vertical:true)
+          if !dynamicTypeSize.isAccessibilitySize {
+            Text([model.selectedSession?.modelLabel,model.computerName].compactMap{$0}.joined(separator:" · "))
+              .font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
+              .fixedSize(horizontal:false,vertical:true)
+          }
+        }
+      }
+    }.frame(minHeight:44).accessibilityLabel("Model and chat settings")
+      .accessibilityValue([
+        model.workspaces.first(where:{$0.id == model.selectedWorkspace})?.name,
+        model.selectedSession?.modelLabel,model.computerName
+      ].compactMap{$0}.joined(separator:", "))
+  }
+  private var newChatButton:some View {
+    Button {
+      Task { await model.createChat() }
+    } label: {
+      Image(systemName:"square.and.pencil").font(.system(size:22)).frame(width:44,height:44)
+    }.disabled(!model.canCreateChat).accessibilityLabel("New chat")
   }
   private var empty: some View {
     VStack(spacing: 20) {
@@ -129,11 +182,10 @@ struct ChatView: View {
       Button("Start a new chat") { Task { await model.createChat() } }.buttonStyle(
         PrimaryButtonStyle()
       ).disabled(
-        model.host?.capabilities.createSession != true || model.connection != .ready
-          || model.loading
+        !model.canCreateChat
       ).padding(.horizontal, 48)
       Spacer()
-    }.frame(maxWidth: .infinity)
+    }.frame(maxWidth: Theme.contentMaxWidth).frame(maxWidth: .infinity)
   }
   private var conversation: some View {
     ScrollViewReader { proxy in
@@ -156,25 +208,31 @@ struct ChatView: View {
           }
             // The result entry and scroll target stay realized independently
             // of the message stack's estimated heights for long replies.
-            if model.host?.capabilities.artifacts == true {
+            if model.canBrowseFiles {
               Button { sheet = .files } label: {
-                Label("Files from this chat",systemImage:"doc.on.doc").font(.callout.weight(.medium))
+                HStack(spacing:10){Image(systemName:"doc.on.doc").font(.system(size:20));Text("Files from this chat").font(.callout.weight(.medium)).fixedSize(horizontal:false,vertical:true)}
                   .frame(minHeight:44)
-              }.accessibilityLabel("Files from this chat")
+              }.accessibilityElement(children:.ignore).accessibilityLabel("Files from this chat")
             }
-            if model.status?.phase == "running"
+            if model.isRunning
               && !model.messages.contains(where: { $0.state == "streaming" })
             {
               Label("Working on your computer…", systemImage: "ellipsis").font(.callout)
                 .foregroundStyle(Theme.muted).padding(.vertical, 20)
             }
             Color.clear.frame(height: 1).id("bottom")
-          }.padding(.horizontal, 24).padding(.bottom, 16)
-        }.defaultScrollAnchor(.bottom, for:.initialOffset)
+          }.environment(\.markdownDidPrepare, {
+            // Preparation finishes after the message snapshot. Follow its final
+            // height only when the reader was already following new replies.
+            if nearBottom { proxy.scrollTo("bottom", anchor: .bottom) }
+          }).padding(.horizontal, 24).padding(.bottom, 16)
+            .frame(maxWidth: Theme.contentMaxWidth).frame(maxWidth: .infinity)
+        }.accessibilityIdentifier("chat-conversation").defaultScrollAnchor(.bottom, for:.initialOffset)
         .onScrollGeometryChange(for: Bool.self) { g in
           g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 100
         } action: { _, value in
           nearBottom = value
+          model.followLatest(value)
           if value { newReplies = false }
         }.onAppear {
           nearBottom = true
@@ -190,8 +248,9 @@ struct ChatView: View {
             newReplies = true
           }
         }
-        if newReplies {
+        if newReplies || model.hasNewerReplies {
           Button {
+            model.jumpToLatest()
             proxy.scrollTo("bottom", anchor: .bottom)
             newReplies = false
           } label: {

@@ -1,9 +1,13 @@
-# Revoked pairing recovery
+# Pairing and reconnecting
 
-Build 3 distinguishes revoked access from a temporary connection failure. A rejected device credential stops reconnect attempts and displays the reviewed access-removed screen. Pair again clears the rejected local credential, cancels old connection work, and opens the normal scan/paste flow. The host must approve a fresh request.
+Use compatible OpenCode v2's built-in **Remote access → Pair device**, then scan its QR code or paste its link in PocketWork. Review the selected HTTPS address. The inspected 2.0.29 code expires after five minutes and can be used once. Create a fresh code when it expires or has already been redeemed.
 
-Drafts and uncertain-send identifiers remain scoped to their original host and chat. Background/foreground transitions retain the revoked state. If Keychain removal fails, the app stays on recovery and explains how to retry. Ordinary network failures retain the existing pairing.
+For a CLI-only host, run `opencode pair --remote` on the computer. This uses OpenCode's native remote address and asks before enabling Remote access when needed. Scan its QR or paste the HTTPS link. Localhost links refer to the device opening them; use the advertised HTTPS remote link on the phone. The app already handles a QR containing both local HTTP and remote HTTPS addresses.
 
-Validation on October 8, 2026: 20 core tests and four application-state regression tests pass, plus three iOS Simulator UI tests. State tests exercise the real app model with transport and persistence boundaries isolated. The native recovery screenshot and UI test use a Debug-only revoked-state fixture; they are not physical-device or live-host revocation evidence.
+A saved credential reconnects without redeeming that old code again. Check that the computer is awake, OpenCode is running and Remote access is enabled. A temporary network error is not a reason to rotate the server password. Unsupported native versions can be blocked from writes.
 
-![Pair again on iPhone Simulator](assets/pair-again.jpg)
+If OpenCode rejects the credential, choose **Pair again** and use a fresh native pairing. An obsolete request from a retired connection cannot replace the new connection. No connection recovery automatically resends an unconfirmed prompt.
+
+Pairing grants server-wide access. Project visibility is a local list filter. **Forget** removes the saved credential on this device; it does not invalidate copies on the server or stop work. The tested version has no individual phone-revocation contract. Server-password rotation affects all paired credentials, so do it only deliberately on the computer.
+
+Earlier OpenWork credentials cannot connect to OpenCode. Local text recovery and reset limits are in [migration](migrating-from-openwork.md). See [Security](../SECURITY.md) and [compatibility](opencode-compatibility.md). Native source checks and scoped host pairing evidence are not final physical network-transition acceptance.

@@ -1,13 +1,9 @@
-# Workspace default model
+# New-chat defaults
 
-In Settings, open **Workspace settings → Defaults**. Choose a model and available reasoning level, then tap **Save for new chats**. Existing chats keep their model. Provider accounts and tool approvals are unchanged.
+The native candidate stores new-chat defaults locally for the current connection/project. They apply only when PocketWork creates a chat. They do not edit OpenCode's global configuration, existing chats or another device's defaults.
 
-The paired computer must advertise `workspaceDefaults`, permit this workspace, and grant this phone **Workspace administration** in Remote access. Unsupported or denied access explains what to change on the computer; it never silently saves. A workspace without an assigned default shows that explicitly and requires choosing a model.
+Choose an available model, supported variant and agent from the computer's catalog. A disappeared or disabled choice does not silently substitute another model. Review the choice again before creating. Existing-chat model/agent/rule changes are separate native controls.
 
-The new native conditional-write API rejects a stale selection atomically. Refresh shows the computer’s current default without discarding your unsaved selection; use **Use current default** to accept a newer baseline. Model-picker navigation and local dismissal do not wait for network requests.
+Changing defaults does not send a prompt or authorize provider billing. Creating or sending to a model may use a separately billed provider under that provider's terms. Sharing review records the reported configuration and its uncertainty; a friendly provider name does not prove where inference runs.
 
-Each explicit save persists one UUID, workspace, selection and native revision in protected `workspace-defaults.json`. A lost response or revocation after dispatch stays unconfirmed. Refresh and **Keep current default** accept the latest computer state without claiming that the earlier phone request succeeded or automatically retrying it.
-
-Mac and Ubuntu NUC source previews passed native paired HTTPS Simulator saving, stale rejection, receipt replay, new-chat inheritance and existing-chat model preservation. Disposable chats/workspaces and temporary pairings/mappings were removed; original settings and active workspace were restored. Fresh untitled chats also have a guarded delete regression. Physical-device acceptance and the full candidate remain separate. **TestFlight build 5 excludes this feature.**
-
-![Synthetic native default screen](images/workspace-defaults.png)
+Protected local defaults are removed by full local reset. Mac/NUC disposable creation verifies the selected model/agent with execution disabled, and Simulator controls are checked separately. Final real execution, physical and public-release qualification remains pending. See [compatibility](opencode-compatibility.md).

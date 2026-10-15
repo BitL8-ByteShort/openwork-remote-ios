@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 
 /// Recovery state from the reviewed Penpot ST-02 frame.
@@ -30,3 +31,5 @@ struct RevokedConnectionView: View {
       .navigationTitle("Your connection").navigationBarTitleDisplayMode(.inline)
   }
 }
+
+#endif

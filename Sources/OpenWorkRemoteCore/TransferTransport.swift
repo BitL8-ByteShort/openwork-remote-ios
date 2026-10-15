@@ -1,5 +1,6 @@
 import Foundation
 
+#if DEBUG || !os(iOS)
 extension BridgeClient {
   private func attachmentBase(_ wid: String, _ sid: String, _ value: String? = nil) throws -> String {
     let path = (try base(wid, sid)) + "/attachments"
@@ -65,3 +66,5 @@ extension BridgeClient {
     return receipt
   }
 }
+
+#endif

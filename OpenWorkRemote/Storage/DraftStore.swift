@@ -34,4 +34,9 @@ actor DraftStore {
     try await snapshots.save(state, revision: revision)
   }
   func invalidateAndRemove() async throws { try await snapshots.invalidateAndRemove() }
+  func clearUnsentDrafts()async throws->DiskState{
+    try await snapshots.update{value in
+      var disk=value ?? DiskState();disk.conversation.clearDraftText();return disk
+    }
+  }
 }

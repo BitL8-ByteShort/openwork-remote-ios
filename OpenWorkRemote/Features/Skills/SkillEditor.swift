@@ -1,3 +1,4 @@
+#if DEBUG
 import OpenWorkRemoteCore
 import SwiftUI
 
@@ -166,3 +167,5 @@ struct SkillEditor: View {
     update(value)
   }
 }
+
+#endif

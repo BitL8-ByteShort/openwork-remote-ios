@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 import Testing
 import OpenWorkRemoteCore
@@ -113,3 +114,5 @@ private actor RejectedConnection: HTTPTransport {
   #expect(model.onboardingStep != 2)
   model.sceneActive(false)
 }
+
+#endif

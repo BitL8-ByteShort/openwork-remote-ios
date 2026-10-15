@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "displayName": "PocketWork",
   "publisher": "Salty Panda LLC",
-  "policyVersion": "2026-10-09.3",
-  "effectiveDate": "2026-10-09",
+  "policyVersion": "2026-10-15.1",
+  "effectiveDate": "2026-10-15",
   "policyApproved": true,
   "privacyURL": "https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/",
   "supportURL": "https://github.com/BitL8-ByteShort/openwork-remote-ios/issues",
@@ -13,6 +13,11 @@
     {
       "id": "pocketwork-source",
       "name": "PocketWork iOS source",
+      "license": "MIT"
+    },
+    {
+      "id": "opencode-logo",
+      "name": "OpenCode logo",
       "license": "MIT"
     }
   ],

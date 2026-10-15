@@ -11,6 +11,33 @@ struct LocalArtifact: Sendable, Equatable, Identifiable {
   let ref: ArtifactRef
   let url: URL
 }
+/// Local preview facts only; native results never fabricate bridge artifact handles.
+protocol ProtectedPreviewFile:Sendable {
+  var id:UUID{get};var url:URL{get};var name:String{get};var mime:String{get}
+  var bytes:Int{get};var sha256:String{get};var previewKind:ArtifactRef.PreviewKind{get}
+  func validateMetadata()throws
+}
+extension LocalArtifact:ProtectedPreviewFile {
+  var name:String{ref.name};var mime:String{ref.mime};var bytes:Int{ref.bytes};var sha256:String{ref.sha256}
+  var previewKind:ArtifactRef.PreviewKind{ref.previewKind}
+  func validateMetadata()throws{try ref.validate()}
+}
+struct NativeLocalArtifact:Sendable,Equatable,Identifiable,ProtectedPreviewFile {
+  let id:UUID
+  let info:OpenCodeResultInfo
+  let sha256:String
+  let url:URL
+  var name:String{info.file.name}
+  var bytes:Int{info.bytes}
+  var mime:String{info.previewKind == .text ? "text/plain":info.previewKind == .shareOnly ? "application/rtf":info.mime}
+  var previewKind:ArtifactRef.PreviewKind{
+    switch info.previewKind{case .text:return .text;case .image:return .image;case .pdf:return .pdf;case .shareOnly:return .shareOnly}
+  }
+  func validateMetadata()throws{
+    try info.validate()
+    guard sha256.range(of:"^[a-f0-9]{64}$",options:.regularExpression) != nil else{throw RemoteError.invalidResponse}
+  }
+}
 struct ArtifactPreviewData: Sendable {
   let text: String?
   let imageURL: URL?
@@ -79,6 +106,7 @@ actor ProtectedArtifactFiles {
     for url in try FileManager.default.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil) where owned(url) { try FileManager.default.removeItem(at:url) }
     previews.removeAll()
   }
+  func retire(){retired=true}
   func invalidateAndRemove() throws {
     retired = true
     try prepare(allowRetired: true)
@@ -107,6 +135,7 @@ actor ProtectedArtifactFiles {
     guard bytes > 0, used <= quotaBytes, bytes <= quotaBytes - used else { throw RemoteError.oversized }
     if let free = try availableCapacity(directory), free >= 0, free < Int64(bytes) + 4_194_304 { throw RemoteError.unavailable }
   }
+  #if DEBUG || !os(iOS)
   func download(_ ref: ArtifactRef, client: BridgeClient, workspaceId: String,
                 progress: @escaping @Sendable (Int) async -> Void = {_ in}) async throws -> LocalArtifact {
     try ref.validate(); try cleanup(); try capacity(ref.bytes); try Task.checkCancellation()
@@ -140,26 +169,45 @@ actor ProtectedArtifactFiles {
       throw error
     }
   }
-  private func check(_ ready: LocalArtifact) throws {
-    try prepare(); try ready.ref.validate()
+  #endif
+  func storeNative(_ download:OpenCodeResultDownload)throws->NativeLocalArtifact{
+    try download.info.validate()
+    guard download.data.count==download.info.bytes else{throw RemoteError.invalidResponse}
+    try prepare();try cleanup();try capacity(download.info.bytes);try Task.checkCancellation()
+    let id=UUID()
+    // One private directory owns one download and its raster preview.
+    let actualFolder=directory.appending(path:id.uuidString.lowercased(),directoryHint:.isDirectory)
+    try FileManager.default.createDirectory(at:actualFolder,withIntermediateDirectories:false,attributes:Self.attributes(0o700))
+    let target=actualFolder.appending(path:download.info.file.name)
+    do{
+      let file=try openFile(target,flags:O_RDWR | O_CREAT | O_EXCL)
+      defer{try? file.close()}
+      try FileManager.default.setAttributes(Self.attributes(0o600),ofItemAtPath:target.path)
+      try file.write(contentsOf:download.data);try file.synchronize();try Task.checkCancellation()
+      let ready=NativeLocalArtifact(id:id,info:download.info,sha256:download.sha256,url:target)
+      try verify(ready);try validate(ready);return ready
+    }catch{try? FileManager.default.removeItem(at:actualFolder);throw error}
+  }
+  private func check(_ ready: some ProtectedPreviewFile) throws {
+    try prepare(); try ready.validateMetadata()
     let folder = directory.appending(path:ready.id.uuidString.lowercased(),directoryHint:.isDirectory)
-    guard ready.url == folder.appending(path:ready.ref.name), folder.resolvingSymlinksInPath() == folder else { throw RemoteError.invalidResponse }
+    guard ready.url == folder.appending(path:ready.name), folder.resolvingSymlinksInPath() == folder else { throw RemoteError.invalidResponse }
     let s = try info(folder)
     guard s.st_mode & S_IFMT == S_IFDIR, s.st_uid == getuid(), s.st_mode & 0o777 == 0o700 else { throw RemoteError.invalidResponse }
     let file = try openFile(ready.url,flags:O_RDONLY); defer { try? file.close() }
-    guard try file.seekToEnd() == ready.ref.bytes else { throw RemoteError.invalidResponse }
+    guard try file.seekToEnd() == ready.bytes else { throw RemoteError.invalidResponse }
   }
-  private func text(_ ready: LocalArtifact) throws -> String {
+  private func text(_ ready: some ProtectedPreviewFile) throws -> String {
     let data = try Data(contentsOf:ready.url)
     guard !data.contains(0), let text = String(data:data,encoding:.utf8), text.trimmingCharacters(in:.whitespacesAndNewlines)
       .range(of:"^(<!doctype\\s+html|<html\\b|<svg\\b|<script\\b|<\\?xml)",options:[.regularExpression,.caseInsensitive]) == nil else { throw RemoteError.invalidResponse }
     return text
   }
-  private func image(_ ready: LocalArtifact) throws -> CGImage {
-    if ready.ref.mime == "image/png" { try validatePNG(try Data(contentsOf:ready.url)) }
+  private func image(_ ready: some ProtectedPreviewFile) throws -> CGImage {
+    if ready.mime == "image/png" { try validatePNG(try Data(contentsOf:ready.url)) }
     guard let source = CGImageSourceCreateWithURL(ready.url as CFURL,[kCGImageSourceShouldCache:false] as CFDictionary),
       CGImageSourceGetCount(source) == 1, CGImageSourceGetStatus(source).rawValue == 0,
-      CGImageSourceGetType(source) as String? == (ready.ref.mime == "image/png" ? UTType.png.identifier : UTType.jpeg.identifier),
+      CGImageSourceGetType(source) as String? == (ready.mime == "image/png" ? UTType.png.identifier : UTType.jpeg.identifier),
       let props = CGImageSourceCopyPropertiesAtIndex(source,0,nil) as? [CFString:Any],
       let width = props[kCGImagePropertyPixelWidth] as? Int, let height = props[kCGImagePropertyPixelHeight] as? Int,
       width > 0, height > 0, width <= 100_000, height <= 100_000, width <= 100_000_000 / height,
@@ -208,14 +256,14 @@ actor ProtectedArtifactFiles {
     }
     throw RemoteError.invalidResponse
   }
-  private func pdf(_ ready: LocalArtifact) throws -> CGPDFDocument {
+  private func pdf(_ ready: some ProtectedPreviewFile) throws -> CGPDFDocument {
     guard let provider = CGDataProvider(url:ready.url as CFURL), let doc = CGPDFDocument(provider), !doc.isEncrypted,
       (1...200).contains(doc.numberOfPages) else { throw RemoteError.invalidResponse }
     return doc
   }
-  private func validate(_ ready: LocalArtifact) throws {
+  private func validate(_ ready: some ProtectedPreviewFile) throws {
     try check(ready)
-    switch ready.ref.previewKind {
+    switch ready.previewKind {
     case .text: _ = try text(ready)
     case .image: _ = try image(ready)
     case .pdf: _ = try pdf(ready)
@@ -224,15 +272,15 @@ actor ProtectedArtifactFiles {
       guard String(decoding:try file.read(upToCount:16) ?? Data(),as:UTF8.self).hasPrefix("{\\rtf") else { throw RemoteError.invalidResponse }
     }
   }
-  func preview(_ ready: LocalArtifact, page: Int = 1) throws -> ArtifactPreviewData {
+  func preview(_ ready: some ProtectedPreviewFile, page: Int = 1) throws -> ArtifactPreviewData {
     try check(ready); try Task.checkCancellation()
-    if ready.ref.previewKind == .text {
+    if ready.previewKind == .text {
       let value = try text(ready), bounded = String(value.prefix(100_000))
       return ArtifactPreviewData(text:bounded,imageURL:nil,truncated:value.count > bounded.count,page:1,pageCount:1)
     }
-    if ready.ref.previewKind == .shareOnly { return ArtifactPreviewData(text:nil,imageURL:nil,truncated:false,page:1,pageCount:1) }
+    if ready.previewKind == .shareOnly { return ArtifactPreviewData(text:nil,imageURL:nil,truncated:false,page:1,pageCount:1) }
     let image: CGImage, count: Int
-    if ready.ref.previewKind == .image { image = try self.image(ready); count = 1 }
+    if ready.previewKind == .image { image = try self.image(ready); count = 1 }
     else {
       let doc = try pdf(ready); count = doc.numberOfPages
       guard page >= 1, page <= count, let pdfPage = doc.page(at:page) else { throw RemoteError.invalidResponse }
@@ -261,17 +309,17 @@ actor ProtectedArtifactFiles {
       return ArtifactPreviewData(text:nil,imageURL:target,truncated:false,page:page,pageCount:count)
     } catch { try? file.close(); try? FileManager.default.removeItem(at:target); throw error }
   }
-  func remove(_ ready: LocalArtifact) throws {
+  func remove(_ ready: some ProtectedPreviewFile) throws {
     try check(ready); try FileManager.default.removeItem(at:ready.url.deletingLastPathComponent()); previews[ready.id] = nil
   }
-  func verify(_ ready: LocalArtifact) throws {
+  func verify(_ ready: some ProtectedPreviewFile) throws {
     try check(ready)
     let file = try openFile(ready.url,flags:O_RDONLY); defer { try? file.close() }
     var hash = SHA256(), count = 0
     while let bytes = try file.read(upToCount:65536), !bytes.isEmpty {
       try Task.checkCancellation(); count += bytes.count
-      guard count <= ready.ref.bytes else { throw RemoteError.invalidResponse }; hash.update(data:bytes)
+      guard count <= ready.bytes else { throw RemoteError.invalidResponse }; hash.update(data:bytes)
     }
-    guard count == ready.ref.bytes, hash.finalize().map({String(format:"%02x",$0)}).joined() == ready.ref.sha256 else { throw RemoteError.invalidResponse }
+    guard count == ready.bytes, hash.finalize().map({String(format:"%02x",$0)}).joined() == ready.sha256 else { throw RemoteError.invalidResponse }
   }
 }

@@ -72,6 +72,7 @@ public struct FileDiff: Decodable, Sendable, Equatable {
       !binary || text.isEmpty else { throw RemoteError.invalidResponse }
   }
 }
+#if DEBUG || !os(iOS)
 extension BridgeClient {
   public func changes(_ wid: String, _ sid: String) async throws -> ChangeSet {
     let result=try await decode(Envelope<ChangeSet>.self,path:(try base(wid,sid))+"/changes").data
@@ -84,3 +85,5 @@ extension BridgeClient {
     return result
   }
 }
+
+#endif
