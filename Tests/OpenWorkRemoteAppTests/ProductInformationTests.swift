@@ -68,7 +68,9 @@ import Testing
     let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let license = try String(contentsOf: repo.appending(path: "LICENSE"), encoding: .utf8)
     #expect(information.document(.sourceLicense).text == license)
-    #expect(information.manifest.notices.map(\.id) == ["pocketwork-source"])
+    #expect(information.manifest.notices.map(\.id) == ["pocketwork-source", "opencode-logo"])
+    #expect(information.document(.notices).text.contains("Copyright (c) 2025 opencode"))
+    #expect(information.document(.notices).text.contains("OpenCode logo"))
     #expect(information.document(.notices).text.contains("No third-party SDK"))
     #expect(information.document(.notices).text.contains("OpenWork"))
   }
