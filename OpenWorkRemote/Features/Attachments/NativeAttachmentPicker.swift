@@ -71,7 +71,7 @@ struct NativeAttachmentPicker:View {
           }
           #endif
           Text("Photos become PNGs up to 2,000 pixels on the longest edge. Location and camera metadata are not copied. Your original stays unchanged.").font(.footnote).foregroundStyle(Theme.muted)
-          Text("Supported media is included when you send your message. Larger files are uploaded now so OpenCode can read them on your computer. Removing a selection does not delete a temporary copy already on the computer.").font(.footnote).foregroundStyle(Theme.muted)
+          Text("Some files are uploaded to your computer during preparation. The selected model must support the file type to read it. Removing a selection does not delete a temporary copy already uploaded.").font(.footnote).foregroundStyle(Theme.muted)
           Text("Up to four files, 20 MiB per file and 40 MiB per message. The computer or model may allow less.").font(.footnote).foregroundStyle(Theme.muted)
           Button("Add to message"){dismiss()}.buttonStyle(PrimaryButtonStyle())
         }.padding(24).frame(maxWidth:620,alignment:.leading).frame(maxWidth:.infinity)
