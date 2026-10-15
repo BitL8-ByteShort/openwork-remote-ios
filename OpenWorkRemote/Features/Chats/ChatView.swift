@@ -1,5 +1,8 @@
 import OpenWorkRemoteCore
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 private enum ChatSheet: String, Identifiable {
   case chats, settings, model, files
@@ -19,12 +22,12 @@ struct ChatView: View {
   @AppStorage("compactToolActivity") private var compactToolActivity = true
   var body: some View {
     GeometryReader{geometry in
-      layout(compactControls:dynamicTypeSize.isAccessibilitySize && geometry.size.height<500)
+      layout(compactControls:dynamicTypeSize.isAccessibilitySize && geometry.size.height<500,availableWidth:geometry.size.width)
     }
   }
-  private func layout(compactControls:Bool)->some View{
+  private func layout(compactControls:Bool,availableWidth:CGFloat)->some View{
     VStack(spacing: 0) {
-      header(compact:compactControls)
+      if !usesSystemToolbar { header(compact:compactControls) }
       if model.connection != .ready {
         HStack {
           if model.connection == .reconnecting || model.connection == .connecting {
@@ -91,7 +94,17 @@ struct ChatView: View {
     .sheet(item: $approval) { ApprovalSheet(approval: $0) }
     .sheet(item: $question) { QuestionSheet(presentation: $0) }
     #endif
-    .toolbar(.hidden, for: .navigationBar)
+    .toolbar(usesSystemToolbar ? .visible : .hidden, for: .navigationBar)
+    .toolbar {
+      if usesSystemToolbar {
+        ToolbarItem(placement:.topBarLeading) { historyButton }
+        ToolbarItem(placement:.principal) {
+          modelButton(compact:compactControls || dynamicTypeSize.isAccessibilitySize || availableWidth<600)
+            .frame(maxWidth:availableWidth/3)
+        }
+        ToolbarItem(placement:.topBarTrailing) { newChatButton }
+      }
+    }
     .sheet(item:Binding(get:{sheet==nil ? model.native?.newChatLocationRequest:nil},set:{model.native?.newChatLocationRequest=$0})){request in
       if let native=model.native{NativeChatLocationView(native:native,request:request)}
     }.nativeSharingReview(model.native,operation:.message)
@@ -102,47 +115,61 @@ struct ChatView: View {
     model.artifacts.closePreview()
     #endif
   }
+  // Native toolbar placements reserve room for iPadOS window controls. A
+  // custom leading button under a hidden navigation bar can be occluded.
+  private var usesSystemToolbar:Bool {
+    #if os(iOS)
+    UIDevice.current.userInterfaceIdiom == .pad
+    #else
+    false
+    #endif
+  }
   private func header(compact:Bool)->some View {
     HStack {
-      Button {
-        InteractionMetrics.measure("Open history handler") { sheet = .chats }
-      } label: {
-        Image(systemName: "line.3.horizontal").font(.system(size:22)).frame(width: 44, height: 44)
-      }.accessibilityLabel("Open chat history")
-      Spacer(minLength: 6)
-      Button {
-        sheet = .model
-      } label: {
-        VStack(spacing: 3) {
-          if compact{Image(systemName:"slider.horizontal.3").font(.system(size:22)).frame(width:44,height:44)}else{
-          Text(
-            model.workspaces.first(where: { $0.id == model.selectedWorkspace })?.name ?? model.serviceName
-          ).font(.headline).lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-            .fixedSize(horizontal: false, vertical: true)
-          if !dynamicTypeSize.isAccessibilitySize{
-          Text(
-            [model.selectedSession?.modelLabel, model.computerName].compactMap { $0 }.joined(
-              separator: " · ")
-          ).font(.caption).foregroundStyle(Theme.muted)
-            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-            .fixedSize(horizontal: false, vertical: true)
-          }
+      historyButton
+      Spacer(minLength:6)
+      modelButton(compact:compact)
+      Spacer(minLength:6)
+      newChatButton
+    }.padding(.horizontal,16).padding(.vertical,8).fixedSize(horizontal:false,vertical:true)
+  }
+  private var historyButton:some View {
+    Button {
+      InteractionMetrics.measure("Open history handler") { sheet = .chats }
+    } label: {
+      Image(systemName:"line.3.horizontal").font(.system(size:22)).frame(width:44,height:44)
+    }.accessibilityLabel("Open chat history")
+  }
+  private func modelButton(compact:Bool)->some View {
+    Button {
+      sheet = .model
+    } label: {
+      VStack(spacing:3) {
+        if compact {
+          Image(systemName:"slider.horizontal.3").font(.system(size:22)).frame(width:44,height:44)
+        } else {
+          Text(model.workspaces.first(where:{$0.id == model.selectedWorkspace})?.name ?? model.serviceName)
+            .font(.headline).lineLimit(dynamicTypeSize.isAccessibilitySize ? 2:1)
+            .fixedSize(horizontal:false,vertical:true)
+          if !dynamicTypeSize.isAccessibilitySize {
+            Text([model.selectedSession?.modelLabel,model.computerName].compactMap{$0}.joined(separator:" · "))
+              .font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
+              .fixedSize(horizontal:false,vertical:true)
           }
         }
-      }.frame(minHeight: 44).accessibilityLabel("Model and chat settings")
-        .accessibilityValue([
-          model.workspaces.first(where: { $0.id == model.selectedWorkspace })?.name,
-          model.selectedSession?.modelLabel, model.computerName
-        ].compactMap { $0 }.joined(separator: ", "))
-      Spacer(minLength: 6)
-      Button {
-        Task { await model.createChat() }
-      } label: {
-        Image(systemName: "square.and.pencil").font(.system(size:22)).frame(width: 44, height: 44)
-      }.disabled(
-        !model.canCreateChat
-      ).accessibilityLabel("New chat")
-    }.padding(.horizontal, 16).padding(.vertical, 8).fixedSize(horizontal:false,vertical:true)
+      }
+    }.frame(minHeight:44).accessibilityLabel("Model and chat settings")
+      .accessibilityValue([
+        model.workspaces.first(where:{$0.id == model.selectedWorkspace})?.name,
+        model.selectedSession?.modelLabel,model.computerName
+      ].compactMap{$0}.joined(separator:", "))
+  }
+  private var newChatButton:some View {
+    Button {
+      Task { await model.createChat() }
+    } label: {
+      Image(systemName:"square.and.pencil").font(.system(size:22)).frame(width:44,height:44)
+    }.disabled(!model.canCreateChat).accessibilityLabel("New chat")
   }
   private var empty: some View {
     VStack(spacing: 20) {

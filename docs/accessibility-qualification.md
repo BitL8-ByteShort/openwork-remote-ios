@@ -23,3 +23,9 @@ Physical VoiceOver navigation, all retained flows at narrow iPad multitasking wi
 The native iPadOS 27 Simulator window was resized with the system corner control from 834 × 1210 to about 374 × 911 points. The captured whole-device image shows an actual app window on the iPad desktop. The composer, Add control measuring at least 44 points and Settings dismissal pass in that window.
 
 Three maximum-text conversation/keyboard/structural-audit cases pass at that narrow width. The first attempt used application-wide swipes that did not move the chat list; explicitly targeting its CollectionView passes the same assertions. Window-aware gestures are used in the feature cohort: all 31 remaining native cases have passing results across the main run and a focused repair of its test-window restoration. The latter now reaches the screen edge and waits for the original width, without reducing the assertion. Together with the four accessibility cases, the 35-case iPad cohort is green across recorded batches. This is synthetic DEBUG UI evidence; physical VoiceOver, hardware-keyboard and complete device acceptance remain separate.
+
+## iPad window controls
+
+A normal Release inspection found that iPadOS window controls covered the custom history button in a floating window. A visible-center coordinate test reproduced the failure; semantic element taps had missed it. iPad now uses system toolbar placements to reserve that space. Narrow iPad windows use the compact model/settings icon with the full accessible project/model value; wider windows show a bounded title. The iPhone header is retained. [Apple's window guidance](https://developer.apple.com/videos/play/wwdc2025/208/) explains the automatic toolbar adjustment.
+
+The repaired visible-center history touch, Settings dismissal, landscape, large-text keyboard and structural-audit checks are recorded separately from the earlier 35-case dispositions. Physical iPad acceptance remains open.

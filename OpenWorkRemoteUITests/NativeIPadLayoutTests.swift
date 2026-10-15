@@ -49,6 +49,15 @@ final class NativeIPadLayoutTests:XCTestCase{
     XCTAssertLessThan(window.frame.width,600,"Exercise a real narrow iPadOS app window, not a resized simulator preview")
     XCTAssertTrue(composer.isHittable);XCTAssertTrue(app.buttons["composer-add"].isHittable)
     XCTAssertGreaterThanOrEqual(app.buttons["composer-add"].frame.height,44)
+    // A semantic element tap can choose an uncovered hit point. Touch the
+    // visible center to catch overlap by iPadOS's floating window controls.
+    app.buttons["Open chat history"].coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.5)).tap()
+    guard app.navigationBars["Your chats"].waitForExistence(timeout:4) else{
+      XCTFail("The visible history button must remain reachable under iPadOS window controls")
+      return
+    }
+    app.buttons["Done"].tap()
+    XCTAssertTrue(composer.waitForExistence(timeout:3))
     app.buttons["Model and chat settings"].tap()
     XCTAssertTrue(app.buttons["native-settings-done"].waitForExistence(timeout:4));app.buttons["native-settings-done"].tap()
     XCTAssertTrue(composer.waitForExistence(timeout:3))
