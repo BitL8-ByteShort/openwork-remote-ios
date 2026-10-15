@@ -76,7 +76,10 @@ public struct OpenCodePromptFile:Codable,Sendable,Equatable,CustomStringConverti
     default:throw RemoteError.incompatible
     }
   }
-  var canInlineWithoutDefaultImageTransformation:Bool{
+  /// OpenCode2.0.29's Base64 schema uses a repeated-group regex. Its pinned
+  /// Bun1.4.2 rejects large valid strings; larger PDFs use the native file path.
+  var fitsQualifiedInlineLimits:Bool{
+    if mime=="application/pdf"{return bytes<=5*1_048_576}
     guard mime=="image/png",let content,content.count>=24 else{return mime != "image/png"}
     func integer(_ start:Int)->UInt32{content[start..<start+4].reduce(0){($0<<8)|UInt32($1)}}
     let width=integer(16),height=integer(20)
@@ -114,7 +117,8 @@ extension OpenCodeClient {
     guard current.selectionKey==model.selectionKey else{throw RemoteError.conflict}
     let modality=mime=="image/png" ? "image" : "pdf"
     let candidate=try OpenCodePromptFile(target:target,name:clean,mime:mime,content:bytes,placement:.inline)
-    if current.capabilities.input.contains(modality),candidate.canInlineWithoutDefaultImageTransformation{return candidate}
+    if current.capabilities.input.contains(modality),candidate.fitsQualifiedInlineLimits{return candidate}
+    guard current.capabilities.tools else{throw RemoteError.incompatible}
     let root=try OpenCodePromptFile.root(try await info().paths.tmp)
     let staged=try OpenCodePromptFile(target:target,name:clean,mime:mime,content:bytes,placement:.staged,serverTmp:root)
     let path=staged.stagedPath!

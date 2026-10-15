@@ -129,9 +129,12 @@ extension OpenCodeClient {
     do{
       for file in input.files{guard file.target==target else{throw RemoteError.conflict}}
       let session=try await verifyTarget(target)
-      if input.files.contains(where:{$0.placement == .inline}){
+      if !input.files.isEmpty{
+        for file in input.files where file.placement == .inline{guard file.fitsQualifiedInlineLimits else{throw RemoteError.oversized}}
         let model=try await effectiveAttachmentModel(session:session,target:target)
-        guard input.files.filter({$0.placement == .inline}).allSatisfy({model.capabilities.input.contains($0.mime=="image/png" ? "image" : "pdf")}) else{throw RemoteError.conflict}
+        guard input.files.allSatisfy({file in
+          file.placement == .staged ? model.capabilities.tools : model.capabilities.input.contains(file.mime=="image/png" ? "image" : "pdf")
+        }) else{throw RemoteError.conflict}
       }
       let info=try await requireQualifiedWrites()
       for file in input.files{guard try file.usesStagingRoot(info.paths.tmp) else{throw RemoteError.conflict}}

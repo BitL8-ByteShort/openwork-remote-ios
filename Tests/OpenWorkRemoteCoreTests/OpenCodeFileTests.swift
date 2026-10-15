@@ -5,6 +5,7 @@ import Testing
 actor NativeFileTransport:HTTPTransport {
   let pdf:Bool
   var selected="model"
+  var tools=true
   var requests:[URLRequest]=[]
   var lost=false
   var defaultVariant=false
@@ -12,7 +13,7 @@ actor NativeFileTransport:HTTPTransport {
   func data(for request:URLRequest) async throws -> (Data,Int){
     requests.append(request);let path=request.url!.path
     if path=="/api/info"{return(Data(#"{"version":"2.0.29","urls":[],"paths":{"tmp":"/native tmp"}}"#.utf8),200)}
-    if path=="/api/model"{return(try JSONSerialization.data(withJSONObject:["location":["directory":"/project"],"data":[["providerID":"provider","id":"model","modelID":"model","name":"Model","enabled":true,"status":"active","variants":[],"capabilities":["tools":true,"input":pdf ? ["text","pdf"] : ["text"],"output":["text"]]]]]),200)}
+    if path=="/api/model"{return(try JSONSerialization.data(withJSONObject:["location":["directory":"/project"],"data":[["providerID":"provider","id":"model","modelID":"model","name":"Model","enabled":true,"status":"active","variants":[],"capabilities":["tools":tools,"input":pdf ? ["text","pdf"] : ["text"],"output":["text"]]]]]),200)}
     if path=="/api/experimental/fs/write"{
       if lost{throw URLError(.networkConnectionLost)}
       let destination=URLComponents(url:request.url!,resolvingAgainstBaseURL:false)!.queryItems!.first{$0.name=="path"}!.value!
@@ -20,6 +21,7 @@ actor NativeFileTransport:HTTPTransport {
     }
     return(try JSONSerialization.data(withJSONObject:["data":["id":"ses_owned","projectID":"project","model":defaultVariant ? ["providerID":"provider","id":selected,"variant":"default"] : ["providerID":"provider","id":selected],"location":["directory":"/project"],"time":["created":1,"updated":2]]]),200)
   }
+  func disableTools(){tools=false}
   func loseUpload(){lost=true}
   func useDefaultVariant(){defaultVariant=true}
   func changeModel(){selected="another"}
@@ -81,4 +83,25 @@ actor NativeFileTransport:HTTPTransport {
     await #expect(throws:RemoteError.oversized){_ = try await client.prepareAttachment(bytes:Data(repeating:0,count:20*1_048_576+1),name:"sample.pdf",mime:"application/pdf",target:target,model:model)}
     #expect(await transport.allRequests().contains{$0.httpMethod=="POST"}==false)
   }
+  @Test func largePDFUsesNativeStagingBeforeItCanHitTheNativeBase64Validator() async throws{
+    let transport=NativeFileTransport(pdf:true),(client,target)=try setup(transport)
+    let model=try #require(try await client.models(location:OpenCodeLocation(directory:target.directory)).first)
+    var bytes=Data("%PDF-1.7\n".utf8);bytes.append(Data(repeating:32,count:6*1_048_576));bytes.append(Data("\n%%EOF\n".utf8))
+    let file=try await client.prepareAttachment(bytes:bytes,name:"large.pdf",mime:"application/pdf",target:target,model:model)
+    #expect(file.placement == .staged)
+    #expect(await transport.allRequests().contains{$0.url?.path=="/api/experimental/fs/write" && $0.httpBody==bytes})
+    let oldInline=try OpenCodePromptFile(target:target,name:"old.pdf",mime:"application/pdf",content:bytes,placement:.inline)
+    let prompt=try OpenCodePrompt(text:"",resume:false,files:[oldInline])
+    await #expect(throws:OpenCodePromptNotSubmitted(reason:.oversized)){try await client.send(target:target,input:prompt)}
+    #expect(await transport.allRequests().contains{$0.url?.path.hasSuffix("/prompt")==true}==false)
+  }
+
+  @Test func fallbackRequiresToolsAndDoesNotUploadToAnUnusableModel() async throws{
+    let transport=NativeFileTransport(pdf:false),(client,target)=try setup(transport)
+    await transport.disableTools()
+    let model=try #require(try await client.models(location:OpenCodeLocation(directory:target.directory)).first)
+    await #expect(throws:RemoteError.incompatible){try await client.prepareAttachment(bytes:pdf,name:"sample.pdf",mime:"application/pdf",target:target,model:model)}
+    #expect(await transport.allRequests().contains{$0.httpMethod=="POST"}==false)
+  }
+
 }
