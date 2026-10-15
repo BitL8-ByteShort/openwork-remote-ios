@@ -42,12 +42,11 @@ def main():
     css = """html{color-scheme:light dark}body{font:1.1rem/1.65 system-ui,sans-serif;margin:0;background:Canvas;color:CanvasText}header,main,footer{max-width:48rem;margin:auto;padding:1.5rem}nav{display:flex;gap:1.25rem;flex-wrap:wrap}a{color:LinkText;text-underline-offset:.2em}a:focus-visible{outline:3px solid #5477ff;outline-offset:5px}h1{line-height:1.15;font-size:clamp(2rem,6vw,3rem)}h2{line-height:1.3}p,li{overflow-wrap:anywhere}section{margin-top:2rem}footer{border-top:1px solid GrayText;font-size:.95rem}.draft{border:2px solid #5477ff;padding:1rem}small{font-size:.9rem}"""
     (args.output / "style.css").write_text(css + "\n")
     pages = {
-        "": ("PocketWork", "## Your computer. Your chats.\nPocketWork is an independent iPhone and iPad companion for OpenCode v2, maintained by Salty Panda LLC. The native client uses OpenCode's built-in device pairing and Remote access. It requires a compatible, running OpenCode server. Public App Store availability has not been announced. Earlier OpenWork betas use a different connection and policy.\n\n## Help and privacy\nRead Support for connection steps and contact information. Privacy explains the server-wide pairing credential, AI sharing, local data and reset limits."),
+        "": ("PocketWork", "## Your computer. Your chats.\nPocketWork is an independent iPhone and iPad companion for OpenCode v2, maintained by Salty Panda LLC. The native client uses OpenCode's built-in device pairing and Remote access. It requires a compatible, running OpenCode server. Public App Store availability has not been announced.\n\n## Help and privacy\nRead Support for connection steps and contact information. Privacy explains the server-wide pairing credential, AI sharing, local data and reset limits."),
         "privacy": ("Privacy policy", (DOCUMENTS / "privacy.txt").read_text()),
         "support": ("Support", (DOCUMENTS / "help.txt").read_text()),
         "terms": ("Terms of use", (DOCUMENTS / "terms.txt").read_text()),
         "licenses": ("Source license and notices", (DOCUMENTS / "notices.txt").read_text() + "\n\n" + (DOCUMENTS / "sourceLicense.txt").read_text()),
-        "privacy/openwork-beta": ("Earlier OpenWork beta privacy policy", (DOCUMENTS / "history/2026-10-09.3-privacy.txt").read_text()),
     }
     for route, (title, text) in pages.items():
         prefix = "../" * len(pathlib.PurePosixPath(route).parts) if route else "./"
@@ -60,9 +59,7 @@ def main():
             contact += '<p class="draft">Public support contact is awaiting approval.</p>'
         if route == "support":
             contact += f'<p>For security concerns, use <a href="https://github.com/BitL8-ByteShort/openwork-remote-ios/security/advisories/new">private vulnerability reporting</a>.</p>'
-        context = '<p>This archived policy applies to earlier OpenWork betas. It does not describe the OpenCode v2 client. <a href="../">Read the current privacy policy</a>.</p>' if route == "privacy/openwork-beta" else ""
-        if route == "privacy":
-            context = '<p><a href="openwork-beta/">Privacy policy for earlier OpenWork betas</a>.</p>'
+        context = ""
         if route == "terms":
             context += f'<p><a href="{html.escape(manifest["termsURL"], quote=True)}">Read Apple\'s standard EULA</a>.</p>'
         page = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)} | PocketWork</title><meta name="description" content="PocketWork information from Salty Panda LLC"><link rel="stylesheet" href="{prefix}style.css"></head><body><header>{nav}</header><main>{draft}<h1>{html.escape(title)}</h1>{context}{paragraphs(text)}</main><footer>{contact}<p>Independent companion for OpenCode. No official affiliation.</p></footer></body></html>\n'

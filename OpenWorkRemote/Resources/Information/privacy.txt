@@ -2,7 +2,7 @@ Version: 2026-10-15.1
 Effective date: 2026-10-15
 
 ## Who maintains PocketWork
-Salty Panda LLC maintains PocketWork, an independent iPhone and iPad companion for OpenCode v2. Contact support@saltypanda.com. This policy covers the OpenCode client. Earlier OpenWork betas have a separate policy at https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/openwork-beta/.
+Salty Panda LLC maintains PocketWork, an independent iPhone and iPad companion for OpenCode v2. Contact support@saltypanda.com. This policy covers the OpenCode client.
 
 ## Your connection and its scope
 PocketWork sends requests directly to the OpenCode HTTPS address you review when pairing. Built-in pairing exchanges a short-lived, single-use code for a saved server credential. The tested OpenCode version uses a server-wide credential: pairing can access that server's projects, chats, configured model information and supported file operations. Hiding projects in PocketWork changes only this device's lists; it does not restrict the credential. Tool approvals and chat rules are separate server controls. Only pair a server you are authorized to access.
