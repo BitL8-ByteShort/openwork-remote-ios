@@ -114,7 +114,12 @@ enum NativeNavigationIssue { case unavailable,locationChanged,projectUnavailable
   private func merge(_ incoming:[OpenCodeMessage],older:Bool) {
     var byID=Dictionary(uniqueKeysWithValues:messages.map{($0.id,$0)})
     for item in incoming {byID[item.id]=item}
-    messages=byID.values.sorted{a,b in a.time.created==b.time.created ? a.id<b.id : a.time.created<b.time.created}
+    // The API owns projection order. Re-sorting by timestamp/ID changes it when
+    // timestamps match or when a client supplied a non-sortable native ID.
+    let existing=Set(messages.map(\.id))
+    let added=incoming.reversed().filter{!existing.contains($0.id)}.map(\.id)
+    let ordered=older ? added+messages.map(\.id) : messages.map(\.id)+added
+    messages=ordered.compactMap{byID[$0]}
     var bytes=messages.reduce(0){$0+$1.storedTextBytes}
     while !messages.isEmpty && (messages.count>maximumMessages || bytes>8_388_608) {
       let removed=older ? messages.removeLast() : messages.removeFirst()

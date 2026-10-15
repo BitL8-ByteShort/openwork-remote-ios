@@ -7,7 +7,8 @@ actor NativeNavigationReader: OpenCodeHistoryReading {
   let label:String
   let delay:Duration
   let moved:Bool
-  init(_ label:String="Synthetic",delay:Duration = .zero,moved:Bool=false) { self.label=label;self.delay=delay;self.moved=moved }
+  let sameTime:Bool
+  init(_ label:String="Synthetic",delay:Duration = .zero,moved:Bool=false,sameTime:Bool=false) { self.label=label;self.delay=delay;self.moved=moved;self.sameTime=sameTime }
   func projects() async throws -> [OpenCodeProject] {
     try JSONDecoder().decode([OpenCodeProject].self,from:Data(#"[{"id":"project","canonical":"/project","name":"Project","sandboxes":[],"time":{"created":1,"updated":2,"active":2}}]"#.utf8))
   }
@@ -21,7 +22,8 @@ actor NativeNavigationReader: OpenCodeHistoryReading {
   func messages(sessionID:String,cursor:String?) async throws -> OpenCodeMessagePage {
     try await Task.sleep(for:delay)
     let range = cursor == nil ? 3..<6 : 0..<4
-    let data=range.map{["id":"msg_\($0)","type":"user","text":"\(label) \($0)","time":["created":$0]] as [String:Any]}
+    let order = sameTime ? [5,3,4] : Array(range.reversed())
+    let data=order.map{["id":"msg_\($0)","type":"user","text":"\(label) \($0)","time":["created":sameTime ? 1 : $0]] as [String:Any]}
     return try JSONDecoder().decode(OpenCodeMessagePage.self,from:JSONSerialization.data(withJSONObject:["data":data,"cursor":cursor == nil ? ["next":"older"] : [:]]))
   }
 }
@@ -69,5 +71,11 @@ actor NativeNavigationReader: OpenCodeHistoryReading {
     #expect(store.windowTruncated)
     #expect(store.olderCursor == nil)
     #expect(store.preserveScrollAnchor == "msg_3")
+  }
+  @Test func serverOrderIsPreservedWhenMessageTimestampsMatch() async throws {
+    let store=OpenCodeNavigationStore()
+    store.activate(try connection(),reader:NativeNavigationReader(sameTime:true))
+    await store.refreshProjects();await store.open(try #require(store.sessions.first))
+    #expect(store.messages.map(\.id) == ["msg_4","msg_3","msg_5"])
   }
 }

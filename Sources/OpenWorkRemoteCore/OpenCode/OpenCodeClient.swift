@@ -38,6 +38,8 @@ public actor OpenCodeClient {
     let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
     c.percentEncodedPath = "/" + segments.map { $0.addingPercentEncoding(withAllowedCharacters: allowed)! }.joined(separator: "/")
     c.queryItems = query.isEmpty ? nil : query
+    // The native server parses form-style queries, where a literal + means space.
+    c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
     guard let url = c.url, url.scheme == "https", url.host == connection.origin.host,
       url.port == connection.origin.port, url.user == nil, url.password == nil else { throw RemoteError.invalidResponse }
     var request = URLRequest(url: url)

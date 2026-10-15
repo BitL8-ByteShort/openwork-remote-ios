@@ -36,6 +36,27 @@ actor NativeResponseTransport: HTTPTransport {
       #expect(throws: RemoteError.invalidPairing) { try connection(origin) }
     }
   }
+  @Test func directoryAndOpaqueCursorSurviveServerQueryDecoding() async throws {
+    let client = try OpenCodeClient(connection: connection(), token: "token")
+    let directory = "/projects/C++ & notes/日本語"
+    let cursor = "opaque+cursor/==&next"
+    let request = try await client.makeRequest(segments: ["api", "session"], query: [
+      URLQueryItem(name: "location[directory]", value: directory),
+      URLQueryItem(name: "cursor", value: cursor)
+    ])
+    let url = try #require(request.url)
+    let rawQuery = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedQuery)
+    // OpenCode uses URLSearchParams: a raw plus decodes as a space, unlike Foundation.
+    let decoded = Dictionary(uniqueKeysWithValues: rawQuery.split(separator: "&").map { pair in
+      let parts = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+      func formDecode(_ value: Substring) -> String {
+        String(value).replacingOccurrences(of: "+", with: " ").removingPercentEncoding ?? "invalid"
+      }
+      return (formDecode(parts[0]), formDecode(parts[1]))
+    })
+    #expect(decoded["location[directory]"] == directory)
+    #expect(decoded["cursor"] == cursor)
+  }
   @Test func authorizationFailureDiffersFromPermissionFailure() async throws {
     for (status, expected) in [(401, RemoteError.unauthorized), (403, .forbidden), (404, .notFound), (409, .conflict), (413, .oversized)] {
       let client = try OpenCodeClient(connection: connection(), token: "token", transport: NativeResponseTransport(#"{"_tag":"Error","message":"private detail"}"#, status: status))

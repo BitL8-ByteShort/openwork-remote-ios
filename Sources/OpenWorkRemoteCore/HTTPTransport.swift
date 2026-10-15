@@ -37,6 +37,7 @@ public actor SessionTransport: HTTPTransport {
     self.profile = profile
     let c = URLSessionConfiguration.ephemeral
     c.httpShouldSetCookies = false
+    if profile == .openCode { c.urlCredentialStorage = nil }
     c.urlCache = nil
     c.requestCachePolicy = .reloadIgnoringLocalCacheData
     c.timeoutIntervalForRequest = 45
