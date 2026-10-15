@@ -1,37 +1,11 @@
-# Skills
+# Registered skills
 
-Open **Skills** from the message's plus button or **Workspace settings**. Open a
-row to inspect its source, select it for your next message, or edit a workspace
-text skill. Selected skills appear as removable chips above the message field.
-Selection belongs to that host, workspace and chat; it is cleared after a
-confirmed send. Selecting a skill does not grant tool permissions.
+Use the composer plus button to browse, search and preview skills already registered in the selected native OpenCode location. Previewing text does not execute it. Select skills to include them as instructions when you deliberately send, including a skill-only message where supported.
 
-The computer must advertise the appropriate capability and allow this project.
-Editing also requires **Workspace administration** for this phone. Managed and
-inherited entries remain read only. Managed instructions stay on the computer;
-the phone can use their native catalog metadata without downloading those bodies.
+PocketWork saves the selected ID/name/version fingerprint with the draft. Before sending, it checks that the registered version still matches. OpenCode resolves the skill at admission and may add related file names or plugin content; this is not an atomic server lock on the previewed version. A changed/unavailable choice needs review.
 
-The text editor preserves name/description frontmatter and keeps an unsent draft
-on this phone. **Save workspace skill** is the deliberate computer write;
-**Done** only saves the local draft and closes the editor. Removal requires an
-explicit permanent-delete confirmation. Refresh never silently replaces your
-draft with the computer's latest instructions.
+The normal JSON budget is 8 MiB. Native skill catalogs have a separate 16 MiB budget after an actual 8.5 MB Mac catalog exceeded the normal budget; individual skill content is limited to 1 MiB. Large previews use bounded display. Sent history labels show selected skills without rendering their full materialized instructions as ordinary chat messages.
 
-Instructions are bounded to 64 KiB; the computer's 40 KiB encoded JSON request
-limit also applies. A request that does not fit stays on the phone. Invalid or
-stale edits keep the draft and require review. If a response is lost, the app
-keeps one unconfirmed UUID and requires refresh/review instead of automatic retry.
-Accepted readback must match the revision in the write receipt.
+Host skill creation/editing and scheduled work stay in OpenCode. Local selection is not a tool grant, and existing chat rules/approvals still apply. Reset removes local selections, not host skill files.
 
-OpenWork's existing permission check runs for each selected-skill send. If the
-computer needs approval, no prompt is sent and the phone retains the message and
-selection with an instruction to continue on the computer. An existing native
-allow rule remains usable. No approval mode or saved rule is changed by selection.
-
-The source candidate has passed Mac/Ubuntu NUC paired HTTPS skill writes and
-selection, Swift core/state tests and synthetic native UI checks. Physical-device
-and full-candidate acceptance remain open. **TestFlight build 5 excludes skills.**
-
-Both paired native Simulator flows edited, read back, selected and explicitly removed the disposable skill. The NUC flow also exercised scrolling its larger catalog. Source previews reopened with private backups and all existing comparable host state and phone grants preserved.
-
-![Native managed-skill detail using synthetic content](images/skills-managed.png)
+Scoped Mac/NUC materialization checks used synthetic instructions and disabled provider execution. Simulator selection/preview/file-only flows are separate from pending physical and final execution evidence. See [compatibility](opencode-compatibility.md).
