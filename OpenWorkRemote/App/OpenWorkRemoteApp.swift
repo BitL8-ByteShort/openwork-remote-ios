@@ -51,7 +51,9 @@ import SwiftUI
   var body: some Scene {
     WindowGroup {
       #if DEBUG
-      if ProcessInfo.processInfo.arguments.contains("-ui-testing-native-onboarding") {
+      if ProcessInfo.processInfo.arguments.contains("-ui-testing-native-controls") {
+        NativeControlUITestFixture().tint(Theme.accent)
+      } else if ProcessInfo.processInfo.arguments.contains("-ui-testing-native-onboarding") {
         NativeOnboardingFixture().tint(Theme.accent)
       } else {
         legacyRoot
