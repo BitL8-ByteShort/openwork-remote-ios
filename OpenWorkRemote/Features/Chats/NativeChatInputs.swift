@@ -30,6 +30,7 @@ struct NativeChatInputs:View {
         Label(message(issue),systemImage:"exclamationmark.circle").font(.callout).foregroundStyle(Theme.muted)
       }
     }.padding(.horizontal,24).padding(.top,10)
+      .frame(maxWidth:Theme.contentMaxWidth).frame(maxWidth:.infinity)
       .sheet(item:$presented){item in
         switch item.input{
         case let .approval(context,request):NativeApprovalSheet(store:native.approvals,context:context,request:request)

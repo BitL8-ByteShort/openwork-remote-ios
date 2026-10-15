@@ -92,7 +92,8 @@ struct ComposerView: View {
       Text(model.connection == .ready ? "Runs on your computer" : model.connectionLabel).font(
         .caption
       ).foregroundStyle(Theme.muted).frame(maxWidth: .infinity)
-    }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8).background(Theme.background)
+    }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
+      .frame(maxWidth: Theme.contentMaxWidth).frame(maxWidth: .infinity).background(Theme.background)
       .sheet(isPresented:$skills){NavigationStack{SkillListView().toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){skills=false}}}}}
       .sheet(item:$nativeSkills){context in
         if let store=model.native?.workspace{NavigationStack{NativeSkillListView(store:store,context:context,onSelection:{if nativeSkills==context{nativeSkills=nil}}).toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){nativeSkills=nil}.accessibilityIdentifier("native-skills-done")}}}}

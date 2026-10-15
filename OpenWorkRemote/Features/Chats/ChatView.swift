@@ -135,7 +135,7 @@ struct ChatView: View {
         !model.canCreateChat
       ).padding(.horizontal, 48)
       Spacer()
-    }.frame(maxWidth: .infinity)
+    }.frame(maxWidth: Theme.contentMaxWidth).frame(maxWidth: .infinity)
   }
   private var conversation: some View {
     ScrollViewReader { proxy in
@@ -172,6 +172,7 @@ struct ChatView: View {
             }
             Color.clear.frame(height: 1).id("bottom")
           }.padding(.horizontal, 24).padding(.bottom, 16)
+            .frame(maxWidth: Theme.contentMaxWidth).frame(maxWidth: .infinity)
         }.defaultScrollAnchor(.bottom, for:.initialOffset)
         .onScrollGeometryChange(for: Bool.self) { g in
           g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 100
