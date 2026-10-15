@@ -6,6 +6,27 @@ final class NativeAppTests:XCTestCase {
     XCUIDevice.shared.orientation = .portrait
     let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app"]+(slow ? ["-slow-native-app-settings"]:[])+(share ? ["-artifact-test-save"]:[])+(noAnimations ? ["-native-fixture-no-animations"]:[]);app.launch();return app
   }
+  @MainActor private func allowSharing(_ app:XCUIApplication){
+    XCTAssertTrue(app.staticTexts["sharing-unknown-destination"].waitForExistence(timeout:5))
+    let allow=app.buttons["sharing-review-allow"]
+    for _ in 0..<5{if allow.isHittable{break};app.swipeUp()}
+    XCTAssertTrue(allow.isHittable);allow.tap()
+    expectation(for:NSPredicate(format:"exists == false"),evaluatedWith:allow)
+    waitForExpectations(timeout:5)
+  }
+  @MainActor func testNativeSharingReviewCancelKeepsDraftAndApprovalDoesNotAutoSend(){
+    let app=launch(noAnimations:true)
+    app.buttons["Open chat history"].tap();app.buttons.containing(.staticText,identifier:"Native chat").firstMatch.tap()
+    let composer=app.textFields["composer"];XCTAssertTrue(composer.waitForExistence(timeout:4));composer.tap();composer.typeText("Keep this draft until Send")
+    app.buttons["send-message"].tap()
+    XCTAssertTrue(app.buttons["sharing-review-cancel"].waitForExistence(timeout:5));app.buttons["sharing-review-cancel"].tap()
+    XCTAssertEqual(composer.value as? String,"Keep this draft until Send")
+    app.buttons["send-message"].tap();allowSharing(app)
+    XCTAssertEqual(composer.value as? String,"Keep this draft until Send")
+    app.buttons["send-message"].tap()
+    expectation(for:NSPredicate(format:"value == %@","Message OpenCode"),evaluatedWith:composer)
+    waitForExpectations(timeout:5)
+  }
   @MainActor func testNativeConversationUsesExistingChatAndSettingsScreens(){
     let app=launch()
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:4))
@@ -98,6 +119,7 @@ final class NativeAppTests:XCTestCase {
     app.buttons["native-skill-use"].tap()
     XCTAssertTrue(app.buttons["selected-skill-skill_owned"].waitForExistence(timeout:4))
     XCTAssertTrue(app.buttons["send-message"].isEnabled);app.buttons["send-message"].tap()
+    allowSharing(app);app.buttons["send-message"].tap()
     let cleared=NSPredicate(format:"exists == false")
     expectation(for:cleared,evaluatedWith:app.buttons["selected-skill-skill_owned"])
     waitForExpectations(timeout:5)
@@ -144,6 +166,9 @@ final class NativeAppTests:XCTestCase {
     let sample=app.buttons["native-fixture-photo"]
     if !sample.isHittable{app.swipeUp()}
     sample.tap()
+    allowSharing(app)
+    let retry=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","native-attachment-retry-")).firstMatch
+    XCTAssertTrue(retry.waitForExistence(timeout:3));retry.tap()
     XCTAssertTrue(app.staticTexts["Ready · inline media"].waitForExistence(timeout:5))
     app.buttons["native-attachment-done"].tap()
     let chips=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","native-attachment-chip-"))

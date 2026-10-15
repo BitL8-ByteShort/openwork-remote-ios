@@ -13,6 +13,8 @@ actor NativeShellTransport:HTTPTransport {
   var prompts=0
   var infoStatus=200
   var sessionDirectory="/project"
+  var privacyCatalog=false
+  func enablePrivacyCatalog(){privacyCatalog=true}
   func moveSession(to directory:String){sessionDirectory=directory}
   func setInfoStatus(_ status:Int){infoStatus=status}
   func allowHistory(){holdFirstHistory=false}
@@ -37,7 +39,11 @@ actor NativeShellTransport:HTTPTransport {
     case "/api/session/active":value=["data":[:]]
     case "/api/session/ses_owned/permission":value=["data":[["id":"per_owned","sessionID":"ses_owned","action":"read","resources":["notes.txt"]]]]
     case "/api/session/ses_owned/form":value=["data":[["id":"frm_owned","sessionID":"ses_owned","title":"Choose","fields":[["key":"answer","type":"string","required":true]]]]]
-    case "/api/model":catalogReads+=1;throw RemoteError.unavailable
+    case "/api/model","/api/model/default":
+      catalogReads+=1;guard privacyCatalog else{throw RemoteError.unavailable}
+      let model:[String:Any]=["providerID":"Synthetic provider","id":"model","modelID":"model","name":"Model","enabled":true,"status":"active","variants":[],"capabilities":["tools":true,"input":["text"],"output":["text"]]]
+      if path.hasSuffix("default"){value=["location":["directory":"/project"],"data":model]}
+      else{value=["location":["directory":"/project"],"data":[model]]}
     default:throw RemoteError.invalidResponse
     }
     return(try JSONSerialization.data(withJSONObject:value),path=="/api/info" ? infoStatus:200)
@@ -127,6 +133,12 @@ actor NativeShellTransport:HTTPTransport {
     #expect(model.messages.first?.blocks.first?.text=="Native message")
     #expect(model.draft.isEmpty)
     model.draft="New native text";#expect(model.draft=="New native text");#expect(model.canSend)
+    await transport.enablePrivacyCatalog()
+    let sendTarget=try #require(native.navigation.target)
+    await model.send();#expect(model.draft=="New native text" && native.journal.pending(for:sendTarget)==nil)
+    #expect(await transport.sentPrompts()==0)
+    let review=try #require(native.sharing.review),client=try #require(native.connection.client)
+    #expect(await native.sharing.approve(review,using:client,acknowledgesUnknownDestination:true))
     await model.send();#expect(model.draft.isEmpty)
     #expect(await transport.sentPrompts()==1)
     #expect(try await legacy.load().conversation.draft(for:key)=="Earlier OpenWork text")

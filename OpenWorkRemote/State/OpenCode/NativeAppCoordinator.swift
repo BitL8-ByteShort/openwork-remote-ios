@@ -24,6 +24,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
   let workspace:NativeWorkspaceStore
   let defaults:LocalChatDefaultsStore
   let lastSelection:NativeSelectionStore
+  let sharing:ProviderDisclosureStore
   private(set) var preparingSend=false
   @ObservationIgnored private var sendPreparation=UUID()
   private(set) var ready=false
@@ -47,6 +48,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     workspace=NativeWorkspaceStore(journal:journal)
     defaults=LocalChatDefaultsStore(persistence:try LocalChatDefaultsFile(directory:root))
     lastSelection=NativeSelectionStore(directory:root)
+    sharing=ProviderDisclosureStore(persistence:ProviderDisclosureFile(directory:root))
     attachments=NativeAttachmentStore(journal:journal,files:ProtectedAttachmentFiles(directory:root.appending(path:"NativeAttachmentBytes")))
     results=NativeResultStore(files:ProtectedArtifactFiles(directory:root.appending(path:"NativeDownloads")))
     forms=NativeFormStore(persistence:try NativeFormFile(directory:root))
@@ -69,7 +71,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     guard !starting,!ready else{return};starting=true;startupState = .loading
     defer{starting=false}
     do{
-      try await journal.restore();try await forms.restore();try await visibility.restore();try await creation.restore();try await chatActions.restore();try await groups.restore();try await defaults.restore();try await lastSelection.restore()
+      try await journal.restore();try await forms.restore();try await visibility.restore();try await creation.restore();try await chatActions.restore();try await groups.restore();try await defaults.restore();try await lastSelection.restore();try await sharing.restore()
     }catch{ready=false;startupState = .storageUnavailable;throw error}
     ready=true;startupState = .ready
     try? await results.files.cleanup()
@@ -78,7 +80,12 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
   func connectionChanged() async {
     guard connection.state == .ready,let client=connection.client,let saved=connection.connection else{return}
     guard activeClient !== client else{return}
-    deactivate();activeClient=client;visibility.activate(saved.id);navigation.activate(saved,reader:client)
+    deactivate();activeClient=client
+    await client.observeSharingAuthorization{[weak self,weak client] target,classes,operation in
+      guard let self,let client,await self.authorizeSharing(target:target,client:client,classes:classes,operation:operation) else{throw RemoteError.forbidden}
+    }
+    guard activeClient === client,connection.state == .ready else{return}
+    visibility.activate(saved.id);navigation.activate(saved,reader:client)
     creation.activate(connectionID:saved.id,client:client)
     let picked=selection
     await navigation.refreshProjects()
@@ -92,6 +99,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     guard connection.state == .ready,let client=activeClient else{return}
     let current=UUID();selection=current;cancelInputs();cancelSendPreparation();preservingEarlierHistory=false
     guard let target=navigation.selectProvisional(session) else{return}
+    sharing.activate(target)
     attachments.activate(target:target,client:client);results.activate(target:target,client:client)
     workspace.activate(target:target,client:client)
     controls.activate(target:target,client:client)
@@ -132,6 +140,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
   }
   func deactivate(){
     selection=UUID();cancelInputs();cancelSendPreparation()
+    sharing.activate(nil)
     workspace.deactivate();defaults.activate(nil)
     conversation.deactivate();attachments.deactivate();results.deactivate();controls.deactivate();approvals.deactivate();forms.deactivate();creation.deactivate();chatActions.deactivate();groups.activate(nil);search.activate(nil,reader:nil);newChatLocationRequest=nil;activeClient=nil
   }
@@ -205,11 +214,24 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     await open(session)
   }
   private func cancelSendPreparation(){sendPreparation=UUID();preparingSend=false}
+  private func authorizeSharing(target:OpenCodeTarget,client:OpenCodeClient,classes:Set<OpenCodeSharedData>,operation:OpenCodeSharingOperation)async->Bool{
+    guard activeClient === client,connection.state == .ready,navigation.target==target else{return false}
+    return await sharing.authorize(target:target,reader:client,classes:classes,operation:operation)
+  }
   func send() async {
     guard canSend,let context=workspace.context,context.target==navigation.target else{return}
     let id=UUID();sendPreparation=id;preparingSend=true
     defer{if sendPreparation==id{preparingSend=false}}
     let text=draft,selected=attachments.rows,chosen=workspace.selectedSkills
+    guard let client=activeClient else{return}
+    var classes=OpenCodeSharedData.conversationContext
+    for row in selected{classes.insert(row.file.mime=="image/png" ? .photos:.documents)}
+    if !chosen.isEmpty{classes.insert(.skillInstructions)}
+    guard await authorizeSharing(target:context.target,client:client,classes:classes,operation:.message) else{
+      if sendPreparation==id{notice=sharing.notice};return
+    }
+    guard sendPreparation==id,navigation.target==context.target,activeClient === client else{return}
+    notice=nil
     guard let skills=await workspace.validatedSkills(context) else{
       if sendPreparation==id{notice=workspace.skillsNotice ?? "The selected skills could not be checked. Review them before sending."};return
     }
@@ -237,7 +259,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
   func changeWorkspace(_ workspace:Workspace) async {
     guard connection.state == .ready else{return}
     let picked=UUID();selection=picked;cancelInputs();cancelSendPreparation();self.workspace.deactivate();conversation.clearSelection();attachments.clearSelection();results.deactivate();controls.deactivate();approvals.deactivate();forms.clearSelection()
-    newChatLocationRequest=nil;groups.activate(nil);search.activate(nil,reader:nil)
+    newChatLocationRequest=nil;groups.activate(nil);search.activate(nil,reader:nil);sharing.activate(nil)
     await navigation.selectProject(workspace.id)
     guard selection==picked,connection.state == .ready else{return}
     activateProjectStores();await rememberSelection(chat:nil)

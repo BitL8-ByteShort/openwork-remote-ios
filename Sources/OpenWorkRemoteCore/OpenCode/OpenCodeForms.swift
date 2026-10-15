@@ -211,6 +211,7 @@ extension OpenCodeClient:OpenCodeFormServing {
       var body:Data?
       if let answer{
         try current.validate(answer:answer)
+        try await requireSharingAuthorization(target:target,classes:OpenCodeSharedData.conversationContext,operation:.formAnswer)
         struct Body:Encodable{let answer:[String:OpenCodeFormValue]}
         body=try JSONEncoder().encode(Body(answer:answer))
         guard body!.count<=256*1_024 else{throw RemoteError.oversized}

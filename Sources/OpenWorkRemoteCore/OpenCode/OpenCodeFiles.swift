@@ -115,6 +115,7 @@ extension OpenCodeClient {
     if let ref=actual.model{guard OpenCodeIdentity.matches(ref.id,model.id),OpenCodeIdentity.matches(ref.providerID,model.providerID) else{throw RemoteError.conflict}}
     let current=try await effectiveAttachmentModel(session:actual,target:target)
     guard current.selectionKey==model.selectionKey else{throw RemoteError.conflict}
+    try await requireSharingAuthorization(target:target,classes:OpenCodeSharedData.conversationContext.union([mime=="image/png" ? .photos:.documents]),operation:.attachment)
     let modality=mime=="image/png" ? "image" : "pdf"
     let candidate=try OpenCodePromptFile(target:target,name:clean,mime:mime,content:bytes,placement:.inline)
     if current.capabilities.input.contains(modality),candidate.fitsQualifiedInlineLimits{return candidate}

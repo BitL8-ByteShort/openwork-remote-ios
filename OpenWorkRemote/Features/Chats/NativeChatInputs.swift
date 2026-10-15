@@ -33,7 +33,7 @@ struct NativeChatInputs:View {
       .sheet(item:$presented){item in
         switch item.input{
         case let .approval(context,request):NativeApprovalSheet(store:native.approvals,context:context,request:request)
-        case let .form(context,id):NativeFormSheet(store:native.forms,context:context,formID:id)
+        case let .form(context,id):NativeFormSheet(store:native.forms,context:context,formID:id).nativeSharingReview(native,operation:.formAnswer)
         }
       }
   }

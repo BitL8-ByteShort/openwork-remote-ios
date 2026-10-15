@@ -15,6 +15,7 @@ private struct NativeSelectedPhoto:Transferable,Sendable {
 struct NativeAttachmentPicker:View {
   let store:NativeAttachmentStore
   let context:NativeAttachmentContext
+  @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
   @State private var photo:PhotosPickerItem?
   @State private var importing=false
@@ -44,16 +45,17 @@ struct NativeAttachmentPicker:View {
                 if row.phase == .preparing{ProgressView("Preparing on your computer…")}
                 HStack{
                   if [.failed,.selected,.uploadUnknown].contains(row.phase){
-                    Button(row.phase == .uploadUnknown ? "Prepare a new copy":"Retry"){Task{await store.prepare(row.id,context:context)}}.frame(minHeight:44)
+                    Button{Task{await store.prepare(row.id,context:context)}}label:{Text(row.phase == .uploadUnknown ? "Prepare a new copy":"Retry").frame(minHeight:44)}
                       .disabled(store.journal.pending(for:context.target) != nil)
+                      .accessibilityIdentifier("native-attachment-retry-"+row.id.uuidString.lowercased())
                   }
-                  Button(row.phase == .preparing ? "Cancel preparation":"Remove",role:.destructive){
+                  Button(role:.destructive){
                     if row.phase == .preparing{store.cancelPreparation(row.id,context:context)}
                     else{Task{await store.remove(row.id,context:context)}}
-                  }.frame(minHeight:44).disabled(store.journal.pending(for:context.target) != nil)
+                  }label:{Text(row.phase == .preparing ? "Cancel preparation":"Remove").frame(minHeight:44)}.disabled(store.journal.pending(for:context.target) != nil)
                 }
               }.frame(maxWidth:.infinity,alignment:.leading).padding(16).background(Theme.surface,in:RoundedRectangle(cornerRadius:18))
-                .accessibilityIdentifier("native-attachment-row-"+row.id.uuidString.lowercased())
+                .accessibilityElement(children:.contain).accessibilityIdentifier("native-attachment-row-"+row.id.uuidString.lowercased())
             }
           }
           #if DEBUG
@@ -96,7 +98,7 @@ struct NativeAttachmentPicker:View {
             }catch{self.error="This file could not be prepared. Choose a supported photo or PDF up to 20 MiB, and check free storage."}
           }
         }
-    }
+    }.nativeSharingReview(model.native,operation:.attachment)
   }
   private func add(_ file:LocalAttachmentFile) async throws{
     do{try await store.add(file,context:context)}

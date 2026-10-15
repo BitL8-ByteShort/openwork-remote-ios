@@ -46,6 +46,7 @@ struct NativeAttachmentContext:Hashable,Identifiable,Sendable {
     guard self.context==context,let client,journal.pending(for:context.target)==nil,
       var row=rows.first(where:{$0.id==id}),row.phase != .preparing,row.phase != .ready else{return}
     let epoch=mutationEpoch;row.phase = .preparing;row.prepared=nil
+    notice=nil
     do{
       try await update(row,target:context.target)
       guard epoch==mutationEpoch,!Task.isCancelled else{return}

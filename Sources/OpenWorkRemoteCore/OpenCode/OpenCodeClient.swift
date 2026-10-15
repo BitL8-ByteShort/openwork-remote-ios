@@ -9,6 +9,7 @@ public actor OpenCodeClient {
   let transport: any HTTPTransport
   nonisolated let lifetime=OpenCodeRequestLifetime()
   private(set) var compatibilityStatus: CompatibilityStatus?
+  private var sharingAuthorization:(@Sendable(OpenCodeTarget,Set<OpenCodeSharedData>,OpenCodeSharingOperation)async throws->Void)?
 
   public init(connection: OpenCodeConnection, token: String,
               transport: any HTTPTransport = SessionTransport(profile: .openCode)) throws {
@@ -21,6 +22,13 @@ public actor OpenCodeClient {
 
   public nonisolated func retire(){lifetime.retire()}
   public nonisolated func observeAuthenticationFailure(_ handler:@escaping @Sendable()->Void){lifetime.observeAuthenticationFailure(handler)}
+  /// The app installs its deliberate sharing review before exposing native features.
+  public func observeSharingAuthorization(_ handler:@escaping @Sendable(OpenCodeTarget,Set<OpenCodeSharedData>,OpenCodeSharingOperation)async throws->Void){sharingAuthorization=handler}
+  func requireSharingAuthorization(target:OpenCodeTarget,classes:Set<OpenCodeSharedData>,operation:OpenCodeSharingOperation)async throws{
+    try lifetime.requireActive();try Task.checkCancellation()
+    try await sharingAuthorization?(target,classes,operation)
+    try lifetime.requireActive();try Task.checkCancellation()
+  }
 
   public func info() async throws -> OpenCodeServerInfo {
     let result = try await decode(OpenCodeServerInfo.self, segments: ["api", "info"])

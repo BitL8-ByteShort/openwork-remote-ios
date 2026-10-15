@@ -132,6 +132,10 @@ extension OpenCodeClient {
     do{
       for file in input.files{guard file.target==target else{throw RemoteError.conflict}}
       let session=try await verifyTarget(target)
+      var classes=OpenCodeSharedData.conversationContext
+      if !input.skills.isEmpty{classes.insert(.skillInstructions)}
+      for file in input.files{classes.insert(file.mime=="image/png" ? .photos:.documents)}
+      try await requireSharingAuthorization(target:target,classes:classes,operation:.message)
       if !input.files.isEmpty{
         for file in input.files where file.placement == .inline{guard file.fitsQualifiedInlineLimits else{throw RemoteError.oversized}}
         let model=try await effectiveAttachmentModel(session:session,target:target)
