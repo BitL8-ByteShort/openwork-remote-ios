@@ -4,9 +4,9 @@
 
 PocketWork is an independent iPhone and iPad companion for [OpenCode](https://github.com/anomalyco/opencode), maintained by Salty Panda LLC. Pick up a chat, answer a question or review a file while the work keeps running on your computer.
 
-**OpenCode-backed PocketWork1.0.0(8) is available to the existing internal TestFlight group.** Earlier0.1.0 builds use OpenWork. Physical-device acceptance and public App Store distribution remain pending. See [compatibility and evidence](docs/opencode-compatibility.md).
+**OpenCode-backed PocketWork1.0.0(9) is available to the existing internal TestFlight group.** Earlier0.1.0 builds use OpenWork. Physical-device acceptance and public App Store distribution remain pending. See [compatibility and evidence](docs/opencode-compatibility.md).
 
-## In this source candidate
+## In the native beta
 
 - Built-in OpenCode v2 pairing by QR code or pasted link, saved in Keychain.
 - Projects, recent chats, paged history, new chats, rename, fork and reviewed deletion.
@@ -39,7 +39,7 @@ This connection uses OpenCode's native remote access. It needs no PocketWork bri
 
 The app keeps the PocketWork name, existing Apple app record and bundle identity. OpenWork pairing cannot be reused with OpenCode. Earlier recoverable draft text stays separate for deliberate copying into a reviewed native chat; files, skills and uncertain actions are not silently moved or resent.
 
-TestFlight remains the beta update route, without a cable requirement. There is no public TestFlight invitation or App Store release for this candidate. See [migration and recovery](docs/migrating-from-openwork.md).
+Build9 fixes free-model rejection in newly created chats and a premature “Delivery is uncertain” warning during ordinary sends. After updating, create a new chat in PocketWork to test the identifier repair; existing chats and IDs are preserved. TestFlight remains the beta update route, without a cable requirement. There is no public TestFlight invitation or App Store release for this candidate. See [migration and recovery](docs/migrating-from-openwork.md).
 
 ## Build and test
 
