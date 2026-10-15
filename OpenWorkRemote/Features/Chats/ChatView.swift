@@ -180,7 +180,11 @@ struct ChatView: View {
                 .foregroundStyle(Theme.muted).padding(.vertical, 20)
             }
             Color.clear.frame(height: 1).id("bottom")
-          }.padding(.horizontal, 24).padding(.bottom, 16)
+          }.environment(\.markdownDidPrepare, {
+            // Preparation finishes after the message snapshot. Follow its final
+            // height only when the reader was already following new replies.
+            if nearBottom { proxy.scrollTo("bottom", anchor: .bottom) }
+          }).padding(.horizontal, 24).padding(.bottom, 16)
             .frame(maxWidth: Theme.contentMaxWidth).frame(maxWidth: .infinity)
         }.accessibilityIdentifier("chat-conversation").defaultScrollAnchor(.bottom, for:.initialOffset)
         .onScrollGeometryChange(for: Bool.self) { g in

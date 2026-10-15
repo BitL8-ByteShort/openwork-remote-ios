@@ -11,7 +11,9 @@ private actor NativeAppUITestTransport:HTTPTransport {
   var extra:[String:[String:Any]]=[:]
   var deleted=Set<String>()
   let slow:Bool
-  init(slow:Bool){self.slow=slow}
+  let longReply:Bool
+  let codeReply:Bool
+  init(slow:Bool,longReply:Bool=false,codeReply:Bool=false){self.slow=slow;self.longReply=longReply;self.codeReply=codeReply}
   private var record:[String:Any]{["id":"ses_owned","projectID":"project","title":title,"location":["directory":"/project"],"time":["created":1,"updated":2],"model":["providerID":"Synthetic provider","id":"native-model"],"agent":"build","permissions":[]]}
   private var form:[String:Any]{["id":"frm_owned","sessionID":"ses_owned","title":"Which option do you prefer?","fields":[["key":"answer","type":"string","required":true]],"state":["status":"pending"]]}
   private var model:[String:Any]{["providerID":"Synthetic provider","id":"native-model","modelID":"native-model","name":"Native model","enabled":true,"status":"active","variants":[],"capabilities":["tools":true,"input":["text","image","pdf"],"output":["text"]]]}
@@ -46,6 +48,13 @@ private actor NativeAppUITestTransport:HTTPTransport {
     case "/api/session/ses_owned/message":
       var history:[String:Any]=["data":[["id":"msg_owned","type":"user","text":"Native message","time":["created":1]],
         ["id":"msg_result","type":"assistant","time":["created":2],"content":[["type":"text","text":"Your result is ready."],["type":"tool","name":"generate","state":["status":"completed","content":[["type":"file","uri":"file:///project/result.txt","mime":"text/plain"]]]]]]],"cursor":[:]]
+      if longReply{
+        history["data"]=[["id":"msg_large","type":"assistant","time":["created":2],"content":[["type":"text","text":String(repeating:"Synthetic long reply. **Formatted words** and Unicode 日本語.\n\n",count:4_000)]]]]
+      }
+      if codeReply{
+        let text="```swift\n"+(1...60).map{"let example\($0) = \($0)"}.joined(separator:"\n")+"\n// END OF CODE\n```"
+        history["data"]=[["id":"msg_code","type":"assistant","time":["created":2],"content":[["type":"text","text":text]]]]
+      }
       if let admitted,let payload=admitted["payload"] as? [String:Any]{
         var rows=history["data"] as! [[String:Any]]
         rows.insert(["id":admitted["id"]!,"type":"user","text":payload["text"]!,"files":payload["files"] ?? [],"skills":payload["skills"] ?? [],"time":["created":3]],at:0)
@@ -112,7 +121,7 @@ struct NativeAppUITestFixture:View {
     if ProcessInfo.processInfo.arguments.contains("-native-fixture-no-animations"){UIView.setAnimationsEnabled(false)}
     let directory=FileManager.default.temporaryDirectory.appending(path:"native-shell-ui-"+UUID().uuidString)
     let saved=StoredOpenCodeConnection(connection:try! OpenCodeConnection(origin:URL(string:"https://synthetic.example")!,displayName:"Synthetic computer"),token:"synthetic-token")
-    let native=try! NativeAppCoordinator(directory:directory,connectionPersistence:NativeFixtureConnectionVault(saved).persistence,transport:NativeAppUITestTransport(slow:ProcessInfo.processInfo.arguments.contains("-slow-native-app-settings")))
+    let native=try! NativeAppCoordinator(directory:directory,connectionPersistence:NativeFixtureConnectionVault(saved).persistence,transport:NativeAppUITestTransport(slow:ProcessInfo.processInfo.arguments.contains("-slow-native-app-settings"),longReply:ProcessInfo.processInfo.arguments.contains("-native-fixture-long-reply"),codeReply:ProcessInfo.processInfo.arguments.contains("-native-fixture-code-reply")))
     _model=State(initialValue:AppModel(native:native,legacyDraftStore:try! DraftStore(directory:directory),pairingPersistence:PairingPersistence(load:{nil},save:{_ in},remove:{})))
   }
   var body:some View{NativeRootView().id(ObjectIdentifier(model)).environment(model).tint(Theme.accent).transaction{transaction in

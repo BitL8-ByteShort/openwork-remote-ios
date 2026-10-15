@@ -2,6 +2,57 @@ import XCTest
 import CryptoKit
 
 final class NativeAppTests:XCTestCase {
+  @MainActor func testLongReplyHasBoundedPagesAndNavigationDoesNotWaitForModelNetwork(){
+    checkLongReply()
+  }
+  @MainActor func testLargestTextLongReplyPagingKeepsLocalNavigationAvailable(){
+    checkLongReply(largest:true)
+  }
+  @MainActor private func checkLongReply(largest:Bool=false){
+    XCUIDevice.shared.orientation = .portrait
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app","-native-fixture-long-reply","-slow-native-app-settings"]+(largest ? ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"]:[]);app.launch()
+    XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:5))
+    app.buttons["Open chat history"].tap()
+    let row=app.buttons.containing(.staticText,identifier:"Native chat").firstMatch
+    for _ in 0..<8{if row.exists && row.isHittable{break};app.swipeUp()}
+    XCTAssertTrue(row.waitForExistence(timeout:5));row.tap()
+    let open=app.buttons["long-reply-open"]
+    for _ in 0..<6{if open.isHittable{break};app.scrollViews["chat-conversation"].swipeDown()}
+    XCTAssertTrue(open.waitForExistence(timeout:5));XCTAssertTrue(open.isHittable);open.tap()
+    XCTAssertTrue(app.navigationBars["Long reply"].waitForExistence(timeout:4))
+    let next=app.buttons["long-reply-next"],back=app.buttons["long-reply-previous"]
+    XCTAssertTrue(next.isHittable);XCTAssertGreaterThanOrEqual(next.frame.height,44);next.tap()
+    XCTAssertTrue(app.staticTexts["long-reply-position"].label.hasPrefix("Page 2 of "))
+    XCTAssertTrue(back.isEnabled);XCTAssertTrue(back.isHittable);back.tap()
+    XCTAssertTrue(app.staticTexts["long-reply-position"].label.hasPrefix("Page 1 of "))
+    let readerProof=XCTAttachment(screenshot:XCUIScreen.main.screenshot());readerProof.name="Bounded long reply reader";readerProof.lifetime = .keepAlways;add(readerProof)
+    app.buttons["long-reply-done"].tap()
+    app.buttons["Model and chat settings"].tap()
+    let done=app.buttons["native-settings-done"]
+    XCTAssertTrue(done.waitForExistence(timeout:4))
+    let start=ContinuousClock.now;done.tap()
+    // waitForExistence polls after roughly one second even if already present;
+    // it must not be included in the local dismissal timing measurement.
+    XCTAssertTrue(app.buttons["Open chat history"].exists)
+    let elapsed=start.duration(to:.now)
+    XCTAssertLessThan(elapsed,.seconds(2),"Local Done must not await the 30-second model request")
+    let timing=XCTAttachment(string:"XCUITest tap + immediate visible-element query: \(elapsed). Includes automation/animation; not physical tap-to-pixel latency.")
+    timing.name="Local dismissal automation timing";timing.lifetime = .keepAlways;add(timing)
+    let proof=XCTAttachment(screenshot:XCUIScreen.main.screenshot());proof.name="Bounded native long reply and local navigation";proof.lifetime = .keepAlways;add(proof)
+  }
+  @MainActor func testCodeBlockScrollsVerticallyToItsFinalLines(){
+    XCUIDevice.shared.orientation = .portrait
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app","-native-fixture-code-reply"];app.launch()
+    XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:5));app.buttons["Open chat history"].tap()
+    let row=app.buttons.containing(.staticText,identifier:"Native chat").firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout:5));row.tap()
+    let scroll=app.scrollViews["code-block-scroll"]
+    XCTAssertTrue(scroll.waitForExistence(timeout:5))
+    let content=app.staticTexts["code-block-content"];let originalY=content.frame.minY
+    for _ in 0..<6{scroll.swipeUp()}
+    XCTAssertLessThan(content.frame.minY,originalY-100)
+    let proof=XCTAttachment(screenshot:XCUIScreen.main.screenshot());proof.name="Native code block scrolled to final lines";proof.lifetime = .keepAlways;add(proof)
+  }
   @MainActor func testComposerRequiresASelectedChatInsteadOfDiscardingUnscopedText(){
     let app=launch()
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:5))
