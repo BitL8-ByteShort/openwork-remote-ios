@@ -4,7 +4,7 @@ import OpenWorkRemoteCore
 @testable import OpenWorkRemoteAppState
 
 actor NativeConversationService:OpenCodeConversationServing {
-  enum Mode:Sendable{case normal,lostResponse,conflict,rejected}
+  enum Mode:Sendable{case normal,lostResponse,conflict,rejected,notSubmitted}
   let mode:Mode
   var admitted:OpenCodePrompt?
   var sent=0
@@ -34,6 +34,7 @@ actor NativeConversationService:OpenCodeConversationServing {
   }
   func send(target:OpenCodeTarget,input:OpenCodePrompt) async throws -> OpenCodePromptAdmission {
     sent+=1
+    if mode == .notSubmitted{throw OpenCodePromptNotSubmitted(reason:.unavailable)}
     if mode == .rejected{throw RemoteError.forbidden}
     admitted=try mode == .conflict ? OpenCodePrompt(id:input.id,text:"Another admitted body") : input
     if mode == .lostResponse{throw RemoteError.outcomeUnknown}
@@ -94,6 +95,16 @@ actor NativeConversationService:OpenCodeConversationServing {
     await coordinator.send()
     #expect(journal.pending(for:target)==nil)
     #expect(journal.draft(for:target)=="Rejected prompt")
+    #expect(coordinator.issue == .sendRejected)
+    #expect(await service.sendCount()==1)
+  }
+  @Test func failedPreflightPreservesDraftWithoutAnUncertainSend() async throws {
+    let (coordinator,service,journal,target)=try await setup(.notSubmitted)
+    defer{coordinator.deactivate()}
+    try await journal.saveDraft("Not submitted",for:target)
+    await coordinator.send()
+    #expect(journal.pending(for:target)==nil)
+    #expect(journal.draft(for:target)=="Not submitted")
     #expect(coordinator.issue == .sendRejected)
     #expect(await service.sendCount()==1)
   }

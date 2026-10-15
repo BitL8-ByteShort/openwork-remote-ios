@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import OpenWorkRemoteCore
 
-enum NativeConversationIssue {case unavailable,locationChanged,unknownSend,conflictingSend,sendRejected,storage,stopOutcomeUnknown,authenticationRequired}
+enum NativeConversationIssue {case unavailable,locationChanged,unknownSend,conflictingSend,sendRejected,storage,stopOutcomeUnknown,authenticationRequired,incompatible}
 enum NativeStreamState {case stopped,connecting,live,polling}
 @MainActor @Observable final class ConversationCoordinator {
   let journal:NativeConversationJournal
@@ -48,7 +48,7 @@ enum NativeStreamState {case stopped,connecting,live,polling}
       async let active=service.activeSessions()
       let (actual,page,queued,running)=try await (session,messages,inbox,active)
       guard current==generation,sequence==snapshotSequence,!Task.isCancelled else{return}
-      guard actual.projectID==target.projectID,actual.location.directory==target.directory,actual.time.archived==nil else{
+      guard actual.projectID==target.projectID,OpenCodeIdentity.matches(actual.location.directory,target.directory),actual.time.archived==nil else{
         issue = .locationChanged;return
       }
       latest=page.data;liveText.confirmed(by:page.data);isActive=running.contains(target.sessionID)
@@ -78,16 +78,27 @@ enum NativeStreamState {case stopped,connecting,live,polling}
     }catch{
       guard current==generation else{return}
       if journal.storageIssue{issue = .storage;return}
-      switch error as? RemoteError {
+      if let notSubmitted=error as? OpenCodePromptNotSubmitted {
+        do{
+          try await journal.reject(pending)
+          issue=switch notSubmitted.reason {
+          case .unauthorized:.authenticationRequired
+          case .conflict:.locationChanged
+          case .incompatible:.incompatible
+          default:.sendRejected
+          }
+        }catch{issue = .storage}
+      }else{switch error as? RemoteError {
       case .unauthorized,.forbidden,.invalidResponse,.notFound,.incompatible,.oversized:
         do{try await journal.reject(pending);issue = .sendRejected}catch{issue = .storage}
       default:
         let conflict=error as? RemoteError == .conflict
         do{try await journal.mark(pending,state:conflict ? .conflicting : .unknown)}catch{issue = .storage;return}
         issue=conflict ? .conflictingSend : .unknownSend
-      }
+      }}
     }
     guard current==generation else{return}
+    guard ![.authenticationRequired,.locationChanged,.incompatible].contains(issue) else{return}
     await refresh()
   }
   func interrupt() async {
@@ -112,7 +123,7 @@ enum NativeStreamState {case stopped,connecting,live,polling}
       var read=page,cursors=Set<String>()
       for _ in 0..<20 {
         if let item=read.data.first(where:{$0.id==pending.prompt.id}) {
-          matches=item.type=="user" && item.text==pending.prompt.text && !item.hasAttachments;break
+          matches=item.type=="user" && item.text.map{OpenCodeIdentity.matches($0,pending.prompt.text)}==true && !item.hasAttachments;break
         }
         guard let cursor=read.cursor.next,cursors.insert(cursor).inserted else{break}
         read=try await service.messages(sessionID:target.sessionID,cursor:cursor)
@@ -178,7 +189,7 @@ enum NativeStreamState {case stopped,connecting,live,polling}
   func receive(_ event:OpenCodeEvent) {
     guard let target,event.affects(target),!seenEvents.contains(event.id) else{return}
     seenEvents.append(event.id);if seenEvents.count>512{seenEvents.removeFirst(seenEvents.count-512)}
-    if let directory=event.location?.directory,event.data.sessionID==target.sessionID,directory != target.directory{requestRefresh();return}
+    if let directory=event.location?.directory,event.data.sessionID==target.sessionID,!OpenCodeIdentity.matches(directory,target.directory){requestRefresh();return}
     let textUpdate=liveText.receive(event)
     if event.type=="session.text.delta",textUpdate == .updated{return}
     if ["session.reasoning.delta","session.tool.input.delta","session.compaction.delta"].contains(event.type){return}

@@ -7,10 +7,13 @@ actor NativeConversationTransport:HTTPTransport {
   let moved:Bool
   let changed:Bool
   let oversizedAcknowledgement:Bool
-  init(moved:Bool=false,changed:Bool=false,oversizedAcknowledgement:Bool=false){self.moved=moved;self.changed=changed;self.oversizedAcknowledgement=oversizedAcknowledgement}
+  let actualDirectory:String?
+  let failPreflight:Bool
+  init(moved:Bool=false,changed:Bool=false,oversizedAcknowledgement:Bool=false,actualDirectory:String?=nil,failPreflight:Bool=false){self.moved=moved;self.changed=changed;self.oversizedAcknowledgement=oversizedAcknowledgement;self.actualDirectory=actualDirectory;self.failPreflight=failPreflight}
   func data(for request:URLRequest) async throws -> (Data,Int) {
     requests.append(request)
     let path=request.url!.path
+    if failPreflight{throw URLError(.notConnectedToInternet)}
     if path == "/api/info" {return (Data(#"{"version":"2.0.29","urls":[],"paths":{"tmp":"/tmp/opencode"}}"#.utf8),200)}
     if path.hasSuffix("/interrupt") {return (Data(#"{"interrupted":false}"#.utf8),200)}
     if path.hasSuffix("/prompt") {
@@ -20,7 +23,7 @@ actor NativeConversationTransport:HTTPTransport {
         "time":["created":1],"payload":["text":changed ? "First admitted body" : input["text"]!]]
       return (try JSONSerialization.data(withJSONObject:["data":item]),200)
     }
-    let directory=moved ? "/different" : "/project"
+    let directory=actualDirectory ?? (moved ? "/different" : "/project")
     return (Data("{\"data\":{\"id\":\"ses_owned\",\"projectID\":\"project\",\"location\":{\"directory\":\"\(directory)\"},\"time\":{\"created\":1,\"updated\":2}}}".utf8),200)
   }
   func allRequests()->[URLRequest]{requests}
@@ -52,10 +55,10 @@ actor NativeConversationTransport:HTTPTransport {
   @Test func changedLocationOrAnotherConnectionCannotReceivePrompt() async throws {
     let transport=NativeConversationTransport(moved:true),(client,target)=try setup(transport)
     let prompt=try OpenCodePrompt(text:"Synthetic")
-    await #expect(throws:RemoteError.conflict) {_ = try await client.send(target:target,input:prompt)}
+    await #expect(throws:OpenCodePromptNotSubmitted.self) {_ = try await client.send(target:target,input:prompt)}
     #expect(await transport.allRequests().contains{$0.httpMethod == "POST"} == false)
     let wrong=OpenCodeTarget(connectionID:ConnectionID(),projectID:target.projectID,sessionID:target.sessionID,directory:target.directory)
-    await #expect(throws:RemoteError.invalidResponse) {_ = try await client.send(target:wrong,input:prompt)}
+    await #expect(throws:OpenCodePromptNotSubmitted.self) {_ = try await client.send(target:wrong,input:prompt)}
   }
   @Test func inactiveInterruptDoesNotInventAStoppedExecution() async throws {
     let (client,target)=try setup(NativeConversationTransport())
@@ -70,5 +73,23 @@ actor NativeConversationTransport:HTTPTransport {
     let transport=NativeConversationTransport(oversizedAcknowledgement:true),(client,target)=try setup(transport)
     await #expect(throws:RemoteError.outcomeUnknown){_ = try await client.send(target:target,input:OpenCodePrompt(text:"Synthetic"))}
     #expect(await transport.allRequests().filter{$0.httpMethod=="POST"}.count==1)
+  }
+  @Test func distinctLinuxUnicodeDirectoryBytesCannotBeTreatedAsTheSameTarget() async throws {
+    let composed="/projects/caf\u{e9}",decomposed="/projects/cafe\u{301}"
+    #expect(composed==decomposed) // Swift equality normalizes; Linux directory names do not.
+    #expect(Array(composed.utf8) != Array(decomposed.utf8))
+    let transport=NativeConversationTransport(actualDirectory:decomposed),(client,base)=try setup(transport)
+    let target=OpenCodeTarget(connectionID:base.connectionID,projectID:base.projectID,sessionID:base.sessionID,directory:composed)
+    let other=OpenCodeTarget(connectionID:base.connectionID,projectID:base.projectID,sessionID:base.sessionID,directory:decomposed)
+    #expect(target != other)
+    #expect(Set([target,other]).count==2)
+    #expect(OpenCodeLocation(directory:composed) != OpenCodeLocation(directory:decomposed))
+    await #expect(throws:OpenCodePromptNotSubmitted.self){_ = try await client.send(target:target,input:OpenCodePrompt(text:"Synthetic"))}
+    #expect(await transport.allRequests().contains{$0.httpMethod=="POST"}==false)
+  }
+  @Test func anOfflinePreflightIsKnownNotSubmitted() async throws {
+    let transport=NativeConversationTransport(failPreflight:true),(client,target)=try setup(transport)
+    await #expect(throws:OpenCodePromptNotSubmitted.self){_ = try await client.send(target:target,input:OpenCodePrompt(text:"Still a draft"))}
+    #expect(await transport.allRequests().contains{$0.httpMethod=="POST"}==false)
   }
 }

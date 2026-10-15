@@ -96,7 +96,7 @@ actor NativeConversationFile:NativeConversationPersistence {
   func confirm(_ item:NativePendingPrompt) async throws {
     guard pending(for:item.target)?.prompt.id==item.prompt.id else{throw RemoteError.conflict}
     disk.pending.removeValue(forKey:item.target.nativeDraftKey)
-    if draft(for:item.target)==item.prompt.text{disk.drafts.removeValue(forKey:item.target.nativeDraftKey)}
+    if OpenCodeIdentity.matches(draft(for:item.target),item.prompt.text){disk.drafts.removeValue(forKey:item.target.nativeDraftKey)}
     try await persist()
   }
   func reject(_ item:NativePendingPrompt) async throws {

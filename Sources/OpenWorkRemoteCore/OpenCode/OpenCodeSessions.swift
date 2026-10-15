@@ -16,6 +16,7 @@ public struct OpenCodeProject: Codable, Sendable, Identifiable, Equatable {
 public struct OpenCodeLocation: Codable, Sendable, Equatable {
   public let directory:String
   public init(directory:String){self.directory=directory}
+  public static func ==(lhs:Self,rhs:Self)->Bool{OpenCodeIdentity.matches(lhs.directory,rhs.directory)}
 }
 public struct OpenCodeLocationInfo: Decodable, Sendable, Equatable {
   public struct Project: Decodable, Sendable, Equatable {
@@ -48,7 +49,7 @@ extension OpenCodeClient {
     try OpenCodeLocation.validate(result.project.directory)
     try OpenCodeLocation.validate(result.project.canonical)
     guard !result.project.id.isEmpty,result.project.id.utf8.count<=2_048 else{throw RemoteError.invalidResponse}
-    if let directory,directory != result.directory {throw RemoteError.conflict}
+    if let directory,!OpenCodeIdentity.matches(directory,result.directory) {throw RemoteError.conflict}
     return result
   }
   public func projects() async throws -> [OpenCodeProject] {
@@ -77,7 +78,7 @@ extension OpenCodeClient {
   public func session(id:String) async throws -> OpenCodeSession {
     struct Response: Decodable, Sendable { let data:OpenCodeSession }
     let result = try await decode(Response.self,segments:["api","session",id]).data
-    guard result.id == id, !result.projectID.isEmpty,
+    guard OpenCodeIdentity.matches(result.id,id), !result.projectID.isEmpty,
       result.location.directory.hasPrefix("/"), !result.location.directory.contains("\0") else { throw RemoteError.invalidResponse }
     return result
   }

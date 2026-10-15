@@ -14,6 +14,18 @@ actor NativeResponseTransport: HTTPTransport {
   func firstRequest() -> URLRequest? { requests.first }
   func requestCount() -> Int { requests.count }
 }
+actor NativeVersionChangeTransport:HTTPTransport {
+  var version="2.0.29"
+  var mutations=0
+  func upgrade(){version="2.0.30"}
+  func data(for request:URLRequest) async throws -> (Data,Int) {
+    if request.url?.path=="/api/info" {
+      return (Data("{\"version\":\"\(version)\",\"urls\":[],\"paths\":{\"tmp\":\"/tmp\"}}".utf8),200)
+    }
+    mutations+=1;return (Data(),204)
+  }
+  func mutationCount()->Int{mutations}
+}
 
 @Suite struct OpenCodeContractTests {
   let info = #"{"version":"2.0.29","pid":123,"urls":["https://paired.example"],"paths":{"tmp":"/tmp/opencode"},"capabilities":{"persistentPty":true},"futureField":"ignored"}"#
@@ -108,6 +120,14 @@ actor NativeResponseTransport: HTTPTransport {
     }
     #expect(await transport.requestCount() == 1)
     #expect(await transport.firstRequest()?.httpMethod == "GET")
+  }
+  @Test func cachedCompatibilityCannotAuthorizeWritesAfterAComputerUpgrade() async throws {
+    let transport=NativeVersionChangeTransport()
+    let client=try OpenCodeClient(connection:connection(),token:"synthetic-token",transport:transport)
+    _ = try await client.info()
+    await transport.upgrade()
+    await #expect(throws:RemoteError.incompatible){_ = try await client.data(segments:["api","session","ses_owned"],method:"PATCH",body:Data("{}".utf8))}
+    #expect(await transport.mutationCount()==0)
   }
 
 }

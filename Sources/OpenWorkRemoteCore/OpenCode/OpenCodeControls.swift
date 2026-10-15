@@ -14,6 +14,13 @@ public struct OpenCodeModelRef:Codable,Sendable,Equatable,Hashable {
     let c=try decoder.container(keyedBy:CodingKeys.self)
     try self.init(providerID:c.decode(String.self,forKey:.providerID),id:c.decode(String.self,forKey:.id),variant:c.decodeIfPresent(String.self,forKey:.variant))
   }
+  public static func ==(lhs:Self,rhs:Self)->Bool {
+    OpenCodeIdentity.matches(lhs.providerID,rhs.providerID) && OpenCodeIdentity.matches(lhs.id,rhs.id) && OpenCodeIdentity.matches(lhs.variant,rhs.variant)
+  }
+  public func hash(into hasher:inout Hasher) {
+    OpenCodeIdentity.hash(providerID,into:&hasher);OpenCodeIdentity.hash(id,into:&hasher)
+    hasher.combine(variant != nil);if let variant{OpenCodeIdentity.hash(variant,into:&hasher)}
+  }
 }
 public struct OpenCodeModel:Decodable,Sendable,Equatable {
   public struct Variant:Decodable,Sendable,Equatable{public let id:String}
@@ -26,10 +33,14 @@ public struct OpenCodeModel:Decodable,Sendable,Equatable {
   public let status:String
   public let variants:[Variant]
   public let capabilities:Capabilities
-  public var selectionKey:String{"\(providerID.utf8.count):\(providerID)\(id)"}
+  public var selectionKey:Data {
+    var key=Data("\(providerID.utf8.count):".utf8)
+    key.append(contentsOf:providerID.utf8);key.append(contentsOf:id.utf8);return key
+  }
   public var selectable:Bool{enabled && ["alpha","beta","deprecated","active"].contains(status)}
   func accepts(_ ref:OpenCodeModelRef)->Bool {
-    selectable && ref.providerID==providerID && ref.id==id && (ref.variant.map{variant in variants.contains{$0.id==variant}} ?? true)
+    selectable && OpenCodeIdentity.matches(ref.providerID,providerID) && OpenCodeIdentity.matches(ref.id,id) &&
+      (ref.variant.map{variant in variants.contains{OpenCodeIdentity.matches($0.id,variant)}} ?? true)
   }
 }
 public enum OpenCodePermissionEffect:String,Codable,Sendable{case allow,deny,ask}
@@ -40,6 +51,12 @@ public struct OpenCodePermissionRule:Codable,Sendable,Equatable,Hashable {
   public init(action:String,resource:String,effect:OpenCodePermissionEffect)throws {
     guard action.utf8.count<=4_096,resource.utf8.count<=8_192,!action.contains("\0"),!resource.contains("\0") else{throw RemoteError.invalidResponse}
     self.action=action;self.resource=resource;self.effect=effect
+  }
+  public static func ==(lhs:Self,rhs:Self)->Bool {
+    OpenCodeIdentity.matches(lhs.action,rhs.action) && OpenCodeIdentity.matches(lhs.resource,rhs.resource) && lhs.effect==rhs.effect
+  }
+  public func hash(into hasher:inout Hasher) {
+    OpenCodeIdentity.hash(action,into:&hasher);OpenCodeIdentity.hash(resource,into:&hasher);hasher.combine(effect)
   }
 }
 public struct OpenCodeAgent:Decodable,Sendable,Identifiable,Equatable {
@@ -59,6 +76,11 @@ public struct OpenCodePermissionRequest:Decodable,Sendable,Identifiable,Equatabl
   public let resources:[String]
   public let save:[String]?
   public let message:String?
+  public static func ==(lhs:Self,rhs:Self)->Bool {
+    OpenCodeIdentity.matches(lhs.id,rhs.id) && OpenCodeIdentity.matches(lhs.sessionID,rhs.sessionID) &&
+      OpenCodeIdentity.matches(lhs.action,rhs.action) && OpenCodeIdentity.matches(lhs.resources,rhs.resources) &&
+      OpenCodeIdentity.matches(lhs.save,rhs.save) && OpenCodeIdentity.matches(lhs.message,rhs.message)
+  }
 }
 public struct OpenCodeSavedPermission:Decodable,Sendable,Identifiable,Equatable {
   public struct Time:Decodable,Sendable,Equatable{public let created:Double;public let updated:Double}
@@ -104,7 +126,7 @@ extension OpenCodeClient {
     struct Body:Encodable{let model:OpenCodeModelRef}
     _ = try await data(segments:["api","session",target.sessionID,"model"],method:"POST",body:JSONEncoder().encode(Body(model:model)))
     let actual=try await session(id:target.sessionID)
-    guard actual.model==model,actual.projectID==target.projectID,actual.location.directory==target.directory else{throw RemoteError.conflict}
+    guard actual.model==model,actual.projectID==target.projectID,OpenCodeIdentity.matches(actual.location.directory,target.directory) else{throw RemoteError.conflict}
     return actual
   }
   public func setAgent(target:OpenCodeTarget,agentID:String,expectedAgent:String?) async throws -> OpenCodeSession {
@@ -115,7 +137,7 @@ extension OpenCodeClient {
     struct Body:Encodable{let agent:String}
     _ = try await data(segments:["api","session",target.sessionID,"agent"],method:"POST",body:JSONEncoder().encode(Body(agent:agentID)))
     let actual=try await session(id:target.sessionID)
-    guard actual.agent==agentID,actual.projectID==target.projectID,actual.location.directory==target.directory else{throw RemoteError.conflict}
+    guard actual.agent==agentID,actual.projectID==target.projectID,OpenCodeIdentity.matches(actual.location.directory,target.directory) else{throw RemoteError.conflict}
     return actual
   }
   public func setSessionRules(target:OpenCodeTarget,rules:[OpenCodePermissionRule],expectedRules:[OpenCodePermissionRule]?) async throws -> OpenCodeSession {
@@ -126,7 +148,7 @@ extension OpenCodeClient {
     struct Body:Encodable{let permissions:[OpenCodePermissionRule]}
     _ = try await data(segments:["api","session",target.sessionID],method:"PATCH",body:JSONEncoder().encode(Body(permissions:rules)))
     let actual=try await session(id:target.sessionID)
-    guard actual.permissions==rules,actual.projectID==target.projectID,actual.location.directory==target.directory else{throw RemoteError.conflict}
+    guard actual.permissions==rules,actual.projectID==target.projectID,OpenCodeIdentity.matches(actual.location.directory,target.directory) else{throw RemoteError.conflict}
     return actual
   }
   public func pendingPermissions(target:OpenCodeTarget) async throws -> [OpenCodePermissionRequest] {

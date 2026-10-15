@@ -84,7 +84,8 @@ public actor OpenCodeClient {
   }
 
   func requireQualifiedWrites() async throws {
-    if compatibilityStatus == nil { _ = try await info() }
+    // A desktop update can replace the service while the phone stays open.
+    _ = try await info()
     guard compatibilityStatus == .qualified else { throw RemoteError.incompatible }
   }
 }

@@ -1,5 +1,10 @@
 import Foundation
 
+public struct OpenCodePromptNotSubmitted:Error,Sendable,Equatable {
+  public let reason:RemoteError
+  public init(reason:RemoteError){self.reason=reason}
+}
+
 /// Stable identity is persisted before admission. A failed response never creates a new ID.
 public struct OpenCodePrompt:Codable,Sendable,Equatable,CustomStringConvertible,CustomDebugStringConvertible {
   public let id:String
@@ -41,7 +46,8 @@ public struct OpenCodePromptAdmission:Decodable,Sendable,CustomStringConvertible
   public let type:String
   public let payload:Payload
   public func matches(_ prompt:OpenCodePrompt,sessionID:String)->Bool {
-    id==prompt.id && self.sessionID==sessionID && type=="user" && payload.text==prompt.text && !payload.hasAttachments
+    OpenCodeIdentity.matches(id,prompt.id) && OpenCodeIdentity.matches(self.sessionID,sessionID) &&
+      type=="user" && OpenCodeIdentity.matches(payload.text,prompt.text) && !payload.hasAttachments
   }
   public var description:String{"OpenCodePromptAdmission(<redacted>)"}
 }
@@ -71,14 +77,20 @@ extension OpenCodeClient {
   @discardableResult func verifyTarget(_ target:OpenCodeTarget) async throws -> OpenCodeSession {
     try validateTarget(target)
     let actual=try await session(id:target.sessionID)
-    guard actual.projectID==target.projectID,actual.location.directory==target.directory,
+    guard OpenCodeIdentity.matches(actual.projectID,target.projectID),OpenCodeIdentity.matches(actual.location.directory,target.directory),
       actual.time.archived==nil else{throw RemoteError.conflict}
     return actual
   }
   public func send(target:OpenCodeTarget,input:OpenCodePrompt) async throws -> OpenCodePromptAdmission {
-    try await verifyTarget(target)
-    try await requireQualifiedWrites()
-    let request=try makeRequest(segments:["api","session",target.sessionID,"prompt"],method:"POST",body:JSONEncoder().encode(input))
+    let request:URLRequest
+    do{
+      try await verifyTarget(target)
+      try await requireQualifiedWrites()
+      request=try makeRequest(segments:["api","session",target.sessionID,"prompt"],method:"POST",body:JSONEncoder().encode(input))
+    }catch{
+      let reason=(error as? RemoteError) ?? (error is CancellationError ? .cancelled : .unavailable)
+      throw OpenCodePromptNotSubmitted(reason:reason)
+    }
     let bytes:Data,status:Int
     do{(bytes,status)=try await transport.data(for:request)}
     catch{throw RemoteError.outcomeUnknown}

@@ -27,4 +27,11 @@ import Testing
     #expect(try await client.replyPermission(target:target,request:request,decision:.once) == .alreadyResolved)
     #expect(await transport.allRequests().contains{$0.httpMethod=="POST"}==false)
   }
+  @Test func visuallyEquivalentLinuxPatternsAreDistinctDesktopEdits() async throws {
+    let transport=NativeControlsTransport(rules:[["action":"read","resource":"cafe\u{301}/*","effect":"deny"]])
+    let (client,target)=try OpenCodeControlTests().setup(transport)
+    let original=try OpenCodePermissionRule(action:"read",resource:"caf\u{e9}/*",effect:.deny)
+    await #expect(throws:RemoteError.conflict){_ = try await client.setSessionRules(target:target,rules:[],expectedRules:[original])}
+    #expect(await transport.allRequests().contains{$0.httpMethod=="PATCH"}==false)
+  }
 }

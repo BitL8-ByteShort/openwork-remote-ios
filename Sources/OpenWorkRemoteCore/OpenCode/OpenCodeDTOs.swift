@@ -45,6 +45,14 @@ public struct OpenCodeTarget: Codable, Hashable, Sendable {
     self.connectionID = connectionID; self.projectID = projectID
     self.sessionID = sessionID; self.directory = directory
   }
+  public static func ==(lhs:Self,rhs:Self)->Bool {
+    lhs.connectionID==rhs.connectionID && OpenCodeIdentity.matches(lhs.projectID,rhs.projectID) &&
+      OpenCodeIdentity.matches(lhs.sessionID,rhs.sessionID) && OpenCodeIdentity.matches(lhs.directory,rhs.directory)
+  }
+  public func hash(into hasher:inout Hasher) {
+    hasher.combine(connectionID)
+    for value in [projectID,sessionID,directory]{OpenCodeIdentity.hash(value,into:&hasher)}
+  }
 }
 public struct OpenCodeServerInfo: Decodable, Sendable {
   public struct Paths: Decodable, Sendable { public let tmp: String }
