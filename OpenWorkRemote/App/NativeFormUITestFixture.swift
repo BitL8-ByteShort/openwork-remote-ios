@@ -24,19 +24,24 @@ private actor NativeFormUITestService:OpenCodeFormServing {
   }
   func cancelForm(target:OpenCodeTarget,form:OpenCodeForm) async throws -> OpenCodeFormResolution{status="cancelled";return .confirmed}
 }
+private struct NativeFormUIPresentation:Identifiable {
+  let id=UUID()
+  let context:NativeFormContext
+}
 struct NativeFormUITestFixture:View {
   @State private var store:NativeFormStore
   @State private var context:NativeFormContext?
-  @State private var showing=false
+  @State private var presentation:NativeFormUIPresentation?
   init(){_store=State(initialValue:NativeFormStore(persistence:try! NativeFormFile(directory:FileManager.default.temporaryDirectory.appending(path:"native-form-ui-"+UUID().uuidString))))}
   var body:some View{
-    Button("Open question"){showing=true}.accessibilityIdentifier("native-form-open")
+    Button("Open question"){if let context{presentation=NativeFormUIPresentation(context:context)}}.accessibilityIdentifier("native-form-open")
       .task{
         if context==nil{
           try? await store.restore()
-          context=store.activate(target:OpenCodeTarget(connectionID:ConnectionID(),projectID:"project",sessionID:"ses_synthetic",directory:"/synthetic"),client:NativeFormUITestService());showing=true
+          let activated=store.activate(target:OpenCodeTarget(connectionID:ConnectionID(),projectID:"project",sessionID:"ses_synthetic",directory:"/synthetic"),client:NativeFormUITestService())
+          context=activated;presentation=NativeFormUIPresentation(context:activated)
         }
-      }.sheet(isPresented:$showing){if let context{NativeFormSheet(store:store,context:context,formID:"frm_synthetic")}}
+      }.sheet(item:$presentation){request in NativeFormSheet(store:store,context:request.context,formID:"frm_synthetic")}
   }
 }
 #endif

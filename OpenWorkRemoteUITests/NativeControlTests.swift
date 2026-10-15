@@ -3,7 +3,7 @@ import XCTest
 final class NativeControlTests:XCTestCase {
   @MainActor private func launch(slow:Bool=false)->XCUIApplication {
     XCUIDevice.shared.orientation = .portrait
-    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-controls"]+(slow ? ["-slow-native-settings"] : []);app.launch();return app
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-controls"]+(slow ? ["-slow-native-settings"] : []);app.launchForNativeWindowQualification();return app
   }
   @MainActor func testSameModelIDAcrossProvidersAndVariantReadback() {
     let app=launch()
@@ -28,7 +28,7 @@ final class NativeControlTests:XCTestCase {
   @MainActor func testRulesPreserveDenyAndRequireAllowReview() {
     let app=launch()
     XCTAssertTrue(app.buttons["native-model-picker"].waitForExistence(timeout:8))
-    if !app.buttons["Permissions"].isHittable{app.swipeUp()}
+    if !app.buttons["Permissions"].isHittable{app.windows.firstMatch.swipeUp()}
     app.buttons["Permissions"].tap()
     XCTAssertTrue(app.buttons["native-session-rules"].waitForExistence(timeout:3))
     app.buttons["native-session-rules"].tap()

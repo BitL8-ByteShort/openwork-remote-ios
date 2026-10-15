@@ -11,17 +11,17 @@ final class NativeAccessibilityTests:XCTestCase{
   }
   @MainActor func testLargestTextNativeWelcomeStructuralAccessibility()throws{
     XCUIDevice.shared.orientation = .portrait
-    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-startup","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"];app.launch()
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-startup","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"];app.launchForNativeWindowQualification()
     XCTAssertTrue(app.buttons["native-get-started"].waitForExistence(timeout:5))
     try audit(app)
   }
   @MainActor func testLargestTextNativeConversationAndRequiredInputStructuralAccessibility()throws{
     XCUIDevice.shared.orientation = .portrait
-    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"];app.launch()
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"];app.launchForNativeWindowQualification()
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:5));app.buttons["Open chat history"].tap()
     let row=app.buttons.containing(.staticText,identifier:"Native chat").firstMatch
     XCTAssertTrue(app.navigationBars["Your chats"].waitForExistence(timeout:4))
-    for _ in 0..<8{if row.exists && row.isHittable{break};app.swipeUp()}
+    for _ in 0..<8{if row.exists && row.isHittable{break};app.collectionViews.firstMatch.swipeUp()}
     XCTAssertTrue(row.exists && row.isHittable);row.tap()
     XCTAssertTrue(app.buttons["native-form-open"].waitForExistence(timeout:4))
     XCTAssertTrue(app.buttons["native-approval-open"].exists)
@@ -29,11 +29,11 @@ final class NativeAccessibilityTests:XCTestCase{
   }
   @MainActor func testLargestTextConversationKeepsRequiredInputsAndComposerReachable(){
     XCUIDevice.shared.orientation = .portrait
-    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"];app.launch()
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"];app.launchForNativeWindowQualification()
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:5));app.buttons["Open chat history"].tap()
     let row=app.buttons.containing(.staticText,identifier:"Native chat").firstMatch
     XCTAssertTrue(app.navigationBars["Your chats"].waitForExistence(timeout:4))
-    for _ in 0..<8{if row.exists && row.isHittable{break};app.swipeUp()}
+    for _ in 0..<8{if row.exists && row.isHittable{break};app.collectionViews.firstMatch.swipeUp()}
     XCTAssertTrue(row.exists && row.isHittable)
     row.tap()
     XCTAssertTrue(app.buttons["native-form-open"].waitForExistence(timeout:5))
@@ -50,11 +50,11 @@ final class NativeAccessibilityTests:XCTestCase{
   }
   @MainActor func testLargestTextKeyboardKeepsNavigationAndRequiredInputsReachable(){
     XCUIDevice.shared.orientation = .portrait
-    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"];app.launch()
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"];app.launchForNativeWindowQualification()
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:5));app.buttons["Open chat history"].tap()
     let row=app.buttons.containing(.staticText,identifier:"Native chat").firstMatch
     XCTAssertTrue(app.navigationBars["Your chats"].waitForExistence(timeout:4))
-    for _ in 0..<8{if row.exists && row.isHittable{break};app.swipeUp()}
+    for _ in 0..<8{if row.exists && row.isHittable{break};app.collectionViews.firstMatch.swipeUp()}
     XCTAssertTrue(row.exists && row.isHittable);row.tap()
     let composer=app.textFields["composer"];XCTAssertTrue(composer.waitForExistence(timeout:4));composer.tap();composer.typeText("Keyboard draft")
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout:3))

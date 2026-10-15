@@ -10,11 +10,11 @@ final class NativeAppTests:XCTestCase {
   }
   @MainActor private func checkLongReply(largest:Bool=false){
     XCUIDevice.shared.orientation = .portrait
-    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app","-native-fixture-long-reply","-slow-native-app-settings"]+(largest ? ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"]:[]);app.launch()
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app","-native-fixture-long-reply","-slow-native-app-settings"]+(largest ? ["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"]:[]);app.launchForNativeWindowQualification()
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:5))
     app.buttons["Open chat history"].tap()
     let row=app.buttons.containing(.staticText,identifier:"Native chat").firstMatch
-    for _ in 0..<8{if row.exists && row.isHittable{break};app.swipeUp()}
+    for _ in 0..<8{if row.exists && row.isHittable{break};app.windows.firstMatch.swipeUp()}
     XCTAssertTrue(row.waitForExistence(timeout:5));row.tap()
     let open=app.buttons["long-reply-open"]
     for _ in 0..<6{if open.isHittable{break};app.scrollViews["chat-conversation"].swipeDown()}
@@ -42,7 +42,7 @@ final class NativeAppTests:XCTestCase {
   }
   @MainActor func testCodeBlockScrollsVerticallyToItsFinalLines(){
     XCUIDevice.shared.orientation = .portrait
-    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app","-native-fixture-code-reply"];app.launch()
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app","-native-fixture-code-reply"];app.launchForNativeWindowQualification()
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:5));app.buttons["Open chat history"].tap()
     let row=app.buttons.containing(.staticText,identifier:"Native chat").firstMatch
     XCTAssertTrue(row.waitForExistence(timeout:5));row.tap()
@@ -65,12 +65,33 @@ final class NativeAppTests:XCTestCase {
   }
   @MainActor private func launch(slow:Bool=false,share:Bool=false,noAnimations:Bool=false)->XCUIApplication{
     XCUIDevice.shared.orientation = .portrait
-    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app"]+(slow ? ["-slow-native-app-settings"]:[])+(share ? ["-artifact-test-save"]:[])+(noAnimations ? ["-native-fixture-no-animations"]:[]);app.launch();return app
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-app"]+(slow ? ["-slow-native-app-settings"]:[])+(share ? ["-artifact-test-save"]:[])+(noAnimations ? ["-native-fixture-no-animations"]:[]);app.launchForNativeWindowQualification();return app
+  }
+  @MainActor private func revealChatListControl(_ element:XCUIElement,in app:XCUIApplication){
+    XCTAssertTrue(element.waitForExistence(timeout:5))
+    // A partially visible row can be reported hittable behind the bottom bar.
+    // Scroll the whole control clear of that bar before exercising its action.
+    for _ in 0..<6{
+      let bottom=app.buttons["Settings"].frame.minY
+      if element.isHittable && element.frame.maxY<bottom-8{break}
+      app.windows.firstMatch.swipeUp()
+    }
+    XCTAssertTrue(element.isHittable)
+    XCTAssertLessThan(element.frame.maxY,app.buttons["Settings"].frame.minY-8)
+  }
+  @MainActor private func openFixtureChat(_ app:XCUIApplication){
+    app.buttons["Open chat history"].tap()
+    let row=app.buttons.containing(.staticText,identifier:"Native chat").firstMatch
+    revealChatListControl(row,in:app);row.tap()
+    expectation(for:NSPredicate(format:"exists == false"),evaluatedWith:app.buttons["native-chatlist-done"])
+    waitForExpectations(timeout:5)
+    expectation(for:NSPredicate(format:"enabled == true"),evaluatedWith:app.textFields["composer"])
+    waitForExpectations(timeout:5)
   }
   @MainActor private func allowSharing(_ app:XCUIApplication){
     XCTAssertTrue(app.staticTexts["sharing-unknown-destination"].waitForExistence(timeout:5))
     let allow=app.buttons["sharing-review-allow"]
-    for _ in 0..<5{if allow.isHittable{break};app.swipeUp()}
+    for _ in 0..<5{if allow.isHittable{break};app.windows.firstMatch.swipeUp()}
     XCTAssertTrue(allow.isHittable);allow.tap()
     expectation(for:NSPredicate(format:"exists == false"),evaluatedWith:allow)
     waitForExpectations(timeout:5)
@@ -78,7 +99,7 @@ final class NativeAppTests:XCTestCase {
   @MainActor private func openDataControls(_ app:XCUIApplication){
     app.buttons["Open chat history"].tap();app.buttons["Settings"].tap()
     let data=app.buttons["native-local-data-open"]
-    for _ in 0..<4{if data.exists && data.isHittable{break};app.swipeUp()}
+    for _ in 0..<4{if data.exists && data.isHittable{break};app.windows.firstMatch.swipeUp()}
     XCTAssertTrue(data.waitForExistence(timeout:4));data.tap()
     XCTAssertTrue(app.navigationBars["Data on this device"].waitForExistence(timeout:3))
   }
@@ -86,7 +107,7 @@ final class NativeAppTests:XCTestCase {
     let app=launch(noAnimations:true)
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:4));openDataControls(app)
     let reset=app.buttons["local-data-reset"]
-    for _ in 0..<4{if reset.isHittable{break};app.swipeUp()}
+    for _ in 0..<4{if reset.isHittable{break};app.windows.firstMatch.swipeUp()}
     XCTAssertTrue(reset.isHittable);reset.tap();app.alerts.buttons["Reset local data"].tap()
     XCTAssertTrue(app.buttons["native-get-started"].waitForExistence(timeout:8))
     XCTAssertFalse(app.buttons["Model and chat settings"].exists)
@@ -96,12 +117,12 @@ final class NativeAppTests:XCTestCase {
   }
   @MainActor func testNativeClearSharingRequiresReviewAgainWithoutDiscardingDraft(){
     let app=launch(noAnimations:true)
-    app.buttons["Open chat history"].tap();app.buttons.containing(.staticText,identifier:"Native chat").firstMatch.tap()
+    openFixtureChat(app)
     let composer=app.textFields["composer"];XCTAssertTrue(composer.waitForExistence(timeout:4));composer.tap();composer.typeText("Keep after clearing sharing")
     app.buttons["send-message"].tap();allowSharing(app)
     openDataControls(app)
     let sharing=app.buttons["local-data-sharing"]
-    for _ in 0..<4{if sharing.isHittable{break};app.swipeUp()}
+    for _ in 0..<4{if sharing.isHittable{break};app.windows.firstMatch.swipeUp()}
     sharing.tap();app.alerts.buttons["Clear sharing permissions"].tap()
     app.navigationBars["Data on this device"].buttons.firstMatch.tap()
     app.buttons["native-connection-done"].tap();app.buttons["native-chatlist-done"].tap()
@@ -112,7 +133,7 @@ final class NativeAppTests:XCTestCase {
   }
   @MainActor func testNativeSharingReviewCancelKeepsDraftAndApprovalDoesNotAutoSend(){
     let app=launch(noAnimations:true)
-    app.buttons["Open chat history"].tap();app.buttons.containing(.staticText,identifier:"Native chat").firstMatch.tap()
+    openFixtureChat(app)
     let composer=app.textFields["composer"];XCTAssertTrue(composer.waitForExistence(timeout:4));composer.tap();composer.typeText("Keep this draft until Send")
     app.buttons["send-message"].tap()
     XCTAssertTrue(app.buttons["sharing-review-cancel"].waitForExistence(timeout:5));app.buttons["sharing-review-cancel"].tap()
@@ -189,8 +210,9 @@ final class NativeAppTests:XCTestCase {
     XCTAssertTrue(app.buttons["native-action-confirm"].waitForExistence(timeout:3));app.buttons["native-action-confirm"].tap()
     XCTAssertTrue(app.buttons["Model and chat settings"].waitForExistence(timeout:5))
     app.buttons["Open chat history"].tap()
-    XCTAssertTrue(app.buttons["chat-actions-ses_fork"].waitForExistence(timeout:4));app.buttons["chat-actions-ses_fork"].tap()
-    app.buttons["Delete chat and branches"].tap()
+    let forkActions=app.buttons["chat-actions-ses_fork"]
+    revealChatListControl(forkActions,in:app);forkActions.tap()
+    XCTAssertTrue(app.buttons["Delete chat and branches"].waitForExistence(timeout:3));app.buttons["Delete chat and branches"].tap()
     XCTAssertTrue(app.staticTexts["1 chat in this tree"].waitForExistence(timeout:4))
     app.buttons["native-action-confirm"].tap()
     XCTAssertTrue(app.buttons["chat-actions-ses_owned"].waitForExistence(timeout:5))
@@ -202,7 +224,7 @@ final class NativeAppTests:XCTestCase {
   }
   @MainActor func testNativeWorkingCopySkillsAndSkillOnlySend(){
     let app=launch(noAnimations:true)
-    app.buttons["Open chat history"].tap();app.buttons.containing(.staticText,identifier:"Native chat").firstMatch.tap()
+    openFixtureChat(app)
     XCTAssertTrue(app.buttons["Model and chat settings"].waitForExistence(timeout:4));app.buttons["Model and chat settings"].tap()
     XCTAssertTrue(app.buttons["native-chat-changes-settings"].waitForExistence(timeout:4));app.buttons["native-chat-changes-settings"].tap()
     XCTAssertTrue(app.buttons["native-change-notes.txt"].waitForExistence(timeout:4));app.buttons["native-change-notes.txt"].tap()
@@ -219,13 +241,16 @@ final class NativeAppTests:XCTestCase {
     let cleared=NSPredicate(format:"exists == false")
     expectation(for:cleared,evaluatedWith:app.buttons["selected-skill-skill_owned"])
     waitForExpectations(timeout:5)
+    // Returning from a sheet can leave the conversation above its latest row.
+    // Follow the app's explicit control before querying lazy history content.
+    if app.buttons["New replies"].exists{app.buttons["New replies"].tap()}
     XCTAssertTrue(app.staticTexts["Skill: Review fixture"].waitForExistence(timeout:4))
   }
   @MainActor func testNativeNewChatDefaultsSaveAndReset(){
     let app=launch(noAnimations:true)
     app.buttons["Open chat history"].tap();app.buttons["Settings"].tap()
     let entry=app.buttons["native-defaults-open"]
-    for _ in 0..<3 where !entry.exists || !entry.isHittable{app.swipeUp()}
+    for _ in 0..<3 where !entry.exists || !entry.isHittable{app.windows.firstMatch.swipeUp()}
     XCTAssertTrue(entry.waitForExistence(timeout:4));entry.tap()
     XCTAssertTrue(app.buttons["native-default-model"].waitForExistence(timeout:4));app.buttons["native-default-model"].tap()
     let model=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","native-model-choice-")).firstMatch
@@ -260,7 +285,7 @@ final class NativeAppTests:XCTestCase {
     app.buttons["composer-add"].tap();app.buttons["Photos or files"].tap()
     XCTAssertTrue(app.buttons["Choose photos"].waitForExistence(timeout:4))
     let sample=app.buttons["native-fixture-photo"]
-    if !sample.isHittable{app.swipeUp()}
+    if !sample.isHittable{app.windows.firstMatch.swipeUp()}
     sample.tap()
     allowSharing(app)
     let retry=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","native-attachment-retry-")).firstMatch
@@ -295,7 +320,7 @@ final class NativeAppTests:XCTestCase {
       XCTAssertTrue(app.buttons["native-result-share"].waitForExistence(timeout:3))
     }
     let share=app.buttons["native-result-share"]
-    if !share.isHittable{app.swipeUp()}
+    if !share.isHittable{app.windows.firstMatch.swipeUp()}
     XCTAssertTrue(share.isEnabled);share.tap()
     let save=app.cells["Save test copy"]
     XCTAssertTrue(save.waitForExistence(timeout:8))

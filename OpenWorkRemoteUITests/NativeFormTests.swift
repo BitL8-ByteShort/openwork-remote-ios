@@ -2,7 +2,7 @@ import XCTest
 final class NativeFormTests:XCTestCase {
   @MainActor private func launch(_ arguments:[String]=[])->XCUIApplication{
     XCUIDevice.shared.orientation = .portrait
-    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-forms"]+arguments;app.launch();return app
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-forms"]+arguments;app.launchForNativeWindowQualification();return app
   }
   @MainActor func testConditionalIntegerValidationAndExplicitSubmit(){
     let app=launch()

@@ -66,3 +66,9 @@ The subsequent normal iPad Release selected the same synthetic photo through the
 ## Legacy source separation
 
 The iOS Release configuration has a native-only facade and screen adapters. The bridge client and its HTTP extensions are not compiled into iOS Release, and no legacy grant/capability UI is wired into that build. Mac/DEBUG historical regression coverage remains. A separate local recovery actor handles older metadata and file-copy removal without any bridge client. Static bundle checks and a no-flags Simulator Release launch/reset have passed; the joined real-host/physical release matrix is still pending.
+
+## Isolated native restart and credential checks
+
+October15 raw native HTTPS checks on the existing unprivileged NUC test container pass issued-session-credential reuse after a normal server restart, invalid-credential status 401, single-use code redemption followed by 401 on reuse, and 401 for the previous issued credential after rotating only the isolated server password. The native origin remains the same after the normal restart. Original configuration bytes and the stopped container state were restored; the personal service configuration and process stayed unchanged.
+
+These protocol checks do not establish a physical reconnect journey or the client UI response to revocation. The reported pairing-code lifetime is 300 seconds; this run did not wait for elapsed expiry. Server-password rotation affects issued credentials collectively and is not a per-phone revoke feature.

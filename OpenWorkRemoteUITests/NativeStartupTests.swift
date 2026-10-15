@@ -5,14 +5,14 @@ final class NativeStartupTests:XCTestCase{
     XCUIDevice.shared.orientation = .portrait
     let app=XCUIApplication()
     app.launchArguments=["-ui-testing-native-startup","-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"]
-    app.launch()
+    app.launchForNativeWindowQualification()
     let start=app.buttons["native-get-started"]
     XCTAssertTrue(start.waitForExistence(timeout:6))
     app.buttons["native-about-open"].tap()
     XCTAssertTrue(app.staticTexts["about-name"].waitForExistence(timeout:4))
     XCTAssertTrue(app.staticTexts["about-version"].exists)
     let privacy=app.buttons["about-privacy"]
-    for _ in 0..<10{if privacy.isHittable{break};app.swipeUp()}
+    for _ in 0..<10{if privacy.isHittable{break};app.windows.firstMatch.swipeUp()}
     XCTAssertTrue(privacy.isHittable);privacy.tap()
     XCTAssertTrue(app.scrollViews["information-document-privacy"].waitForExistence(timeout:3))
     XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","2026-10-15.1")).firstMatch.exists)
@@ -21,7 +21,7 @@ final class NativeStartupTests:XCTestCase{
     XCTAssertTrue(app.buttons["native-about-done"].waitForExistence(timeout:3))
     app.buttons["native-about-done"].tap()
     XCTAssertTrue(start.waitForExistence(timeout:3))
-    for _ in 0..<14{if start.isHittable{break};app.swipeUp()}
+    for _ in 0..<14{if start.isHittable{break};app.windows.firstMatch.swipeUp()}
     XCTAssertTrue(start.isHittable);start.tap()
     XCTAssertTrue(app.buttons["native-computer-ready"].waitForExistence(timeout:3))
     XCTAssertTrue(app.buttons["native-back"].isHittable)

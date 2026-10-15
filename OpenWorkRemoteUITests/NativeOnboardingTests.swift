@@ -2,7 +2,7 @@ import XCTest
 
 final class NativeOnboardingTests:XCTestCase {
   @MainActor private func launch()->XCUIApplication {
-    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-onboarding"];app.launch();return app
+    let app=XCUIApplication();app.launchArguments=["-ui-testing-native-onboarding"];app.launchForNativeWindowQualification();return app
   }
   @MainActor func testWelcomeExplainsNativePairing() {
     let app=launch()
@@ -41,7 +41,7 @@ final class NativeOnboardingTests:XCTestCase {
     XCTAssertTrue(app.staticTexts["native-reviewed-origin"].waitForExistence(timeout:3))
     XCUIDevice.shared.orientation = .landscapeLeft
     XCTAssertTrue(app.buttons["native-confirm-connection"].waitForExistence(timeout:3))
-    if !app.buttons["native-confirm-connection"].isHittable { app.swipeUp() }
+    if !app.buttons["native-confirm-connection"].isHittable { app.windows.firstMatch.swipeUp() }
     XCTAssertTrue(app.buttons["native-confirm-connection"].isHittable)
     XCTAssertTrue(app.staticTexts["native-reviewed-origin"].exists)
     let proof=XCTAttachment(screenshot:app.screenshot());proof.name="Native origin review landscape";proof.lifetime = .keepAlways;add(proof)
