@@ -96,6 +96,7 @@ struct SetupIllustration: View {
             Theme.background, in: RoundedRectangle(cornerRadius: 7))
           HStack(alignment: .top, spacing: 12) {
             RoundedRectangle(cornerRadius: 7).fill(Theme.surface).frame(width: 44)
+              .overlay { OpenCodeBrandMark().frame(width:36,height:45) }
             VStack(alignment: .leading, spacing: 9) {
               RoundedRectangle(cornerRadius: 2).fill(Theme.line).frame(height: 6)
               RoundedRectangle(cornerRadius: 2).fill(Theme.line).frame(width: 92, height: 6)
@@ -120,7 +121,8 @@ struct SetupIllustration: View {
           }
         }.padding(13).frame(width: 88, height: 154).background(
           Theme.background, in: RoundedRectangle(cornerRadius: 21)
-        ).overlay(RoundedRectangle(cornerRadius: 21).stroke(Theme.ink, lineWidth: 7)).offset(
+        ).overlay(alignment:.topLeading) { OpenCodeBrandMark().frame(width:8,height:10).padding(.leading,11).padding(.top,26) }
+        .overlay(RoundedRectangle(cornerRadius: 21).stroke(Theme.ink, lineWidth: 7)).offset(
           x: 32, y: 48)
         Image(systemName: "link").font(.title2).foregroundStyle(Theme.accent).padding(13)
           .background(Theme.background, in: Circle()).offset(x: -58, y: 24)

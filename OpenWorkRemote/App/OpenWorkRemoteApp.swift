@@ -50,6 +50,18 @@ import SwiftUI
   #endif
   var body: some Scene {
     WindowGroup {
+      #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("-ui-testing-native-onboarding") {
+        NativeOnboardingFixture().tint(Theme.accent)
+      } else {
+        legacyRoot
+      }
+      #else
+      legacyRoot
+      #endif
+    }
+  }
+  private var legacyRoot:some View {
       RootView().id(ObjectIdentifier(model)).environment(model).preferredColorScheme(
         appearance == "dark" ? .dark : appearance == "light" ? .light : nil
       ).tint(Theme.accent).task(id: ObjectIdentifier(model)) {
@@ -62,9 +74,15 @@ import SwiftUI
         do { model = try model.freshAfterReset(report) }
         catch { model.notice = "Local reset finished, but app storage could not be reopened. Unlock the phone and restart the app." }
       }
-    }
   }
 }
+#if DEBUG
+private struct NativeOnboardingFixture:View {
+  @State private var coordinator=ConnectionCoordinator(
+    persistence:OpenCodePersistence(load:{nil},save:{_ in},remove:{}))
+  var body:some View {OpenCodeConnectionFlow(coordinator:coordinator)}
+}
+#endif
 private struct RootView: View {
   @Environment(AppModel.self) private var model
   var body: some View {
