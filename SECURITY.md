@@ -8,9 +8,11 @@ If private reporting isn't available, email **support@saltypanda.com** to arrang
 
 ## Native candidate scope
 
-The migration currently targets OpenCode **2.0.29**, with separately recorded Mac and Ubuntu native-host checks. Complete physical-device and public-release qualification remains pending. Earlier OpenWork beta binaries have a different security boundary; their scoped bridge permissions do not describe this native connection.
+The source candidate accepts inspected native profiles **2.0.29** and **2.0.30**, with separately recorded Mac and Linux checks. Official stock2.0.30 password/pairing and typed API qualification uses isolated loopback runtimes; normal Release phone HTTPS password pairing/reload uses the isolated2.0.29 host. Unknown patch versions remain unverified. Complete physical-device and public-release qualification remains pending. Earlier OpenWork beta binaries have a different security boundary; their scoped bridge permissions do not describe this native connection.
 
 A native pairing code is short-lived and single-use. Redemption provides a saved credential with **server-wide access**, including supported project/file operations. It is not a per-phone, per-project sandbox. Project visibility and future-project choices are local display filters. Pair only a server you are authorized to access.
+
+The optional source-candidate password route reviews the exact HTTPS origin before transmitting the standard server password. It issues and redeems a fresh native code, then clears that password; PocketWork persists only the issued paired credential. Apple's optional Passwords saving is a separate system choice. A known narrow-iPad password/background crash currently holds the next beta.
 
 The credential is stored in the iOS Keychain. Requests use the selected HTTPS origin, normal certificate validation and redirect blocking. No arbitrary request-forwarding or shell endpoint is added by PocketWork. OpenCode can route remote traffic through OpenTunnel. Host software, plugins, configuration and model providers remain part of the trust boundary.
 

@@ -20,9 +20,15 @@ PocketWork is an independent iPhone and iPad companion for [OpenCode](https://gi
 
 These are implemented features with synthetic and scoped native-host checks. They are not a claim that the complete release-candidate journey has passed on physical devices. Native host skill editing and scheduled work stay on the computer. Search covers chat titles, not message contents.
 
+## In the source candidate
+
+The next beta adds direct **+ → Photos / Files** selection, draft attachment chips, compact sharing review, local project archive/restore, and automatic reply following until you scroll away. **Files from this chat** remains in the top project/settings menu instead of being repeated in the conversation. Optional native server-password pairing is described below.
+
+These changes are not in delivered build9 yet. A reproducible narrow-iPad password/background crash currently holds the next build. Current passing phone/component checks do not clear that release gate.
+
 ## Connect
 
-The inspected baseline is **OpenCode 2.0.29**. Keep the compatible OpenCode server running and the computer awake.
+The initial inspected baseline is **OpenCode 2.0.29**; the source candidate also accepts the scoped, tested **2.0.30** profile. Keep the compatible OpenCode server running and the computer awake.
 
 1. In OpenCode Settings, enable its built-in **Remote access** and choose **Pair device**.
 2. In PocketWork, scan the QR code or paste the pairing link.
@@ -31,7 +37,9 @@ The inspected baseline is **OpenCode 2.0.29**. Keep the compatible OpenCode serv
 
 On a CLI-only host, OpenCode v2.0.29 also provides `opencode pair --remote`. It prints native pairing links and a QR code; scan the QR or copy its HTTPS link into PocketWork. If native Remote access is off, OpenCode asks before enabling it. The app ignores the QR's plain-HTTP local addresses and uses an advertised HTTPS address.
 
-This connection uses OpenCode's native remote access. It needs no PocketWork bridge, OpenWork fork or separate Tailscale app. Normal TLS validation stays enabled. OpenCode may route encrypted traffic through OpenTunnel; the host and model-provider configuration still determine where work and data go.
+The source candidate also offers **Use server password**: enter the standard OpenCode server’s HTTPS address and password, review the exact destination, then Connect. It requests and redeems a native pairing code and saves only the resulting paired credential. QR/link and password are independent options. iOS may separately offer its own Passwords save choice. This candidate is not yet in the delivered build9 beta.
+
+This connection uses OpenCode's native remote access. It needs no PocketWork bridge, OpenCode fork/plugin/patch or separate Tailscale app. Normal TLS validation stays enabled. OpenCode may route encrypted traffic through OpenTunnel; the host and model-provider configuration still determine where work and data go.
 
 **Pairing grants server-wide access.** Visible projects and “Show future projects” change this device's lists; they don't restrict the credential. Tool approval requests, saved grants and chat rules are separate controls. Forget removes the credential from this device and does not revoke it on the server. Read [Security](SECURITY.md) before pairing a shared server.
 
@@ -70,4 +78,4 @@ Email **support@saltypanda.com** or use [GitHub Issues](https://github.com/BitL8
 
 The source and original artwork are [MIT licensed](LICENSE). The credited OpenCode logo has its own retained MIT notice in [NOTICE.md](NOTICE.md). PocketWork is independently maintained and isn't an official OpenCode product. OpenCode's maintainers aren't responsible for this app.
 
-Read [privacy](https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/), [support](https://bitl8-byteshort.github.io/openwork-remote-ios/support/) and [terms](https://bitl8-byteshort.github.io/openwork-remote-ios/terms/) at the stable information-site URLs. The exact approved offline copy is in [bundled information](OpenWorkRemote/Resources/Information/); its manifest records policy version2026-10-15.1.
+Read [privacy](https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/), [support](https://bitl8-byteshort.github.io/openwork-remote-ios/support/) and [terms](https://bitl8-byteshort.github.io/openwork-remote-ios/terms/) at the stable information-site URLs. The exact approved offline copy is in [bundled information](OpenWorkRemote/Resources/Information/). The source candidate bundles approved policy version2026-10-16.1. Delivered build9 and the published sites still use2026-10-15.1; the revised copy will be published with the ready beta.

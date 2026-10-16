@@ -1,4 +1,7 @@
 import SwiftUI
+#if DEBUG
+import OpenWorkRemoteCore
+#endif
 
 @main struct OpenWorkRemoteApp: App {
   @State private var launch = NativeAppLaunch()
@@ -123,9 +126,16 @@ import SwiftUI
   #endif
 }
 #if DEBUG
+private actor NativeOnboardingTransport:HTTPTransport {
+  func data(for request:URLRequest) async throws -> (Data,Int){
+    // The onboarding fixture never redeems a real code or contacts a host.
+    (Data(),401)
+  }
+}
 private struct NativeOnboardingFixture:View {
   @State private var coordinator=ConnectionCoordinator(
-    persistence:OpenCodePersistence(load:{nil},save:{_ in},remove:{}))
+    persistence:OpenCodePersistence(load:{nil},save:{_ in},remove:{}),
+    transport:NativeOnboardingTransport())
   var body:some View {OpenCodeConnectionFlow(coordinator:coordinator)}
 }
 private struct RootView: View {

@@ -52,7 +52,7 @@ struct ProviderDisclosureReview:Identifiable,Sendable{
 struct NativeSharingReviewRequired:Error,Sendable{}
 /// Review is local and deliberate. It never starts or retries the user's operation.
 @MainActor @Observable final class ProviderDisclosureStore{
-  static let policyVersion="2026-10-15.1"
+  static let policyVersion="2026-10-16.1"
   private(set) var ready=false
   private(set) var review:ProviderDisclosureReview?
   private(set) var saving=false

@@ -6,6 +6,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
 /// Composition for the existing app shell. Wire DTOs and credentials stay in
 /// native services; the shell consumes the same pure conversation presentation.
 @MainActor @Observable final class NativeAppCoordinator {
+  private static let chatLoadWarning="This chat could not be loaded. Reconnect or try opening it again."
   let connection:ConnectionCoordinator
   let navigation=OpenCodeNavigationStore()
   let journal:NativeConversationJournal
@@ -44,6 +45,8 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
   @ObservationIgnored private var formTask:Task<Void,Never>?
   @ObservationIgnored private var approvalsDirty=false
   @ObservationIgnored private var formsDirty=false
+  @ObservationIgnored private var controlTask:Task<Void,Never>?
+  @ObservationIgnored private var controlsDirty=false
   init(directory:URL,connectionPersistence:OpenCodePersistence = .keychain,
        transport:any HTTPTransport=SessionTransport(profile:.openCode))throws {
     let root=try DraftStore(directory:directory).directory
@@ -71,8 +74,13 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     conversation.observe(snapshot:{[weak self] target,session,page in
       guard let self else{return}
       self.navigation.acceptNativeSnapshot(target:target,session:session,page:page,preserveWindow:self.preservingEarlierHistory)
+      if self.navigation.target==target,self.notice==Self.chatLoadWarning{self.notice=nil}
       self.results.updateReferences(self.navigation.messages,target:target)
-    },event:{[weak self] event in self?.receive(event)},resync:{[weak self] in self?.refreshInputs()})
+    },event:{[weak self] event in self?.receive(event)},resync:{[weak self] in self?.refreshInputs();self?.refreshControls()})
+    controls.observeSession{[weak self] target,session in
+      guard let self,self.navigation.target==target else{return}
+      self.navigation.acceptChat(session)
+    }
   }
   func start() async throws {
     guard !retired,!starting,!ready else{return};starting=true;startupState = .loading
@@ -116,7 +124,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     guard current==selection else{return}
     navigation.finishNativeRead(target:target,failed:conversation.currentSession==nil)
     if conversation.issue == .locationChanged{notice="This chat moved. Reopen it from Your Chats."}
-    else if conversation.currentSession==nil{notice="This chat could not be loaded. Reconnect or try opening it again."}
+    else if conversation.currentSession==nil{notice=Self.chatLoadWarning}
     else{await rememberSelection(chat:target)}
   }
   private func restoreSelection(client:OpenCodeClient,connection:OpenCodeConnection,picked:UUID)async{
@@ -154,6 +162,26 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
   }
   private func cancelInputs(){
     approvalTask?.cancel();formTask?.cancel();approvalTask=nil;formTask=nil;approvalsDirty=false;formsDirty=false
+    controlTask?.cancel();controlTask=nil;controlsDirty=false
+  }
+  private func refreshControls(){
+    // Closed settings need no catalog fetch: the conversation refresh updates
+    // its header. Keep an already-open settings snapshot current as well.
+    guard let context=controls.context,controls.snapshot != nil else{return}
+    let current=selection;controlsDirty=true
+    guard controlTask==nil else{return}
+    controlTask=Task{[weak self] in
+      guard let self else{return}
+      defer{if self.selection==current{self.controlTask=nil}}
+      while self.selection==current,self.controlsDirty,!Task.isCancelled{
+        self.controlsDirty=false
+        if self.controls.busy{
+          // A mutation owns its readback; do not supersede it with a hint.
+          do{try await Task.sleep(for:.milliseconds(100))}catch{return}
+          self.controlsDirty=true
+        }else{await self.controls.load(context)}
+      }
+    }
   }
   private func refreshInputs(){
     let current=selection
@@ -181,6 +209,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     if event.type.hasPrefix("form.") || event.type.hasPrefix("permission.") || event.type.hasPrefix("session.permission."){
       refreshInputs()
     }
+    if ["session.model.selected","session.agent.selected","server.connected"].contains(event.type){refreshControls()}
   }
   var messages:[ChatMessage]{
     guard let target=navigation.target else{return []}
@@ -292,7 +321,10 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     await connection.reconnect();await connectionChanged()
   }
   func jumpToLatest(){preservingEarlierHistory=false;navigation.showLatestSnapshot();if let target=navigation.target{results.updateReferences(navigation.messages,target:target)}}
-  func followLatest(_ following:Bool){if !following{preservingEarlierHistory=true}}
+  func followLatest(_ following:Bool){
+    if following{if preservingEarlierHistory{jumpToLatest()}}
+    else{preservingEarlierHistory=true}
+  }
   func forget(){
     deactivate();connection.forgetLocalConnection()
     if connection.state == .unpaired{navigation.deactivate()}

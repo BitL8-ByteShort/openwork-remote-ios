@@ -4,7 +4,7 @@ import CoreTransferable
 import UniformTypeIdentifiers
 import OpenWorkRemoteCore
 
-private struct NativeSelectedPhoto:Transferable,Sendable {
+struct NativeSelectedPhoto:Transferable,Sendable {
   let png:Data
   static var transferRepresentation:some TransferRepresentation{
     FileRepresentation(importedContentType:.image){received in
@@ -26,9 +26,7 @@ struct NativeAttachmentPicker:View {
     NavigationStack{
       ScrollView{
         VStack(alignment:.leading,spacing:20){
-          Text("ATTACHMENTS").font(.caption.weight(.semibold)).foregroundStyle(Theme.muted)
-          Text("Give your chat\na little context.").font(.largeTitle.weight(.semibold))
-          Text("Choose a photo or PDF. You can remove it before sending.").foregroundStyle(Theme.muted)
+          Text("Selected files are already in your draft. You choose when to send.").font(.callout).foregroundStyle(Theme.muted)
           if store.context != context{Text("This chat changed. Close this sheet and open attachments in the current chat.").foregroundStyle(Theme.muted)}
           VStack(spacing:12){
             PhotosPicker(selection:$photo,matching:.images,preferredItemEncoding:.current){AttachmentChoice("Choose photos",symbol:"photo")}.disabled(!available)
@@ -70,12 +68,15 @@ struct NativeAttachmentPicker:View {
             }.disabled(!available).accessibilityIdentifier("native-fixture-photo")
           }
           #endif
-          Text("Photos become PNGs up to 2,000 pixels on the longest edge. Location and camera metadata are not copied. Your original stays unchanged.").font(.footnote).foregroundStyle(Theme.muted)
-          Text("Some files are uploaded to your computer during preparation. The selected model must support the file type to read it. Removing a selection does not delete a temporary copy already uploaded.").font(.footnote).foregroundStyle(Theme.muted)
-          Text("Up to four files, 20 MiB per file and 40 MiB per message. The computer or model may allow less.").font(.footnote).foregroundStyle(Theme.muted)
-          Button("Add to message"){dismiss()}.buttonStyle(PrimaryButtonStyle())
+          DisclosureGroup("Attachment details"){
+            VStack(alignment:.leading,spacing:12){
+              Text("Photos become PNGs up to 2,000 pixels on the longest edge. Location and camera metadata are not copied. Your original stays unchanged.")
+              Text("Some files are uploaded to your computer during preparation. The selected model must support the file type to read it. Removing a selection does not delete a temporary copy already uploaded.")
+              Text("Up to four files, 20 MiB per file and 40 MiB per message. The computer or model may allow less.")
+            }.font(.footnote).foregroundStyle(Theme.muted).padding(.top,8)
+          }.font(.callout)
         }.padding(24).frame(maxWidth:620,alignment:.leading).frame(maxWidth:.infinity)
-      }.background(Theme.background).foregroundStyle(Theme.ink).navigationTitle("Add to your message").navigationBarTitleDisplayMode(.inline)
+      }.background(Theme.background).foregroundStyle(Theme.ink).navigationTitle("Attachments").navigationBarTitleDisplayMode(.inline)
         .toolbar{ToolbarItem(placement:.confirmationAction){Button("Done"){dismiss()}.accessibilityIdentifier("native-attachment-done")}}
         .onChange(of:photo){_,value in
           guard let value else{return};importing=true;error=nil

@@ -1,4 +1,7 @@
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
+import OpenWorkRemoteCore
 
 struct ComposerView: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -10,6 +13,12 @@ struct ComposerView: View {
   #endif
   @State private var nativeSkills:NativeWorkspaceContext?
   @State private var nativeAttachments:NativeAttachmentContext?
+  @State private var selectedPhoto:PhotosPickerItem?
+  @State private var choosingPhoto=false
+  @State private var choosingFile=false
+  @State private var selectionContext:NativeAttachmentContext?
+  @State private var importing=false
+  @State private var attachmentError:String?
   var body: some View {
     VStack(spacing: 8) {
       if let store=model.native?.attachments,let context=store.context,!store.rows.isEmpty{
@@ -17,10 +26,13 @@ struct ComposerView: View {
           ForEach(store.rows){row in
             Button{nativeAttachments=context}label:{Label(row.file.name,systemImage:row.phase == .ready ? "paperclip":"arrow.up.doc")
               .font(.caption).padding(10).background(Theme.surface,in:Capsule())}
+              .accessibilityValue(row.phase == .ready ? "Ready":row.phase == .preparing ? "Preparing":"Selected")
               .accessibilityIdentifier("native-attachment-chip-"+row.id.uuidString.lowercased())
           }
         }}
       }
+      if importing{ProgressView("Adding attachment…").font(.caption)}
+      if let attachmentError{Text(attachmentError).font(.caption).foregroundStyle(.red).fixedSize(horizontal:false,vertical:true)}
       if !model.selectedSkillIDs.isEmpty {
         ScrollView(.horizontal){HStack{ForEach(model.selectedSkillIDs,id:\.self){id in Button{model.removeSelectedSkill(id)}label:{Label(skillName(id)+" · Remove",systemImage:"sparkles").font(.caption).padding(10).background(Theme.surface,in:Capsule())}.disabled(model.sending || model.uncertain).accessibilityIdentifier("selected-skill-"+id)}}}
       }
@@ -51,13 +63,30 @@ struct ComposerView: View {
       }
       HStack(alignment: .bottom, spacing: 8) {
         Menu {
-          Button("Photos or files",systemImage:"paperclip"){
-            focused=false
-            if let context=model.native?.attachments.context{nativeAttachments=context}
+          if let store=model.native?.attachments,let context=store.context{
+            Button("Photos",systemImage:"photo"){focused=false;selectionContext=context;choosingPhoto=true}
+              .disabled(!store.canChoose || importing)
+            Button("Files",systemImage:"doc"){focused=false;selectionContext=context;choosingFile=true}
+              .disabled(!store.canChoose || importing)
             #if DEBUG
-            if model.native == nil, let context=model.attachmentContext { attachments=AttachmentPresentation(context:context) }
+            if ProcessInfo.processInfo.arguments.contains("-ui-testing-native-app"){
+              Button("Use fixture photo"){
+                focused=false;selectionContext=context
+                importAttachment{
+                  try await store.files.savePhotoPNG(Data(base64Encoded:"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=")!)
+                }
+              }.disabled(!store.canChoose || importing).accessibilityIdentifier("native-fixture-photo")
+            }
             #endif
           }
+          #if DEBUG
+          if model.native == nil{
+            Button("Photos or files",systemImage:"paperclip"){
+              focused=false
+              if let context=model.attachmentContext{attachments=AttachmentPresentation(context:context)}
+            }
+          }
+          #endif
           Button("Skills",systemImage:"sparkles"){
             focused=false
             if let context=model.native?.workspace.context{nativeSkills=context}
@@ -96,7 +125,7 @@ struct ComposerView: View {
               width: 44, height: 44)}
           }.background(model.canSend ? Theme.accent : Theme.line, in: Circle()).foregroundStyle(
             model.canSend ? Theme.onAccent : Theme.muted
-          ).disabled(!model.canSend).accessibilityLabel("Send message").accessibilityIdentifier(
+          ).disabled(!model.canSend || importing).accessibilityLabel("Send message").accessibilityIdentifier(
             "send-message")
         }
       }.padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 8).background(
@@ -120,9 +149,42 @@ struct ComposerView: View {
       .sheet(item:$nativeAttachments){context in
         if let store=model.native?.attachments{NativeAttachmentPicker(store:store,context:context)}
       }
+      .photosPicker(isPresented:$choosingPhoto,selection:$selectedPhoto,matching:.images,preferredItemEncoding:.current)
+      .onChange(of:selectedPhoto){_,photo in
+        guard let photo,let files=model.native?.attachments.files else{return}
+        importAttachment{
+          guard let selected=try await photo.loadTransferable(type:NativeSelectedPhoto.self) else{throw RemoteError.invalidResponse}
+          return try await files.savePhotoPNG(selected.png)
+        }
+      }
+      .fileImporter(isPresented:$choosingFile,allowedContentTypes:[.pdf,.jpeg,.heic,.png],allowsMultipleSelection:false){result in
+        guard case let .success(urls)=result,let selected=urls.first,let files=model.native?.attachments.files else{return}
+        importAttachment{
+          if selected.pathExtension.lowercased()=="pdf"{return try await files.importPDF(selected)}
+          return try await files.savePhotoPNG(files.normalizedPhoto(selected,maximumPixelSize:2000))
+        }
+      }
+      .nativeSharingReview(nativeAttachments == nil ? model.native:nil,operation:.attachment)
       #if DEBUG
       .task(id:model.attachmentRefreshID) { await model.refreshAttachments() }
       #endif
+  }
+  private func importAttachment(_ makeFile:@escaping @Sendable ()async throws->LocalAttachmentFile){
+    guard !importing,let context=selectionContext,let store=model.native?.attachments,store.context==context else{return}
+    importing=true;attachmentError=nil
+    Task{
+      defer{importing=false;selectedPhoto=nil}
+      do{
+        let file=try await makeFile()
+        do{try await store.add(file,context:context)}
+        catch{
+          if !store.journal.attachments(for:context.target).contains(where:{$0.id==file.id}){try? await store.files.remove(file)}
+          throw error
+        }
+      }catch{
+        if store.context==context{attachmentError="This file could not be added. Choose a supported photo or PDF up to 20 MiB. Your model needs image support to read photos."}
+      }
+    }
   }
   private func skillName(_ id: String) -> String {
     if let name=model.native?.workspace.selectedSkills.first(where:{$0.id==id})?.name { return name }

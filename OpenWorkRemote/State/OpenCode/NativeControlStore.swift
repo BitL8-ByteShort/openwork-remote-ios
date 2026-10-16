@@ -31,6 +31,8 @@ enum NativeControlIssue{case unavailable,authenticationRequired,changeUnconfirme
   private(set) var requestAlreadyResolved=false
   @ObservationIgnored private var client:(any OpenCodeControlServing)?
   @ObservationIgnored private var readID=UUID()
+  @ObservationIgnored private var sessionSink:((OpenCodeTarget,OpenCodeSession)->Void)?
+  func observeSession(_ receive:@escaping(OpenCodeTarget,OpenCodeSession)->Void){sessionSink=receive}
   @discardableResult func activate(target:OpenCodeTarget,client:any OpenCodeControlServing)->NativeControlContext {
     let context=NativeControlContext(target:target,generation:UUID())
     self.context=context;self.client=client;snapshot=nil;loading=false;busy=false;issue=nil;requestAlreadyResolved=false;readID=UUID()
@@ -54,6 +56,7 @@ enum NativeControlIssue{case unavailable,authenticationRequired,changeUnconfirme
       guard actual.id==target.sessionID,actual.projectID==target.projectID,OpenCodeIdentity.matches(actual.location.directory,target.directory),
         actual.time.archived==nil else{issue = .locationChanged;return false}
       snapshot=NativeControlSnapshot(session:actual,models:catalog,agents:registered,serverDefault:defaultValue,requests:pending,saved:grants)
+      sessionSink?(target,actual)
       issue=nil
       return true
     }catch{

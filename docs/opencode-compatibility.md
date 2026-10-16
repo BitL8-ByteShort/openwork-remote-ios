@@ -4,6 +4,14 @@ OpenCode-backed PocketWork1.0.0(9) is available in the existing internal TestFli
 
 Scoped native contract checks have passed against **OpenCode 2.0.29** on macOS and Ubuntu Linux. This does not qualify the complete source candidate for release. Native pairing uses OpenCode’s built-in HTTPS remote access. The computer must keep OpenCode running. There is no PocketWork bridge, Tailscale requirement or general remote-shell API in this connection path.
 
+## Stock OpenCode 2.0.30 candidate qualification
+
+The current candidate accepts inspected native profiles 2.0.29 and 2.0.30. Official unmodified `@opencode/cli` 2.0.30 platform binaries pass isolated macOS arm64 and Linux x86_64 checks: native password info/authentication, fresh code issuance, single-use JSON redemption, paired-token readback, typed project/location/catalog reads, chat creation/rename, deny-all chat rules, empty form/approval/history reads, non-executing prompt admission, inbox readback and deletion of the owned chat. Source comparison against official tags found no pairing/auth/session/file DTO change. These are loopback API checks, not new physical-device or end-to-end HTTPS results. Unknown patch versions remain unverified.
+
+An optional **Use server password** route is in candidate qualification. It reviews the exact HTTPS origin before sending the password, requests a fresh native code and redeems it normally. Only the resulting paired credential is saved. QR/link and password each work independently. No OpenCode fork, plugin or patch is required. The native HTTPS address must already be reachable; password authentication does not repair a failed OpenCode tunnel. Delivered TestFlight remains build9 until the candidate, revised policy and physical checks are completed.
+
+Model controls use stock published session state. An unsent model choice held only in OpenCode's desktop composer is not published through its native API; PocketWork cannot observe it yet. The earlier isolated desktop patch is research only and is not a dependency or part of the app's installation instructions.
+
 ## Feature matrix
 
 “Host check” means an actual Mac/NUC native API check using disposable resources. It does not mean the complete app passed physical-device or App Store review.

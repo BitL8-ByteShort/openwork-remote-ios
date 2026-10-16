@@ -17,7 +17,7 @@ actor NativeResponseTransport: HTTPTransport {
 actor NativeVersionChangeTransport:HTTPTransport {
   var version="2.0.29"
   var mutations=0
-  func upgrade(){version="2.0.30"}
+  func upgrade(){version="2.0.31"}
   func data(for request:URLRequest) async throws -> (Data,Int) {
     if request.url?.path=="/api/info" {
       return (Data("{\"version\":\"\(version)\",\"urls\":[],\"paths\":{\"tmp\":\"/tmp\"}}".utf8),200)
@@ -101,7 +101,8 @@ actor NativeVersionChangeTransport:HTTPTransport {
   }
   @Test func versionProfileDoesNotPromiseUnknownNativeSupport() {
     #expect(OpenCodeCompatibility.evaluate(version: "2.0.29") == .qualified)
-    #expect(OpenCodeCompatibility.evaluate(version: "2.0.30") == .unverified)
+    #expect(OpenCodeCompatibility.evaluate(version: "2.0.30") == .qualified)
+    #expect(OpenCodeCompatibility.evaluate(version: "2.0.31") == .unverified)
     #expect(OpenCodeCompatibility.evaluate(version: "1.2.0") == .incompatible)
     #expect(OpenCodeCompatibility.evaluate(version: "unknown") == .unverified)
   }
@@ -113,7 +114,7 @@ actor NativeVersionChangeTransport:HTTPTransport {
     #expect(restored.backend == .openCodeV2)
   }
   @Test func anUnverifiedServerCannotReceiveAnExperimentalMutation() async throws {
-    let transport = NativeResponseTransport(#"{"version":"2.0.30","urls":[],"paths":{"tmp":"/tmp"}}"#)
+    let transport = NativeResponseTransport(#"{"version":"2.0.31","urls":[],"paths":{"tmp":"/tmp"}}"#)
     let client = try OpenCodeClient(connection: connection(), token: "token", transport: transport)
     await #expect(throws: RemoteError.incompatible) {
       try await client.data(segments: ["api", "session", "ses_owned"], method: "PATCH", body: Data("{}".utf8))

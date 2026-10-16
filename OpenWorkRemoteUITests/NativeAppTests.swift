@@ -91,14 +91,15 @@ final class NativeAppTests:XCTestCase {
     let proof=XCTAttachment(screenshot:XCUIScreen.main.screenshot());proof.name="Safe actionable free-model failure";proof.lifetime = .keepAlways;add(proof)
   }
   @MainActor private func revealChatListControl(_ element:XCUIElement,in app:XCUIApplication){
-    XCTAssertTrue(element.waitForExistence(timeout:5))
+    XCTAssertTrue(app.buttons["native-chatlist-done"].waitForExistence(timeout:5))
     // A partially visible row can be reported hittable behind the bottom bar.
     // Scroll the whole control clear of that bar before exercising its action.
     for _ in 0..<6{
       let bottom=app.buttons["Settings"].frame.minY
-      if element.isHittable && element.frame.maxY<bottom-8{break}
+      if element.exists && element.isHittable && element.frame.maxY<bottom-8{break}
       app.windows.firstMatch.swipeUp()
     }
+    XCTAssertTrue(element.waitForExistence(timeout:5))
     XCTAssertTrue(element.isHittable)
     XCTAssertLessThan(element.frame.maxY,app.buttons["Settings"].frame.minY-8)
   }
@@ -159,13 +160,40 @@ final class NativeAppTests:XCTestCase {
     openFixtureChat(app)
     let composer=app.textFields["composer"];XCTAssertTrue(composer.waitForExistence(timeout:4));composer.tap();composer.typeText("Keep this draft until Send")
     app.buttons["send-message"].tap()
-    XCTAssertTrue(app.buttons["sharing-review-cancel"].waitForExistence(timeout:5));app.buttons["sharing-review-cancel"].tap()
+    XCTAssertTrue(app.buttons["sharing-review-cancel"].waitForExistence(timeout:5))
+    XCTAssertTrue(app.buttons["sharing-review-allow"].isHittable,"Consent must be actionable without scrolling past technical details")
+    app.buttons["sharing-review-cancel"].tap()
     XCTAssertEqual(composer.value as? String,"Keep this draft until Send")
     app.buttons["send-message"].tap();allowSharing(app)
     XCTAssertEqual(composer.value as? String,"Keep this draft until Send")
     app.buttons["send-message"].tap()
     expectation(for:NSPredicate(format:"value == %@","Message OpenCode"),evaluatedWith:composer)
     waitForExpectations(timeout:5)
+  }
+  @MainActor func testLargestTextSharingReviewKeepsDecisionControlsReachable(){
+    let app=launch(noAnimations:true,extra:["-UIPreferredContentSizeCategoryName","UICTContentSizeCategoryAccessibilityXXXL"])
+    openFixtureChat(app)
+    let composer=app.textFields["composer"];composer.tap();composer.typeText("A large-text sharing review")
+    app.buttons["send-message"].tap()
+    let allow=app.buttons["sharing-review-allow"],cancel=app.buttons["sharing-review-cancel"]
+    XCTAssertTrue(allow.waitForExistence(timeout:5));XCTAssertTrue(allow.isHittable)
+    XCTAssertGreaterThanOrEqual(allow.frame.height,44);XCTAssertTrue(cancel.isHittable)
+    let proof=XCTAttachment(screenshot:XCUIScreen.main.screenshot());proof.name="Largest-text compact sharing decisions";proof.lifetime = .keepAlways;add(proof)
+    cancel.tap();XCTAssertEqual(composer.value as? String,"A large-text sharing review")
+  }
+  @MainActor func testSettingsCanPairAgainAndCancelWithoutForgettingTheDraft(){
+    let app=launch(noAnimations:true)
+    openFixtureChat(app)
+    let composer=app.textFields["composer"];composer.tap();composer.typeText("Keep this draft while pairing again")
+    app.buttons["Open chat history"].tap();app.buttons["Settings"].tap()
+    let repair=app.buttons["native-pair-again"]
+    XCTAssertTrue(repair.waitForExistence(timeout:4));guard repair.exists else{return}
+    repair.tap()
+    XCTAssertTrue(app.buttons["native-scan-pairing"].waitForExistence(timeout:4))
+    app.buttons["native-back"].tap()
+    XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:5))
+    openFixtureChat(app)
+    XCTAssertEqual(composer.value as? String,"Keep this draft while pairing again")
   }
   @MainActor func testNativeConversationUsesExistingChatAndSettingsScreens(){
     let app=launch()
@@ -299,24 +327,76 @@ final class NativeAppTests:XCTestCase {
     app.buttons["Done"].tap()
     XCTAssertTrue(app.textFields["composer"].waitForExistence(timeout:2))
   }
+  @MainActor func testNativeProjectArchiveCanBeRestored(){
+    let app=launch(noAnimations:true)
+    app.buttons["Open chat history"].tap()
+    let project=app.buttons["native-project-project"]
+    XCTAssertTrue(project.waitForExistence(timeout:4));project.swipeRight()
+    let archive=app.buttons["Archive"]
+    XCTAssertTrue(archive.waitForExistence(timeout:3));archive.tap()
+    expectation(for:NSPredicate(format:"exists == false"),evaluatedWith:project);waitForExpectations(timeout:4)
+    app.buttons["Archived projects"].tap()
+    let visibility=app.switches["native-project-visible-project"]
+    XCTAssertTrue(visibility.waitForExistence(timeout:3));XCTAssertEqual(visibility.value as? String,"0")
+    visibility.coordinate(withNormalizedOffset:CGVector(dx:0.9,dy:0.5)).tap()
+    expectation(for:NSPredicate(format:"value == %@","1"),evaluatedWith:visibility);waitForExpectations(timeout:4)
+    app.navigationBars["Visible projects"].buttons.firstMatch.tap()
+    XCTAssertTrue(project.waitForExistence(timeout:4))
+  }
+  @MainActor func testRepliesFollowUntilReaderScrollsAwayAndResumeAtLatest(){
+    let app=launch(noAnimations:true,extra:["-native-fixture-growing-replies"])
+    openFixtureChat(app)
+    let scroll=app.scrollViews["chat-conversation"]
+    let next=app.buttons["native-fixture-next-reply"]
+    func end(_ number:Int)->XCUIElement{app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","End of reply \(number).")).firstMatch}
+    func expectVisible(_ number:Int){
+      let marker=end(number)
+      expectation(for:NSPredicate(format:"hittable == true"),evaluatedWith:marker);waitForExpectations(timeout:6)
+      XCTAssertGreaterThanOrEqual(marker.frame.maxY,scroll.frame.minY)
+      XCTAssertLessThanOrEqual(marker.frame.maxY,scroll.frame.maxY+1)
+    }
+    expectVisible(20)
+    next.tap()
+    expectation(for:NSPredicate(format:"value == %@","21"),evaluatedWith:next);waitForExpectations(timeout:3)
+    expectVisible(21)
+    XCTAssertFalse(app.buttons["New replies"].exists)
+    scroll.swipeDown();scroll.swipeDown()
+    next.tap()
+    XCTAssertTrue(app.buttons["New replies"].waitForExistence(timeout:5))
+    XCTAssertFalse(end(22).isHittable)
+    app.buttons["New replies"].tap();expectVisible(22)
+    next.tap();expectVisible(23)
+    XCTAssertFalse(app.buttons["New replies"].exists)
+  }
   @MainActor func testNativePhotoSelectionAndFileOnlySend(){
+    let systemPicker=ProcessInfo.processInfo.environment["POCKETWORK_USE_SYSTEM_PHOTO_PICKER"]=="1"
+    if systemPicker{
+      guard let expected=ProcessInfo.processInfo.environment["POCKETWORK_PHOTO_SIMULATOR_ID"],
+        ProcessInfo.processInfo.environment["SIMULATOR_UDID"]==expected else{
+        XCTFail("System photo selection requires the explicitly seeded qualification Simulator");return
+      }
+    }
     let app=launch()
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:4))
     app.buttons["Open chat history"].tap()
     app.buttons.containing(.staticText,identifier:"Native chat").firstMatch.tap()
     XCTAssertTrue(app.buttons["composer-add"].waitForExistence(timeout:4))
-    app.buttons["composer-add"].tap();app.buttons["Photos or files"].tap()
-    XCTAssertTrue(app.buttons["Choose photos"].waitForExistence(timeout:4))
-    let sample=app.buttons["native-fixture-photo"]
-    if !sample.isHittable{app.windows.firstMatch.swipeUp()}
-    sample.tap()
+    app.buttons["composer-add"].tap()
+    if systemPicker{
+      app.buttons["Photos"].tap()
+      let buttons=app.buttons.matching(NSPredicate(format:"label BEGINSWITH %@","Photo,"))
+      let images=app.images.matching(NSPredicate(format:"label BEGINSWITH %@","Photo,"))
+      let photo=buttons.firstMatch.waitForExistence(timeout:10) ? buttons.firstMatch:images.firstMatch
+      XCTAssertTrue(photo.waitForExistence(timeout:10));photo.tap()
+    }else{
+      let sample=app.buttons["native-fixture-photo"]
+      XCTAssertTrue(sample.waitForExistence(timeout:4));sample.tap()
+    }
     allowSharing(app)
-    let retry=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","native-attachment-retry-")).firstMatch
-    XCTAssertTrue(retry.waitForExistence(timeout:3));retry.tap()
-    XCTAssertTrue(app.staticTexts["Ready · inline media"].waitForExistence(timeout:5))
-    app.buttons["native-attachment-done"].tap()
     let chips=app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","native-attachment-chip-"))
-    XCTAssertEqual(chips.count,1)
+    let ready=expectation(for:NSPredicate{_,_ in chips.count==1 && chips.firstMatch.value as? String == "Ready"},evaluatedWith:nil)
+    wait(for:[ready],timeout:5)
+    XCTAssertFalse(app.buttons["native-attachment-done"].exists,"Selection must return directly to the draft")
     XCTAssertTrue(app.buttons["send-message"].isEnabled)
     app.buttons["send-message"].tap()
     let removed=NSPredicate{_,_ in chips.count==0}
@@ -328,7 +408,9 @@ final class NativeAppTests:XCTestCase {
     XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:4))
     app.buttons["Open chat history"].tap()
     app.buttons.containing(.staticText,identifier:"Native chat").firstMatch.tap()
-    let files=app.buttons["Files from this chat"]
+    XCTAssertFalse(app.buttons["Files from this chat"].exists,"The transcript must not duplicate its project-menu Files action")
+    app.buttons["Model and chat settings"].tap()
+    let files=app.buttons["native-chat-files-settings"]
     XCTAssertTrue(files.waitForExistence(timeout:4));files.tap()
   }
   @MainActor func testNativeResultPreviewAndExplicitShare(){

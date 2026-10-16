@@ -18,6 +18,7 @@ actor NativeConnectionTransport: HTTPTransport {
   var infoStatus = 200
   var pairingStatus = 200
   var reads = 0
+  var issuedCodes=0
   var version = "2.0.29"
   var holdPairing = false
   var resumePairing: CheckedContinuation<Void, Never>?
@@ -31,8 +32,13 @@ actor NativeConnectionTransport: HTTPTransport {
   func finishInfo(){resumeInfo?.resume();resumeInfo=nil}
   func finishPairing() { resumePairing?.resume(); resumePairing = nil }
   func count() -> Int { reads }
+  func issueCount()->Int{issuedCodes}
   func data(for request: URLRequest) async throws -> (Data, Int) {
     reads += 1
+    if request.url?.path == "/api/pair"{
+      issuedCodes+=1
+      return(Data(#"{"code":"synthetic_stock_code","expires_in":300}"#.utf8),200)
+    }
     if request.url?.path.hasPrefix("/auth/connect/") == true {
       if holdPairing { await withCheckedContinuation { resumePairing = $0 } }
       return (Data(#"{"token":"native-new-token"}"#.utf8),pairingStatus)
@@ -48,6 +54,39 @@ actor NativeConnectionTransport: HTTPTransport {
 }
 
 @Suite @MainActor struct OpenCodeConnectionTests {
+  @Test func passwordConnectionSavesOnlyTheOrdinaryPairedToken()async throws{
+    let saved=NativeSavedConnection(),transport=NativeConnectionTransport()
+    let model=ConnectionCoordinator(persistence:saved.persistence,transport:transport)
+    await model.connectUsingServerPassword(origin:URL(string:"https://one.example")!,password:"synthetic-master-password",displayName:"Computer")
+    #expect(model.state == .ready && !model.isBusy)
+    #expect(saved.saves==1 && saved.value?.token=="native-new-token")
+    #expect(await transport.issueCount()==1)
+    #expect(await transport.count()==4)
+  }
+  @Test func rejectedServerPasswordPreservesThePreviousConnection()async throws{
+    let original=try nativeStored(),saved=NativeSavedConnection(original),transport=NativeConnectionTransport()
+    let model=ConnectionCoordinator(persistence:saved.persistence,transport:transport);await model.start()
+    await transport.setInfoStatus(401)
+    await model.connectUsingServerPassword(origin:URL(string:"https://two.example")!,password:"incorrect-synthetic-password",displayName:"Other")
+    #expect(model.issue == .serverPasswordRejected && !model.isBusy)
+    #expect(saved.saves==0 && saved.value?.token==original.token)
+    #expect(model.connection?.id==original.connection.id)
+    #expect(await transport.issueCount()==0)
+    model.cancelPairing();#expect(model.state == .ready)
+  }
+  @Test func cancelDuringPasswordCheckCannotIssueOrSaveALateCredential()async throws{
+    let original=try nativeStored(),saved=NativeSavedConnection(original),transport=NativeConnectionTransport()
+    let model=ConnectionCoordinator(persistence:saved.persistence,transport:transport);await model.start()
+    await transport.setNextInfoHeld()
+    let attempt=Task{await model.connectUsingServerPassword(origin:URL(string:"https://two.example")!,password:"synthetic-master-password",displayName:"Other")}
+    let deadline=ContinuousClock.now.advanced(by:.seconds(2))
+    while !(await transport.infoIsHeld()),ContinuousClock.now<deadline{await Task.yield()}
+    #expect(await transport.infoIsHeld())
+    model.cancelPairing();await transport.finishInfo();await attempt.value
+    #expect(model.state == .ready && !model.isBusy)
+    #expect(await transport.issueCount()==0)
+    #expect(saved.saves==0 && saved.value?.token==original.token)
+  }
   @Test func replacedClientsLateRejectionCannotPoisonTheNewConnection()async throws{
     let saved=NativeSavedConnection(try nativeStored()),transport=NativeConnectionTransport()
     let model=ConnectionCoordinator(persistence:saved.persistence,transport:transport);await model.start()

@@ -18,7 +18,9 @@ struct NativeConnectionSettingsView:View {
           if let version=native.connection.serverVersion{LabeledContent("OpenCode",value:version)}
           if let origin=native.connection.connection?.origin{Text(origin.absoluteString).font(.caption.monospaced()).textSelection(.enabled)}
           Button(model.connection == .revoked ? "Pair again" : "Reconnect"){model.connect()}
-        }header:{Text("Paired computer")}
+          Button("Pair again"){dismiss();native.connection.pairAgain()}
+            .disabled(native.connection.isBusy).accessibilityIdentifier("native-pair-again")
+        }header:{Text("Paired computer")}footer:{Text("Use a fresh code if OpenCode’s address changed. Your saved connection stays until pairing succeeds.")}
         Section{
           NavigationLink("Visible projects"){NativeProjectVisibilityView(native:native)}
         }footer:{Text("Project visibility changes this device’s list. It does not restrict the server access granted by pairing.")}
@@ -46,7 +48,7 @@ struct NativeConnectionSettingsView:View {
     }
   }
 }
-private struct NativeProjectVisibilityView:View{
+struct NativeProjectVisibilityView:View{
   let native:NativeAppCoordinator
   var body:some View{
     Form{
@@ -54,6 +56,7 @@ private struct NativeProjectVisibilityView:View{
         Toggle("Show future projects",isOn:Binding(get:{native.visibility.policy.showNewProjects},set:{value in Task{try? await native.visibility.setShowNewProjects(value)}}))
         ForEach(native.navigation.projects){project in
           Toggle(project.name ?? project.canonical,isOn:Binding(get:{native.visibility.policy.shows(project.id)},set:{value in Task{try? await native.visibility.setShown(project.id,shown:value)}}))
+            .accessibilityIdentifier("native-project-visible-"+project.id)
         }
       }header:{Text("On this device")}footer:{Text("Hidden projects remain accessible through the paired server. This is a local display preference, not a permission boundary.")}
       if let error=native.visibility.lastError{Section{Text(error).foregroundStyle(.red)}}
