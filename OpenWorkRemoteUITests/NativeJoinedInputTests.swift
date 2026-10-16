@@ -9,6 +9,73 @@ final class NativeJoinedInputTests: XCTestCase {
     let origin:URL
     let password:String
   }
+  @MainActor func testNormalReleasePasswordPairingThroughReview()throws{
+    #if !targetEnvironment(simulator)
+    throw XCTSkip("This opt-in flow owns a qualification Simulator.")
+    #else
+    guard let path=ProcessInfo.processInfo.environment["POCKETWORK_NATIVE_PASSWORD_UI_CONFIG"] else{
+      throw XCTSkip("Requires the private, explicitly owned native reviewer configuration.")
+    }
+    let file=URL(fileURLWithPath:path),bytes=try Data(contentsOf:file)
+    guard bytes.count<2_000_000 else{throw XCTSkip("Unexpected qualification fixture size")}
+    let config=try JSONDecoder().decode(ReviewerSafariConfiguration.self,from:bytes)
+    guard config.disposable,config.ownerNonce.range(of:#"^[0-9a-f]{32}$"#,options:.regularExpression) != nil,
+      config.origin.scheme=="https",config.origin.host != nil,config.origin.user==nil,config.origin.password==nil,
+      ["","/"].contains(config.origin.path),config.origin.query==nil,config.origin.fragment==nil else{
+      throw XCTSkip("Use only the explicitly owned native HTTPS reviewer target")
+    }
+    let attempt=file.appendingPathExtension("native-password-ui-attempt")
+    guard !FileManager.default.fileExists(atPath:attempt.path) else{
+      throw XCTSkip("Inspect the existing password-pairing attempt before another native issuance.")
+    }
+    continueAfterFailure=false
+    XCUIDevice.shared.orientation = .portrait
+    let app=XCUIApplication();app.launchArguments=[];app.launch()
+    let entry:String
+    if app.buttons["native-get-started"].waitForExistence(timeout:5){
+      entry="welcome"
+      app.buttons["native-get-started"].tap();app.buttons["native-computer-ready"].tap()
+    }else{
+      entry="settings"
+      let history=app.buttons["Open chat history"]
+      XCTAssertTrue(history.waitForExistence(timeout:25));history.tap()
+      let settings=app.buttons["Settings"]
+      XCTAssertTrue(settings.waitForExistence(timeout:5));settings.tap()
+      let pairAgain=app.buttons["native-pair-again"]
+      XCTAssertTrue(pairAgain.waitForExistence(timeout:5))
+      for _ in 0..<8{if pairAgain.isHittable{break};app.swipeUp()}
+      XCTAssertTrue(pairAgain.isHittable);pairAgain.tap()
+    }
+    let option=app.buttons["native-server-password"]
+    for _ in 0..<8{if option.isHittable{break};app.swipeUp()}
+    XCTAssertTrue(option.isHittable);option.tap()
+    let address=app.textFields["native-server-address"],password=app.secureTextFields["native-server-password-value"]
+    XCTAssertTrue(address.waitForExistence(timeout:5));address.tap();address.typeText(config.origin.absoluteString+"\n")
+    password.typeText(config.password)
+    app.buttons["native-review-server-password"].tap()
+    let reviewed=app.staticTexts["native-password-reviewed-origin"]
+    XCTAssertTrue(reviewed.waitForExistence(timeout:5));XCTAssertEqual(reviewed.label,config.origin.absoluteString)
+    let alert=app.alerts["Save Password?"],sheet=app.sheets["Save Password?"]
+    let save:XCUIElement? = alert.waitForExistence(timeout:2) ? alert : (sheet.waitForExistence(timeout:2) ? sheet:nil)
+    if let save{
+      let decline=save.buttons["Not Now"],actions=save.scrollViews.containing(.button,identifier:"Not Now").firstMatch
+      for _ in 0..<3{if decline.isHittable{break};if actions.exists{actions.swipeUp()}}
+      XCTAssertTrue(decline.isHittable);decline.tap()
+    }
+    let connect=app.buttons["native-confirm-server-password"]
+    if !connect.isHittable{app.swipeUp()};XCTAssertTrue(connect.isHittable)
+    try Data("One explicit native HTTPS password-pairing attempt through normal Release UI.\n".utf8).write(to:attempt,options:.atomic)
+    connect.tap()
+    XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:60))
+    XCTAssertFalse(app.secureTextFields["native-server-password-value"].exists)
+    app.terminate();app.launch()
+    XCTAssertTrue(app.buttons["Open chat history"].waitForExistence(timeout:40),"Reload the ordinary paired credential without the server password")
+    let result:[String:String]=["entry":entry,"nativePasswordPairing":"passed","savedPairedCredentialReload":"passed","providerExecution":"none"]
+    try JSONSerialization.data(withJSONObject:result,options:.sortedKeys).write(to:file.appendingPathExtension("native-password-ui-result.json"),options:.atomic)
+    let proof=XCTAttachment(screenshot:app.screenshot());proof.name="Normal Release native password connection restored";proof.lifetime = .keepAlways;add(proof)
+    app.terminate()
+    #endif
+  }
   @MainActor func testNativeSafariReviewerPasswordSignIn()throws{
     #if !targetEnvironment(simulator)
     throw XCTSkip("This opt-in sign-in owns the clean reviewer Simulator.")

@@ -22,7 +22,7 @@ These are implemented features with synthetic and scoped native-host checks. The
 
 ## Connect
 
-The inspected baseline is **OpenCode 2.0.29**. Keep the compatible OpenCode server running and the computer awake.
+The initial inspected baseline is **OpenCode 2.0.29**; the source candidate also accepts the scoped, tested **2.0.30** profile. Keep the compatible OpenCode server running and the computer awake.
 
 1. In OpenCode Settings, enable its built-in **Remote access** and choose **Pair device**.
 2. In PocketWork, scan the QR code or paste the pairing link.
@@ -31,7 +31,9 @@ The inspected baseline is **OpenCode 2.0.29**. Keep the compatible OpenCode serv
 
 On a CLI-only host, OpenCode v2.0.29 also provides `opencode pair --remote`. It prints native pairing links and a QR code; scan the QR or copy its HTTPS link into PocketWork. If native Remote access is off, OpenCode asks before enabling it. The app ignores the QR's plain-HTTP local addresses and uses an advertised HTTPS address.
 
-This connection uses OpenCode's native remote access. It needs no PocketWork bridge, OpenWork fork or separate Tailscale app. Normal TLS validation stays enabled. OpenCode may route encrypted traffic through OpenTunnel; the host and model-provider configuration still determine where work and data go.
+The source candidate also offers **Use server password**: enter the standard OpenCode server’s HTTPS address and password, review the exact destination, then Connect. It requests and redeems a native pairing code and saves only the resulting paired credential. QR/link and password are independent options. iOS may separately offer its own Passwords save choice. This candidate is not yet in the delivered build9 beta.
+
+This connection uses OpenCode's native remote access. It needs no PocketWork bridge, OpenCode fork/plugin/patch or separate Tailscale app. Normal TLS validation stays enabled. OpenCode may route encrypted traffic through OpenTunnel; the host and model-provider configuration still determine where work and data go.
 
 **Pairing grants server-wide access.** Visible projects and “Show future projects” change this device's lists; they don't restrict the credential. Tool approval requests, saved grants and chat rules are separate controls. Forget removes the credential from this device and does not revoke it on the server. Read [Security](SECURITY.md) before pairing a shared server.
 

@@ -3,7 +3,7 @@ import Observation
 import OpenWorkRemoteCore
 
 enum NativeConnectionState:Equatable { case unpaired, pairing, connecting, ready, offline, authenticationRejected, incompatible, storageUnavailable }
-enum NativeConnectionIssue { case freshPairingCodeRequired, pairingOutcomeUnknown, networkUnavailable, storageUnavailable, incompatible }
+enum NativeConnectionIssue { case freshPairingCodeRequired, pairingOutcomeUnknown, networkUnavailable, storageUnavailable, incompatible, serverPasswordRejected, passwordConnectionUnconfirmed }
 @MainActor @Observable final class ConnectionCoordinator {
   private(set) var state: NativeConnectionState = .unpaired{didSet{if state != oldValue{changeObserver?()}}}
   private(set) var issue: NativeConnectionIssue?
@@ -17,6 +17,7 @@ enum NativeConnectionIssue { case freshPairingCodeRequired, pairingOutcomeUnknow
   @ObservationIgnored private var generation: UInt64 = 0
   @ObservationIgnored private var resumeState: NativeConnectionState = .unpaired
   @ObservationIgnored private var changeObserver:(@MainActor ()->Void)?
+  @ObservationIgnored private var passwordRequest:Task<OpenCodePairingPayload,any Error>?
   func observeChanges(_ handler:@escaping @MainActor ()->Void){changeObserver=handler}
 
   init(persistence: OpenCodePersistence = .keychain,
@@ -33,6 +34,7 @@ enum NativeConnectionIssue { case freshPairingCodeRequired, pairingOutcomeUnknow
     await reconnect()
   }
   func connect(_ payload: OpenCodePairingPayload, origin: URL, displayName: String) async {
+    cancelPasswordRequest()
     generation &+= 1; let current = generation
     state = .pairing; issue = nil; isBusy = true
     defer { if generation == current { isBusy = false } }
@@ -71,7 +73,35 @@ enum NativeConnectionIssue { case freshPairingCodeRequired, pairingOutcomeUnknow
       }
     }
   }
+  func connectUsingServerPassword(origin:URL,password:String,displayName:String)async{
+    cancelPasswordRequest()
+    generation &+= 1;let current=generation
+    state = .pairing;issue=nil;isBusy=true
+    defer{if generation==current{passwordRequest=nil;isBusy=false}}
+    do{
+      try Task.checkCancellation()
+      let pairing=OpenCodePairingClient(transport:transport)
+      let request=Task{try await pairing.issueUsingServerPassword(origin:origin,password:password)}
+      passwordRequest=request
+      let payload=try await withTaskCancellationHandler{
+        try await request.value
+      }onCancel:{request.cancel()}
+      guard generation==current else{return}
+      try Task.checkCancellation()
+      passwordRequest=nil
+      // Reuse normal single-use redemption, info validation and atomic persistence.
+      // The master password is never put into a saved connection or active client.
+      await connect(payload,origin:origin,displayName:displayName)
+    }catch{
+      guard generation==current else{return}
+      if error is CancellationError || (error as? URLError)?.code == .cancelled{cancelPairing();return}
+      if error as? RemoteError == .incompatible{state = .incompatible;issue = .incompatible}
+      else{state = .pairing;issue = error as? RemoteError == .unauthorized ? .serverPasswordRejected:.passwordConnectionUnconfirmed}
+    }
+  }
+  private func cancelPasswordRequest(){passwordRequest?.cancel();passwordRequest=nil}
   func reconnect() async {
+    cancelPasswordRequest()
     guard state != .authenticationRejected, let saved else { return }
     generation &+= 1; let current = generation
     client?.retire();client=nil
@@ -114,15 +144,18 @@ enum NativeConnectionIssue { case freshPairingCodeRequired, pairingOutcomeUnknow
       }
     }
   }
-  func retireRequests(){client?.retire();client=nil;generation &+= 1;isBusy=false}
+  func retireRequests(){cancelPasswordRequest();client?.retire();client=nil;generation &+= 1;isBusy=false}
   func pairAgain() {
+    cancelPasswordRequest()
     generation &+= 1; state = .pairing; issue = nil; isBusy = false
   }
   func cancelPairing() {
+    cancelPasswordRequest()
     generation &+= 1; state = resumeState; issue = nil; isBusy = false
   }
   func sceneActive(_ active: Bool) async {
     if !active {
+      cancelPasswordRequest()
       generation &+= 1
       if state == .pairing && isBusy { issue = .pairingOutcomeUnknown }
       if state == .connecting { state = .offline; resumeState = state }

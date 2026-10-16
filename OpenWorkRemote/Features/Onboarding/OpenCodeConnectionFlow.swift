@@ -10,6 +10,7 @@ struct OpenCodeConnectionFlow:View {
   var onDataControls:(()->Void)? = nil
   var onAbout:(()->Void)? = nil
   var beginsWithPairing=false
+  @Environment(\.scenePhase) private var scenePhase
   @State private var step:Step = .welcome
   @State private var sheet:Sheet?
   @State private var reviewed:OpenCodePairingPayload?
@@ -17,7 +18,12 @@ struct OpenCodeConnectionFlow:View {
   @State private var inputError:String?
   @State private var pairingTask:Task<Void,Never>?
   @State private var copiedDraft=false
-  private enum Step {case welcome,setup,pair,review}
+  @State private var serverAddress=""
+  @State private var serverPassword=""
+  @State private var passwordError:String?
+  @FocusState private var serverField:ServerField?
+  private enum ServerField:Hashable{case address,password}
+  private enum Step {case welcome,setup,pair,review,serverPassword,passwordReview}
   private enum Sheet:String,Identifiable {case scan,paste;var id:String{rawValue}}
 
   var body:some View {
@@ -31,12 +37,23 @@ struct OpenCodeConnectionFlow:View {
             case .setup:setup
             case .pair:pair
             case .review:review
+            case .serverPassword:passwordEntry
+            case .passwordReview:passwordReview
             }
           }
         }.padding(24).frame(maxWidth:560,alignment:.leading).frame(maxWidth:.infinity)
       }.scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge:.bottom){
+          if step == .serverPassword && !coordinator.isBusy{
+            VStack(spacing:12){
+              Button("Review connection"){reviewServerPassword()}.buttonStyle(PrimaryButtonStyle())
+                .disabled(!canReviewPassword).accessibilityIdentifier("native-review-server-password")
+              Text("Nothing is sent until you choose Connect.").font(.caption).foregroundStyle(Theme.muted)
+            }.padding(24).frame(maxWidth:560).frame(maxWidth:.infinity).background(Theme.background)
+          }
+        }
         .background(Theme.background).foregroundStyle(Theme.ink)
-        .navigationTitle(step == .setup ? "Computer setup" : step == .welcome ? "" : "Pair your computer")
+        .navigationTitle(step == .serverPassword ? "Server password" : step == .passwordReview ? "Review connection" : step == .setup ? "Computer setup" : step == .welcome ? "" : "Pair your computer")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
           if let onAbout{ToolbarItem(placement:.topBarTrailing){Button(action:onAbout){Label("About & Help",systemImage:"questionmark.circle")}.accessibilityIdentifier("native-about-open")}}
@@ -60,8 +77,14 @@ struct OpenCodeConnectionFlow:View {
             }
           }
         }
-        .onDisappear {pairingTask?.cancel()}
+        .onDisappear {pairingTask?.cancel();serverPassword=""}
         .onAppear{if beginsWithPairing,step == .welcome{step = .pair}}
+        .onChange(of:scenePhase){_,phase in
+          if phase == .background && (step == .serverPassword || step == .passwordReview){
+            pairingTask?.cancel();serverPassword="";serverField=nil;selectedOrigin=nil
+            coordinator.cancelPairing();step = .serverPassword
+          }
+        }
     }
   }
   private var welcome:some View {
@@ -113,7 +136,63 @@ struct OpenCodeConnectionFlow:View {
       if let inputError {Text(inputError).font(.callout).foregroundStyle(.red).accessibilityIdentifier("native-pairing-error")}
       Button("Scan pairing code"){sheet = .scan}.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("native-scan-pairing")
       Button("Paste pairing link"){sheet = .paste}.frame(maxWidth:.infinity,minHeight:44).accessibilityIdentifier("native-paste-pairing")
+      Button("Use server password"){
+        serverPassword="";passwordError=nil;coordinator.pairAgain();step = .serverPassword
+      }.frame(maxWidth:.infinity,minHeight:44).accessibilityIdentifier("native-server-password")
       Text("You’ll review the server before connecting.").font(.caption).foregroundStyle(Theme.muted)
+    }
+  }
+  private var canReviewPassword:Bool{
+    !serverAddress.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && serverAddress.utf8.count<=4_096 &&
+      !serverPassword.isEmpty && serverPassword.utf8.count<=16_384 &&
+      !serverPassword.unicodeScalars.contains(where:CharacterSet.controlCharacters.contains)
+  }
+  private var passwordEntry:some View{
+    VStack(alignment:.leading,spacing:24){
+      Text("Use your server password.").font(.largeTitle.weight(.semibold)).tracking(-0.8)
+      Text("Enter your OpenCode server’s HTTPS address and password.").foregroundStyle(Theme.muted)
+      VStack(alignment:.leading,spacing:8){
+        Text("Server address").font(.callout).foregroundStyle(Theme.muted)
+        TextField("https://computer.example",text:$serverAddress)
+          .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+          .textContentType(.URL).submitLabel(.next).focused($serverField,equals:.address)
+          .onSubmit{serverField = .password}
+          .padding(16).background(Theme.surface,in:RoundedRectangle(cornerRadius:16))
+          .accessibilityLabel("Server address").accessibilityIdentifier("native-server-address")
+          .privacySensitive()
+      }
+      VStack(alignment:.leading,spacing:8){
+        Text("Server password").font(.callout).foregroundStyle(Theme.muted)
+        SecureField("Server password",text:$serverPassword)
+          .textContentType(.password).textInputAutocapitalization(.never).autocorrectionDisabled()
+          .submitLabel(.go).focused($serverField,equals:.password)
+          .onSubmit{if canReviewPassword{reviewServerPassword()}}
+          .padding(16).background(Theme.surface,in:RoundedRectangle(cornerRadius:16))
+          .accessibilityIdentifier("native-server-password-value").privacySensitive()
+      }
+      Text("Used only to create this paired connection. PocketWork won’t save this password.")
+        .font(.callout).foregroundStyle(Theme.muted)
+      if let message=passwordError ?? coordinator.issue.map({passwordIssueText($0)}){
+        Text(message).font(.callout).foregroundStyle(.red).accessibilityIdentifier("native-password-error")
+      }
+    }
+  }
+  private var passwordReview:some View{
+    VStack(alignment:.leading,spacing:24){
+      Text("Connect to this OpenCode?").font(.largeTitle.weight(.semibold)).tracking(-0.8)
+      Text("Check the address against your computer.").foregroundStyle(Theme.muted)
+      if let selectedOrigin{
+        Label{Text(verbatim:selectedOrigin.absoluteString).font(.body.monospaced())
+          .fixedSize(horizontal:false,vertical:true).accessibilityIdentifier("native-password-reviewed-origin")}
+          icon:{Image(systemName:"desktopcomputer")}
+          .padding(18).frame(maxWidth:.infinity,alignment:.leading).background(Theme.surface,in:RoundedRectangle(cornerRadius:20))
+      }
+      Text("Your password goes only to this server to create a standard paired connection.").foregroundStyle(Theme.muted)
+      Text("Pairing gives PocketWork access to this server’s projects and chats.").font(.callout).foregroundStyle(Theme.muted)
+      Button("Connect"){connectUsingServerPassword()}.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("native-confirm-server-password")
+      Button("Cancel"){
+        serverPassword="";selectedOrigin=nil;passwordError=nil;coordinator.cancelPairing();step = .pair
+      }.frame(maxWidth:.infinity,minHeight:44).accessibilityIdentifier("native-cancel-server-password")
     }
   }
   private var review:some View {
@@ -154,7 +233,7 @@ struct OpenCodeConnectionFlow:View {
       ProgressView("Checking your computer…").frame(maxWidth:.infinity,minHeight:160).accessibilityIdentifier("native-connecting")
       Text("OpenCode verifies the pairing code. PocketWork then checks the connection.").foregroundStyle(Theme.muted)
       Button("Cancel pairing") {
-        pairingTask?.cancel();coordinator.cancelPairing();reviewed=nil;selectedOrigin=nil;step = .pair
+        pairingTask?.cancel();serverPassword="";coordinator.cancelPairing();reviewed=nil;selectedOrigin=nil;step = .pair
       }.frame(maxWidth:.infinity,minHeight:44)
     }
   }
@@ -177,9 +256,44 @@ struct OpenCodeConnectionFlow:View {
       if !Task.isCancelled,coordinator.state == .ready {self.reviewed=nil;self.selectedOrigin=nil;onConnected()}
     }
   }
+  private func reviewServerPassword(){
+    guard canReviewPassword else{return}
+    do{
+      let value=serverAddress.trimmingCharacters(in:.whitespacesAndNewlines)
+      guard let url=URL(string:value) else{throw RemoteError.invalidPairing}
+      let candidate=try OpenCodeConnection(origin:url,displayName:url.host ?? "Computer")
+      selectedOrigin=candidate.origin;reviewed=nil;passwordError=nil;serverField=nil
+      coordinator.pairAgain();step = .passwordReview
+    }catch{passwordError="Enter an HTTPS server address without a pairing path, username, query or fragment."}
+  }
+  private func connectUsingServerPassword(){
+    guard let origin=selectedOrigin,!serverPassword.isEmpty else{return}
+    let password=serverPassword;serverPassword="";serverField=nil
+    pairingTask?.cancel()
+    pairingTask=Task{
+      await coordinator.connectUsingServerPassword(origin:origin,password:password,displayName:origin.host ?? "Computer")
+      guard !Task.isCancelled else{return}
+      if coordinator.state == .ready{selectedOrigin=nil;onConnected()}
+      else{passwordError=coordinator.issue.map({passwordIssueText($0)});selectedOrigin=nil;step = .serverPassword}
+    }
+  }
   private func back() {
-    pairingTask?.cancel();coordinator.cancelPairing();inputError=nil
-    switch step {case .welcome:break;case .setup:step = .welcome;case .pair:step = .setup;case .review:reviewed=nil;selectedOrigin=nil;step = .pair}
+    pairingTask?.cancel();coordinator.cancelPairing();inputError=nil;serverPassword="";passwordError=nil;serverField=nil
+    switch step {
+    case .welcome:break
+    case .setup:step = .welcome
+    case .pair:step = .setup
+    case .review:reviewed=nil;selectedOrigin=nil;step = .pair
+    case .serverPassword:selectedOrigin=nil;step = .pair
+    case .passwordReview:selectedOrigin=nil;step = .serverPassword
+    }
+  }
+  private func passwordIssueText(_ issue:NativeConnectionIssue)->String {
+    switch issue {
+    case .freshPairingCodeRequired,.pairingOutcomeUnknown:
+      "Connection couldn’t be confirmed. Re-enter the server details to create a fresh paired connection. Your previous connection is retained."
+    default:issueText(issue)
+    }
   }
   private func issueText(_ issue:NativeConnectionIssue)->String {
     switch issue {
@@ -188,6 +302,8 @@ struct OpenCodeConnectionFlow:View {
     case .networkUnavailable:"Your computer couldn’t be reached. Keep OpenCode open and try again."
     case .storageUnavailable:"The connection couldn’t be saved. Unlock this device and try again. Your previous connection is retained."
     case .incompatible:"This OpenCode version hasn’t been qualified for PocketWork yet. Check the supported version before pairing."
+    case .serverPasswordRejected:"The server password wasn’t accepted. Check it in OpenCode and enter it again."
+    case .passwordConnectionUnconfirmed:"Connection couldn’t be confirmed. Re-enter the server details to try again. Your previous connection is retained."
     }
   }
 }
