@@ -6,6 +6,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
 /// Composition for the existing app shell. Wire DTOs and credentials stay in
 /// native services; the shell consumes the same pure conversation presentation.
 @MainActor @Observable final class NativeAppCoordinator {
+  private static let chatLoadWarning="This chat could not be loaded. Reconnect or try opening it again."
   let connection:ConnectionCoordinator
   let navigation=OpenCodeNavigationStore()
   let journal:NativeConversationJournal
@@ -73,6 +74,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     conversation.observe(snapshot:{[weak self] target,session,page in
       guard let self else{return}
       self.navigation.acceptNativeSnapshot(target:target,session:session,page:page,preserveWindow:self.preservingEarlierHistory)
+      if self.navigation.target==target,self.notice==Self.chatLoadWarning{self.notice=nil}
       self.results.updateReferences(self.navigation.messages,target:target)
     },event:{[weak self] event in self?.receive(event)},resync:{[weak self] in self?.refreshInputs();self?.refreshControls()})
     controls.observeSession{[weak self] target,session in
@@ -122,7 +124,7 @@ enum NativeStartupState{case loading,ready,storageUnavailable}
     guard current==selection else{return}
     navigation.finishNativeRead(target:target,failed:conversation.currentSession==nil)
     if conversation.issue == .locationChanged{notice="This chat moved. Reopen it from Your Chats."}
-    else if conversation.currentSession==nil{notice="This chat could not be loaded. Reconnect or try opening it again."}
+    else if conversation.currentSession==nil{notice=Self.chatLoadWarning}
     else{await rememberSelection(chat:target)}
   }
   private func restoreSelection(client:OpenCodeClient,connection:OpenCodeConnection,picked:UUID)async{

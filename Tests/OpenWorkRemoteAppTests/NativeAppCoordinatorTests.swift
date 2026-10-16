@@ -23,6 +23,8 @@ actor NativeShellTransport:HTTPTransport {
   var sessionDirectory="/project"
   var privacyCatalog=false
   var sessionModel:String?
+  var inboxUnavailable=false
+  func setInboxUnavailable(_ value:Bool){inboxUnavailable=value}
   func selectModelOnComputer(_ id:String){sessionModel=id}
   var historyText="Native message"
   var historyID="msg_owned"
@@ -61,7 +63,9 @@ actor NativeShellTransport:HTTPTransport {
       let payload:[String:Any]=["id":body["id"]!,"sessionID":"ses_owned","type":"user","payload":["text":body["text"]!]]
       admitted=payload;value=["data":payload]
       if holdPrompt{holdPrompt=false;await withCheckedContinuation{heldPrompt=$0}}
-    case "/api/session/ses_owned/inbox":value=["data":admitted.map{[$0]} ?? []]
+    case "/api/session/ses_owned/inbox":
+      if inboxUnavailable{throw RemoteError.unavailable}
+      value=["data":admitted.map{[$0]} ?? []]
     case "/api/session/active":value=["data":[:]]
     case "/api/session/ses_owned/permission":value=["data":[["id":"per_owned","sessionID":"ses_owned","action":"read","resources":["notes.txt"]]]]
     case "/api/session/ses_owned/form":value=["data":[["id":"frm_owned","sessionID":"ses_owned","title":"Choose","fields":[["key":"answer","type":"string","required":true]]]]]
@@ -82,6 +86,24 @@ actor NativeShellTransport:HTTPTransport {
   func sentPrompts()->Int{prompts}
 }
 @Suite @MainActor struct NativeAppCoordinatorTests {
+  @Test(arguments:[false,true]) func recoveredChatReadClearsOnlyItsOwnLoadWarning(preserveOtherNotice:Bool)async throws{
+    let directory=FileManager.default.temporaryDirectory.appending(path:"native-read-recovery-"+UUID().uuidString)
+    defer{try? FileManager.default.removeItem(at:directory)}
+    let saved=try nativeStored(),transport=NativeShellTransport()
+    await transport.allowHistory();await transport.setInboxUnavailable(true)
+    let app=try NativeAppCoordinator(directory:directory,connectionPersistence:OpenCodePersistence(load:{saved},save:{_ in},remove:{}),transport:transport)
+    defer{app.deactivate()}
+    try await app.start();await app.open(try #require(app.navigation.sessions.first))
+    #expect(app.conversation.currentSession==nil)
+    #expect(app.notice=="This chat could not be loaded. Reconnect or try opening it again.")
+    if preserveOtherNotice{app.notice="Your draft could not be saved."}
+    await transport.setInboxUnavailable(false)
+    await app.conversation.refresh()
+    #expect(app.conversation.currentSession?.id=="ses_owned")
+    #expect(app.messages.first?.blocks.first?.text=="Native message")
+    #expect(app.notice==(preserveOtherNotice ? "Your draft could not be saved.":nil))
+    #expect(await transport.sentPrompts()==0)
+  }
   @Test func publishedModelChangeRefreshesOpenSettingsWithoutSendingAMessage()async throws{
     let directory=FileManager.default.temporaryDirectory.appending(path:"native-model-event-"+UUID().uuidString)
     defer{try? FileManager.default.removeItem(at:directory)}

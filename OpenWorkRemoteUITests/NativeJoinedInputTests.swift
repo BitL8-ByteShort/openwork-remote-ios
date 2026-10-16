@@ -3,6 +3,63 @@ import XCTest
 /// Opt-in normal-app checks using explicitly owned native qualification fixtures.
 /// Pairing uses the real UI. No fixture launch flags or Keychain injection are used.
 final class NativeJoinedInputTests: XCTestCase {
+  private struct ReviewerConfiguration:Decodable{
+    let disposable:Bool
+    let ownerNonce:String
+    let projectID:String
+    let projectName:String
+    let chatTitle:String
+  }
+  @MainActor func testNormalReleaseIsolatedReviewerReply()throws{
+    #if !targetEnvironment(simulator)
+    throw XCTSkip("This opt-in journey owns a clean Simulator and an isolated review server.")
+    #else
+    guard let path=ProcessInfo.processInfo.environment["POCKETWORK_NATIVE_REVIEW_UI_CONFIG"] else{
+      throw XCTSkip("Requires a preflight-verified, isolated reviewer project and a normally paired app.")
+    }
+    let file=URL(fileURLWithPath:path)
+    let config=try JSONDecoder().decode(ReviewerConfiguration.self,from:Data(contentsOf:file))
+    guard config.disposable,config.ownerNonce.range(of:#"^[0-9a-f]{32}$"#,options:.regularExpression) != nil,
+      config.projectID.range(of:#"^[0-9a-f]{40}$"#,options:.regularExpression) != nil,
+      config.projectName=="PocketWork Review",config.chatTitle=="PocketWork review starter — local model" else{
+      throw XCTSkip("The supplied target is not the dedicated synthetic reviewer environment.")
+    }
+    let attempted=file.appendingPathExtension("send-attempt")
+    guard !FileManager.default.fileExists(atPath:attempted.path) else{
+      throw XCTSkip("Read the owned native history/inbox before authorizing another send. Never replay an unknown outcome.")
+    }
+    continueAfterFailure=false
+    XCUIDevice.shared.orientation = .portrait
+    let app=XCUIApplication();app.launchArguments=[];app.launch()
+    let history=app.buttons["Open chat history"]
+    XCTAssertTrue(history.waitForExistence(timeout:30));history.tap()
+    let project=app.buttons["native-project-"+config.projectID]
+    XCTAssertTrue(project.waitForExistence(timeout:60),"Wait for the actual native project response, not just the connected shell");project.tap()
+    let list=app.collectionViews.firstMatch
+    XCTAssertTrue(list.waitForExistence(timeout:5))
+    let chat=app.buttons.containing(.staticText,identifier:config.chatTitle).firstMatch
+    for _ in 0..<16{if chat.exists && chat.isHittable{break};list.swipeUp()}
+    XCTAssertTrue(chat.waitForExistence(timeout:20));XCTAssertTrue(chat.isHittable);chat.tap()
+    let composer=app.textFields["composer"],send=app.buttons["send-message"]
+    XCTAssertTrue(composer.waitForExistence(timeout:15));XCTAssertTrue(composer.isEnabled)
+    XCTAssertTrue(["","Message OpenCode"].contains(composer.value as? String ?? "unexpected"),"Preserve an existing draft")
+    XCTAssertFalse(send.isEnabled,"Do not add a request to another pending selection")
+    composer.tap();composer.typeText("Reply with exactly: PocketWork mobile review ready")
+    XCTAssertTrue(send.isEnabled)
+    try Data("One explicitly authorized synthetic reviewer prompt; inspect history/inbox before any later attempt.\n".utf8).write(to:attempted,options:.atomic)
+    send.tap()
+    let allow=app.buttons["sharing-review-allow"]
+    if allow.waitForExistence(timeout:20){
+      XCTAssertTrue(allow.isHittable);allow.tap()
+      XCTAssertTrue(send.waitForExistence(timeout:10));XCTAssertTrue(send.isEnabled)
+      send.tap()
+    }
+    XCTAssertTrue(app.staticTexts["PocketWork mobile review ready"].waitForExistence(timeout:120))
+    XCTAssertFalse(app.staticTexts["This chat could not be loaded. Reconnect or try opening it again."].exists)
+    let proof=XCTAttachment(screenshot:XCUIScreen.main.screenshot());proof.name="Normal Release isolated reviewer reply";proof.lifetime = .keepAlways;add(proof)
+    app.terminate()
+    #endif
+  }
   private struct PhotoConfiguration:Decodable{
     let disposable:Bool
     let pairing:String
