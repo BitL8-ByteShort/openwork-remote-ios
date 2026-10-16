@@ -15,7 +15,7 @@ final class NativeStartupTests:XCTestCase{
     for _ in 0..<10{if privacy.isHittable{break};app.windows.firstMatch.swipeUp()}
     XCTAssertTrue(privacy.isHittable);privacy.tap()
     XCTAssertTrue(app.scrollViews["information-document-privacy"].waitForExistence(timeout:3))
-    XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","2026-10-15.1")).firstMatch.exists)
+    XCTAssertTrue(app.staticTexts.containing(NSPredicate(format:"label CONTAINS %@","2026-10-16.1")).firstMatch.exists)
     let proof=XCTAttachment(screenshot:XCUIScreen.main.screenshot());proof.name="Native offline privacy largest text";proof.lifetime = .keepAlways;add(proof)
     app.navigationBars["Privacy policy"].buttons.element(boundBy:0).tap()
     XCTAssertTrue(app.buttons["native-about-done"].waitForExistence(timeout:3))

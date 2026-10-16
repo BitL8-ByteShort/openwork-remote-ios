@@ -3,7 +3,7 @@ import XCTest
 final class AboutUITests: XCTestCase {
   @MainActor private func launch(largeText: Bool = false) -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = ["-ui-testing-information", "-ui-testing-onboarding"]
+    app.launchArguments = ["-ui-testing-native-startup"]
     if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
     app.launch()
     return app
@@ -26,32 +26,47 @@ final class AboutUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: element)], timeout: 4), .completed)
         return
       }
-      app.swipeUp()
+      // On iPad the document is a centered sheet. A whole-app swipe can
+      // land on the welcome screen behind it instead of scrolling its text.
+      let help = app.scrollViews["information-document-help"]
+      if help.exists { help.swipeUp() }
+      else if app.collectionViews.firstMatch.exists { app.collectionViews.firstMatch.swipeUp() }
+      else { app.windows.firstMatch.swipeUp() }
     }
   }
   @MainActor func testHelpAndLegalAreAvailableBeforePairing() {
     let app = launch()
-    let about = app.buttons["welcome-about"]
+    let about = app.buttons["native-about-open"]
     reveal(about, app: app)
     XCTAssertTrue(about.waitForExistence(timeout: 5))
     about.tap()
     XCTAssertEqual(app.staticTexts["about-name"].label, "PocketWork")
     XCTAssertTrue(app.descendants(matching: .any)["about-developer"].label.contains("Salty Panda LLC"))
-    XCTAssertTrue(app.buttons["about-support-email"].exists)
-    app.buttons["about-help"].tap()
+    let help=app.buttons["about-help"]
+    reveal(help,app:app)
+    XCTAssertTrue(help.isHittable);help.tap()
     XCTAssertTrue(app.scrollViews["information-document-help"].waitForExistence(timeout: 3))
-    XCTAssertTrue(app.staticTexts["Connect your computer"].exists)
-    let supportEmail = app.buttons["help-support-email"]
+    XCTAssertTrue(app.staticTexts["Connect OpenCode v2"].exists)
+    // SwiftUI Link is exposed as Link on iPad and Button on some phone OSes.
+    let supportEmail = app.descendants(matching: .any)["help-support-email"]
     reveal(supportEmail, app: app)
     XCTAssertTrue(supportEmail.isHittable)
-    app.navigationBars.buttons.element(boundBy: 0).tap()
-    for id in ["privacy", "terms", "license", "notices"] {
+    // The native welcome and its About sheet have separate navigation stacks.
+    // Scope Back to the visible document instead of the underlying welcome bar.
+    app.navigationBars["Help"].buttons["BackButton"].tap()
+    XCTAssertTrue(app.buttons["about-help"].waitForExistence(timeout: 3))
+    let contact = app.descendants(matching: .any)["about-support-email"]
+    reveal(contact, app: app)
+    XCTAssertTrue(contact.isHittable)
+    for (id, title) in [("privacy", "Privacy policy"), ("terms", "Terms of use"),
+      ("license", "Source license"), ("notices", "Open-source notices")] {
       let row = app.buttons["about-" + id]
       reveal(row, app: app)
       row.tap()
       let document = id == "license" ? "sourceLicense" : id
       XCTAssertTrue(app.scrollViews["information-document-" + document].waitForExistence(timeout: 3))
-      app.navigationBars.buttons.element(boundBy: 0).tap()
+      app.navigationBars[title].buttons["BackButton"].tap()
+      XCTAssertTrue(app.buttons["about-help"].waitForExistence(timeout: 3))
     }
     app.swipeDown()
     let image = XCTAttachment(screenshot: app.screenshot())
@@ -61,7 +76,7 @@ final class AboutUITests: XCTestCase {
   }
   @MainActor func testUnpairedHelpWorksAtLargestDynamicType() {
     let app = launch(largeText: true)
-    let about = app.buttons["welcome-about"]
+    let about = app.buttons["native-about-open"]
     reveal(about, app: app)
     XCTAssertTrue(about.isHittable)
     about.tap()
@@ -69,6 +84,6 @@ final class AboutUITests: XCTestCase {
     reveal(help, app: app)
     help.tap()
     XCTAssertTrue(app.scrollViews["information-document-help"].waitForExistence(timeout: 3))
-    XCTAssertTrue(app.staticTexts["Connect your computer"].exists)
+    XCTAssertTrue(app.staticTexts["Connect OpenCode v2"].exists)
   }
 }
