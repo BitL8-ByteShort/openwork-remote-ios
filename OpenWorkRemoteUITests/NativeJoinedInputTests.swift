@@ -141,8 +141,16 @@ final class NativeJoinedInputTests: XCTestCase {
     let config=try JSONDecoder().decode(ReviewerConfiguration.self,from:Data(contentsOf:file))
     guard config.disposable,config.ownerNonce.range(of:#"^[0-9a-f]{32}$"#,options:.regularExpression) != nil,
       config.projectID.range(of:#"^[0-9a-f]{40}$"#,options:.regularExpression) != nil,
-      config.projectName=="PocketWork Review",config.chatTitle=="PocketWork review starter — local model" else{
+      config.projectName=="PocketWork Review" else{
       throw XCTSkip("The supplied target is not the dedicated synthetic reviewer environment.")
+    }
+    let expectedReply:String
+    if config.chatTitle=="PocketWork review starter — local model"{
+      expectedReply="PocketWork mobile review ready"
+    }else if config.chatTitle=="PocketWork review follow-up "+config.ownerNonce.prefix(8){
+      expectedReply="PocketWork review "+config.ownerNonce.prefix(8)+" ready"
+    }else{
+      throw XCTSkip("Use only the preflight-verified starter or uniquely owned empty follow-up chat.")
     }
     let attempted=file.appendingPathExtension("send-attempt")
     guard !FileManager.default.fileExists(atPath:attempted.path) else{
@@ -164,7 +172,7 @@ final class NativeJoinedInputTests: XCTestCase {
     XCTAssertTrue(composer.waitForExistence(timeout:15));XCTAssertTrue(composer.isEnabled)
     XCTAssertTrue(["","Message OpenCode"].contains(composer.value as? String ?? "unexpected"),"Preserve an existing draft")
     XCTAssertFalse(send.isEnabled,"Do not add a request to another pending selection")
-    composer.tap();composer.typeText("Reply with exactly: PocketWork mobile review ready")
+    composer.tap();composer.typeText("Reply with exactly: "+expectedReply)
     XCTAssertTrue(send.isEnabled)
     try Data("One explicitly authorized synthetic reviewer prompt; inspect history/inbox before any later attempt.\n".utf8).write(to:attempted,options:.atomic)
     send.tap()
@@ -174,7 +182,9 @@ final class NativeJoinedInputTests: XCTestCase {
       XCTAssertTrue(send.waitForExistence(timeout:10));XCTAssertTrue(send.isEnabled)
       send.tap()
     }
-    XCTAssertTrue(app.staticTexts["PocketWork mobile review ready"].waitForExistence(timeout:120))
+    // The isolated local model has completed a measured response in 126 seconds.
+    // This bounded reviewer check measures delivery, not a response-time promise.
+    XCTAssertTrue(app.staticTexts[expectedReply].waitForExistence(timeout:180))
     XCTAssertFalse(app.staticTexts["This chat could not be loaded. Reconnect or try opening it again."].exists)
     let proof=XCTAttachment(screenshot:XCUIScreen.main.screenshot());proof.name="Normal Release isolated reviewer reply";proof.lifetime = .keepAlways;add(proof)
     app.terminate()
