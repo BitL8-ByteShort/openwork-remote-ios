@@ -3,6 +3,59 @@ import XCTest
 /// Opt-in normal-app checks using explicitly owned native qualification fixtures.
 /// Pairing uses the real UI. No fixture launch flags or Keychain injection are used.
 final class NativeJoinedInputTests: XCTestCase {
+  private struct ReviewerSafariConfiguration:Decodable{
+    let disposable:Bool
+    let ownerNonce:String
+    let origin:URL
+    let password:String
+  }
+  @MainActor func testNativeSafariReviewerPasswordSignIn()throws{
+    #if !targetEnvironment(simulator)
+    throw XCTSkip("This opt-in sign-in owns the clean reviewer Simulator.")
+    #else
+    guard let path=ProcessInfo.processInfo.environment["POCKETWORK_NATIVE_REVIEW_SAFARI_CONFIG"] else{
+      throw XCTSkip("Requires privately preflight-verified isolated native reviewer credentials.")
+    }
+    let config=try JSONDecoder().decode(ReviewerSafariConfiguration.self,from:Data(contentsOf:URL(fileURLWithPath:path)))
+    guard config.disposable,config.ownerNonce.range(of:#"^[0-9a-f]{32}$"#,options:.regularExpression) != nil,
+      config.origin.scheme=="https",let host=config.origin.host,host.hasSuffix(".opentunnel.xyz"),
+      config.origin.user==nil,config.origin.password==nil,config.origin.query==nil,config.origin.fragment==nil,
+      config.password.utf8.count>=16,config.password.utf8.count<=512 else{
+      throw XCTSkip("The supplied credentials are not the dedicated isolated reviewer fixture.")
+    }
+    continueAfterFailure=false
+    let safari=XCUIApplication(bundleIdentifier:"com.apple.mobilesafari");safari.launchArguments=[];safari.launch()
+    let bar=safari.textFields["TabBarItemTitle"]
+    XCTAssertTrue(bar.waitForExistence(timeout:15))
+    bar.tap()
+    let address=safari.textFields["URL"]
+    XCTAssertTrue(address.waitForExistence(timeout:10))
+    let clear=safari.buttons["Clear text"]
+    if clear.exists{clear.tap()}
+    address.typeText(config.origin.absoluteString)
+    XCTAssertEqual(address.value as? String,config.origin.absoluteString,"Verify the complete address before navigation")
+    // Hardware-keyboard capture can put Safari's on-screen Go key offscreen.
+    // Submit through the focused native field after verifying its full value.
+    address.typeText("\n")
+    let usePassword=safari.webViews.buttons["Use password"]
+    XCTAssertTrue(usePassword.waitForExistence(timeout:60),"Wait for the actual native sign-in page after navigation")
+    usePassword.tap()
+    let server=safari.webViews.textFields.firstMatch
+    let password=safari.webViews.secureTextFields.firstMatch
+    XCTAssertTrue(server.waitForExistence(timeout:15));XCTAssertTrue(password.waitForExistence(timeout:15))
+    let destination=URL(string:server.value as? String ?? "")
+    XCTAssertTrue(destination?.scheme==config.origin.scheme && destination?.host==host && destination?.port==config.origin.port,"Verify the password destination before typing")
+    password.tap();password.typeText(config.password)
+    let connect=safari.webViews.buttons["Connect"]
+    XCTAssertTrue(connect.isEnabled);connect.tap()
+    let savePassword=safari.alerts["Save Password?"]
+    if savePassword.waitForExistence(timeout:5){savePassword.buttons["Not Now"].tap()}
+    XCTAssertTrue(safari.webViews.textFields["Search sessions"].waitForExistence(timeout:60),"Require an authenticated native project/history shell")
+    let ownedHistory=safari.webViews.otherElements.matching(NSPredicate(format:"label CONTAINS %@","PocketWork review starter — local model")).firstMatch
+    XCTAssertTrue(ownedHistory.waitForExistence(timeout:15),"Require actual synthetic history, not just a loaded public page")
+    let proof=XCTAttachment(screenshot:XCUIScreen.main.screenshot());proof.name="Fresh native Safari reviewer password sign-in";proof.lifetime = .keepAlways;add(proof)
+    #endif
+  }
   private struct ReviewerConfiguration:Decodable{
     let disposable:Bool
     let ownerNonce:String
