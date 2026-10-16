@@ -20,6 +20,12 @@ PocketWork is an independent iPhone and iPad companion for [OpenCode](https://gi
 
 These are implemented features with synthetic and scoped native-host checks. They are not a claim that the complete release-candidate journey has passed on physical devices. Native host skill editing and scheduled work stay on the computer. Search covers chat titles, not message contents.
 
+## In the source candidate
+
+The next beta adds direct **+ → Photos / Files** selection, draft attachment chips, compact sharing review, local project archive/restore, and automatic reply following until you scroll away. **Files from this chat** remains in the top project/settings menu instead of being repeated in the conversation. Optional native server-password pairing is described below.
+
+These changes are not in delivered build9 yet. A reproducible narrow-iPad password/background crash currently holds the next build. Current passing phone/component checks do not clear that release gate.
+
 ## Connect
 
 The initial inspected baseline is **OpenCode 2.0.29**; the source candidate also accepts the scoped, tested **2.0.30** profile. Keep the compatible OpenCode server running and the computer awake.
@@ -72,4 +78,4 @@ Email **support@saltypanda.com** or use [GitHub Issues](https://github.com/BitL8
 
 The source and original artwork are [MIT licensed](LICENSE). The credited OpenCode logo has its own retained MIT notice in [NOTICE.md](NOTICE.md). PocketWork is independently maintained and isn't an official OpenCode product. OpenCode's maintainers aren't responsible for this app.
 
-Read [privacy](https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/), [support](https://bitl8-byteshort.github.io/openwork-remote-ios/support/) and [terms](https://bitl8-byteshort.github.io/openwork-remote-ios/terms/) at the stable information-site URLs. The exact approved offline copy is in [bundled information](OpenWorkRemote/Resources/Information/); its manifest records policy version2026-10-15.1.
+Read [privacy](https://bitl8-byteshort.github.io/openwork-remote-ios/privacy/), [support](https://bitl8-byteshort.github.io/openwork-remote-ios/support/) and [terms](https://bitl8-byteshort.github.io/openwork-remote-ios/terms/) at the stable information-site URLs. The exact approved offline copy is in [bundled information](OpenWorkRemote/Resources/Information/). The source candidate bundles approved policy version2026-10-16.1. Delivered build9 and the published sites still use2026-10-15.1; the revised copy will be published with the ready beta.

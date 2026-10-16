@@ -1,6 +1,6 @@
 # Results, previews and sharing
 
-In the native source candidate, **Files from this chat** lists supported results from structured OpenCode metadata. It does not treat an arbitrary path mentioned in assistant prose as a downloadable file. You can also browse supported files in the selected project.
+In the source candidate, tap the top project/model area and choose **Files from this chat**. The duplicate entry is removed from the conversation. This list shows supported results from structured OpenCode metadata. It does not treat an arbitrary path mentioned in assistant prose as a downloadable file. You can also browse supported files in the selected project.
 
 Choose a file, download its bounded local copy, then preview or explicitly share it through the system share sheet. Nothing is automatically exported. iPad sharing uses an anchored native presentation. Active HTML/scripts are not executed by the preview.
 
